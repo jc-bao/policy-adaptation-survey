@@ -51,7 +51,7 @@ class CartPoleEnv(gym.Env):
         return np.array(self.state), 0, False, {}
 
     def reset(self):
-        self.state = (0., 0., np.pi, 0.)
+        self.state = (0., 0., np.pi*0, 0.)
         return self.state
 
     def render(self, mode='human'):
