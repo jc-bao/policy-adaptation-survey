@@ -23,7 +23,7 @@ class CartPoleEnv(gym.Env):
         self.length = 0.5  # actually half the pole's length
         self.polemass_length = self.masspole * self.length
         self.force_mag = 10.0
-        self.tau = 0.02  # seconds between state updates
+        self.tau = 1.0/60.0  # seconds between state updates
         self.x_threshold = 4.0
 
         self.A = np.array(
@@ -190,7 +190,7 @@ def test_cartpole():
     # policy1: pole placement
     K = ct.place(env.A, env.B, [-1, -2, -3, -4])
     # policy2: LQR
-    Q = np.array([[5, 0, 0, 0],[0, 2, 0, 0],[0, 0, 6, 0],[0, 0, 0, 1]])
+    Q = np.array([[8, 0, 0, 0],[0, 2, 0, 0],[0, 0, 6, 0],[0, 0, 0, 1]])
     R = 0.001
     K = ct.lqr(env.A, env.B, Q, R)[0]
     for _ in range(120):
