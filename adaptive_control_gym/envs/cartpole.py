@@ -190,7 +190,7 @@ def test_cartpole():
     # policy1: pole placement
     K = ct.place(env.A, env.B, [-1, -2, -3, -4])
     # policy2: LQR
-    Q = np.array([[1, 0, 0, 0],[0, 1, 0, 0],[0, 0, 10, 0],[0, 0, 0, 1]])
+    Q = np.array([[10, 0, 0, 0],[0, 2, 0, 0],[0, 0, 6, 0],[0, 0, 0, 1]])
     R = 0.001
     K = ct.lqr(env.A, env.B, Q, R)[0]
     for _ in range(120):
