@@ -9,8 +9,8 @@ import imageio
 class CartPoleEnv(gym.Env):
     def __init__(self, render_mode: Optional[str] = None):
         self.render_mode = render_mode
-        self.screen_width = 600
-        self.screen_height = 400
+        self.screen_width = 200
+        self.screen_height = 100
         self.screen = None
         self.clock = None
         self.isopen = True
@@ -108,10 +108,10 @@ class CartPoleEnv(gym.Env):
 
         world_width = self.x_threshold * 2
         scale = self.screen_width / world_width
-        polewidth = 10.0
+        polewidth = 5.0
         polelen = scale * (2 * self.length)
-        cartwidth = 50.0
-        cartheight = 30.0
+        cartwidth = 25.0
+        cartheight = 15.0
 
         if self.state is None:
             return None
@@ -124,7 +124,7 @@ class CartPoleEnv(gym.Env):
         l, r, t, b = -cartwidth / 2, cartwidth / 2, cartheight / 2, -cartheight / 2
         axleoffset = cartheight / 4.0
         cartx = x[0] * scale + self.screen_width / 2.0  # MIDDLE OF CART
-        carty = 100  # TOP OF CART
+        carty = int(self.screen_height * 0.4)  # TOP OF CART
         cart_coords = [(l, b), (l, t), (r, t), (r, b)]
         cart_coords = [(c[0] + cartx, c[1] + carty) for c in cart_coords]
         gfxdraw.aapolygon(self.surf, cart_coords, (0, 0, 0))
