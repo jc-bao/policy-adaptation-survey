@@ -6,11 +6,11 @@ from icecream import ic
 import imageio
 
 
-class CartPoleEnv(gym.Env):
+class HoverEnv(gym.Env):
     def __init__(self, render_mode: Optional[str] = None):
         self.render_mode = render_mode
-        self.screen_width = 600
-        self.screen_height = 400
+        self.screen_width = 300
+        self.screen_height = 600
         self.screen = None
         self.clock = None
         self.isopen = True
@@ -190,7 +190,7 @@ def test_cartpole():
     # policy1: pole placement
     K = ct.place(env.A, env.B, [-1, -2, -3, -4])
     # policy2: LQR
-    Q = np.array([[5, 0, 0, 0],[0, 2, 0, 0],[0, 0, 6, 0],[0, 0, 0, 1]])
+    Q = np.array([[10, 0, 0, 0],[0, 2, 0, 0],[0, 0, 6, 0],[0, 0, 0, 1]])
     R = 0.001
     K = ct.lqr(env.A, env.B, Q, R)[0]
     for _ in range(120):
