@@ -1,6 +1,9 @@
 from typing import Optional
 import gym
 import numpy as np
+import control as ct
+from icecream import ic
+import imageio
 
 
 class CartPoleEnv(gym.Env):
@@ -23,9 +26,28 @@ class CartPoleEnv(gym.Env):
         self.tau = 0.02  # seconds between state updates
         self.x_threshold = 4.0
 
+        self.A = np.array(
+            [[0, 1, 0, 0], 
+            [0, 0, -self.masspole/self.masscart*self.gravity, 0], 
+            [0, 0, 0, 1], 
+            [0, 0, self.gravity/self.length*(1.0+self.masspole/self.masscart), 0]])
+        self.B = np.array([[0], [1 / self.masscart], [0], [-1/self.masscart/self.length]])
+        self.dynamic_info = self._get_dynamic_info()
+        ic(self.dynamic_info)
+
         self.action_space = gym.spaces.Box(
             low=-self.force_mag, high=self.force_mag, shape=(1,), dtype=float)
 
+    def _get_dynamic_info(self):
+        eig_A = np.linalg.eig(self.A)
+        ctrb_AB = ct.ctrb(self.A, self.B)
+        ctrb_rank = np.linalg.matrix_rank(ctrb_AB)
+        return {
+            'eig_A': eig_A,
+            'ctrb_AB': ctrb_AB,
+            'ctrb_rank': ctrb_rank,
+        }
+    
     def step(self, action):
         x, x_dot, theta, theta_dot = self.state
 
@@ -51,7 +73,7 @@ class CartPoleEnv(gym.Env):
         return np.array(self.state), 0, False, {}
 
     def reset(self):
-        self.state = (0., 0., np.pi*0, 0.)
+        self.state = (0.1, 2.0, 0.0, 0.5)
         return self.state
 
     def render(self, mode='human'):
@@ -161,11 +183,21 @@ class CartPoleEnv(gym.Env):
             self.isopen = False
 
 def test_cartpole():
-    env = CartPoleEnv(render_mode="human")
-    env.reset()
-    for _ in range(1000):
-        env.render()
-        env.step(env.action_space.sample())  # take a random action
+    np.set_printoptions(precision=3, suppress=True)
+    env = CartPoleEnv(render_mode="rgb_array")
+    state = env.reset()
+    vid = []
+    # policy1: pole placement
+    K = ct.place(env.A, env.B, [-1, -2, -3, -4])
+    # policy2: LQR
+    Q = np.array([[1, 0, 0, 0],[0, 1, 0, 0],[0, 0, 10, 0],[0, 0, 0, 1]])
+    R = 0.001
+    K = ct.lqr(env.A, env.B, Q, R)[0]
+    for _ in range(120):
+        vid.append(env.render())
+        act = -K@state
+        state, _, _, _ = env.step(act[0])  # take a random action
+    imageio.mimsave('../../results/cartpole.gif', vid, fps=30)
     env.close()
 
 if __name__ == "__main__":
