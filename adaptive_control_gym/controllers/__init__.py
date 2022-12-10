@@ -1,1 +1,2 @@
 from adaptive_control_gym.controllers.lqr import LRQ
+from adaptive_control_gym.controllers.random import Random

@@ -134,22 +134,24 @@ class HoverEnv(gym.Env):
             pygame.quit()
             self.isopen = False
 
-def test_cartpole():
+def test_cartpole(policy_name = "lqr"):
     np.set_printoptions(precision=3, suppress=True)
     env = HoverEnv(render_mode="rgb_array")
     state = env.reset()
     vid = []
-    # policy1: pole placement
-    K = ct.place(env.A, env.B, [-1, -2])
-    # policy2: LQR
-    Q = np.array([[50, 0],[0, 1]])
-    R = 1
-    policy = ctrl.LRQ(env.A, env.B, Q, R)
+    if policy_name == "lqr":
+        Q = np.array([[50, 0],[0, 1]])
+        R = 1
+        policy = ctrl.LRQ(env.A, env.B, Q, R)
+    elif policy_name == "random":
+        policy = ctrl.Random(env.action_space)
+    else: 
+        raise NotImplementedError
     for _ in range(180):
         vid.append(env.render())
-        act = policy.select_action(state)
+        act = policy(state)
         state, _, _, _ = env.step(act)  # take a random action
-    imageio.mimsave('../../results/hover.gif', vid, fps=30)
+    imageio.mimsave(f'../../results/hover_{policy_name}.gif', vid, fps=30)
     env.close()
 
 if __name__ == "__main__":

@@ -8,5 +8,5 @@ class LRQ:
         self.R = R
         self.K = ct.lqr(A, B, Q, R)[0]
 
-    def select_action(self, state):
+    def __call__(self, state):
         return (-self.K @ state)[0]
