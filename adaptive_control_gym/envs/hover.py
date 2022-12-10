@@ -5,6 +5,8 @@ import control as ct
 from icecream import ic
 import imageio
 
+from adaptive_control_gym import controllers as ctrl
+
 
 class HoverEnv(gym.Env):
     def __init__(self, render_mode: Optional[str] = None):
@@ -142,11 +144,11 @@ def test_cartpole():
     # policy2: LQR
     Q = np.array([[50, 0],[0, 1]])
     R = 1
-    K = ct.lqr(env.A, env.B, Q, R)[0]
+    policy = ctrl.LRQ(env.A, env.B, Q, R)
     for _ in range(180):
         vid.append(env.render())
-        act = -K@state
-        state, _, _, _ = env.step(act[0])  # take a random action
+        act = policy.select_action(state)
+        state, _, _, _ = env.step(act)  # take a random action
     imageio.mimsave('../../results/hover.gif', vid, fps=30)
     env.close()
 
