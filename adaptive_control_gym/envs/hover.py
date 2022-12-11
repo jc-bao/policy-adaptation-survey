@@ -69,7 +69,8 @@ class HoverEnv(gym.Env):
         done = torch.ones(self.env_num, device=self.device)*single_done
         if single_done:
             self.reset()
-        return torch.stack([self.x,self.v], dim=-1), 0, done, {}
+        reward = 1.0 - torch.abs(self.x)
+        return torch.stack([self.x,self.v], dim=-1), reward, done, {}
 
     def reset(self):
         self.step_cnt = 0

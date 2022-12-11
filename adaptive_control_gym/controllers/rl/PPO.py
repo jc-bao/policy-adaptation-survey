@@ -25,6 +25,7 @@ class PPO:
         self.cri = CriticPPO(net_dims, state_dim, action_dim).to(self.device)
         self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
+        self.criterion = torch.nn.SmoothL1Loss(reduction="mean")
         # ppo
         self.ratio_clip = 0.25  # `ratio.clamp(1 - clip, 1 + clip)`
         self.lambda_gae_adv = 0.95  # could be 0.50~0.99 # GAE for sparse reward
@@ -33,18 +34,21 @@ class PPO:
         # buffer
         self.buffer = ReplayBufferList()
 
-    def explore_env(self, env, horizon_len: int) -> List[torch.Tensor]:
+    def explore_env(self, env, horizon_len: int, deterministic: bool=False) -> List[torch.Tensor]:
         states = torch.zeros((horizon_len, self.env_num, self.state_dim), dtype=torch.float32).to(self.device)
-        actions = torch.zeros((horizon_len, self.env_num, 1), dtype=torch.int32).to(self.device) if self.if_discrete \
-            else torch.zeros((horizon_len, self.env_num, self.action_dim), dtype=torch.float32).to(self.device)
+        actions = torch.zeros((horizon_len, self.env_num, self.action_dim), dtype=torch.float32).to(self.device)
         logprobs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         rewards = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         dones = torch.zeros((horizon_len, self.env_num), dtype=torch.bool).to(self.device)
 
         state = self.last_state  # shape == (env_num, state_dim) for a vectorized env.
 
-        get_action = self.act.get_action
-        convert = self.act.convert_action_for_env
+        if deterministic:
+            get_action = self.act
+            convert = lambda x: x
+        else:
+            get_action = self.act.get_action
+            convert = self.act.convert_action_for_env
         for t in range(horizon_len):
             action, logprob = get_action(state)
             states[t] = state
@@ -61,9 +65,8 @@ class PPO:
         undones = 1.0 - dones.type(torch.float32)
         return states, actions, logprobs, rewards, undones
 
-    def update_net(self, buffer):
+    def update_net(self, states, actions, logprobs, rewards, undones):
         with torch.no_grad():
-            states, actions, logprobs, rewards, undones = buffer
             buffer_size = states.shape[0]
 
             '''get advantages reward_sums'''
