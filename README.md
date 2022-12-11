@@ -8,3 +8,12 @@
 |                                                              |                                                              |
 |                                                              |                                                              |
 
+## Policy
+
+* Classic
+  - [x] LQR
+  - [ ] PID
+  - [ ] MPC
+* RL
+  - [ ] SAC
+  - [ ] PPO 
