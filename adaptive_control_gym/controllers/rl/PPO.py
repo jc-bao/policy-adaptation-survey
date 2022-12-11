@@ -4,8 +4,8 @@ import math
 
 from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO
 
-class PPO(AgentBase):
-    def __init__(self, net_dims: List(int), state_dim: int, action_dim: int, env_num: int, gpu_id: int = 0):
+class PPO:
+    def __init__(self, net_dims: List[int], state_dim: int, action_dim: int, env_num: int, gpu_id: int = 0):
         # env
         self.env_num = env_num
         self.action_dim = action_dim
@@ -30,13 +30,13 @@ class PPO(AgentBase):
         self.lambda_entropy = 0.01  # could be 0.00~0.20
         self.lambda_entropy = torch.tensor(self.lambda_entropy, dtype=torch.float32, device=self.device)
 
-    def explore_env(self, env, horizon_len: int) -> List(torch.Tensor):
-        states = torch.zeros((horizon_len, self.num_envs, self.state_dim), dtype=torch.float32).to(self.device)
-        actions = torch.zeros((horizon_len, self.num_envs, 1), dtype=torch.int32).to(self.device) if self.if_discrete \
-            else torch.zeros((horizon_len, self.num_envs, self.action_dim), dtype=torch.float32).to(self.device)
-        logprobs = torch.zeros((horizon_len, self.num_envs), dtype=torch.float32).to(self.device)
-        rewards = torch.zeros((horizon_len, self.num_envs), dtype=torch.float32).to(self.device)
-        dones = torch.zeros((horizon_len, self.num_envs), dtype=torch.bool).to(self.device)
+    def explore_env(self, env, horizon_len: int) -> List[torch.Tensor]:
+        states = torch.zeros((horizon_len, self.env_num, self.state_dim), dtype=torch.float32).to(self.device)
+        actions = torch.zeros((horizon_len, self.env_num, 1), dtype=torch.int32).to(self.device) if self.if_discrete \
+            else torch.zeros((horizon_len, self.env_num, self.action_dim), dtype=torch.float32).to(self.device)
+        logprobs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
+        rewards = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
+        dones = torch.zeros((horizon_len, self.env_num), dtype=torch.bool).to(self.device)
 
         state = self.last_state  # shape == (env_num, state_dim) for a vectorized env.
 

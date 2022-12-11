@@ -8,6 +8,13 @@
 |                                                              |                                                              |
 |                                                              |                                                              |
 
+* Hover
+   - [x] Basic environment and render
+   - [x] GPU-based environment
+   - [x] Model uncertainty + Disturbulence
+   - [ ] RL example
+   - [ ] RMA example
+
 ## Policy
 
 * Classic
