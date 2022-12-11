@@ -1,1 +1,1 @@
-from adaptive_control_gym.controllers.rl import PPO
+from adaptive_control_gym.controllers.rl.PPO import * 

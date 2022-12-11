@@ -3,6 +3,7 @@ from typing import List, Iterable, Union
 import math
 
 from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO
+from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
 
 class PPO:
     def __init__(self, net_dims: List[int], state_dim: int, action_dim: int, env_num: int, gpu_id: int = 0):
@@ -29,6 +30,8 @@ class PPO:
         self.lambda_gae_adv = 0.95  # could be 0.50~0.99 # GAE for sparse reward
         self.lambda_entropy = 0.01  # could be 0.00~0.20
         self.lambda_entropy = torch.tensor(self.lambda_entropy, dtype=torch.float32, device=self.device)
+        # buffer
+        self.buffer = ReplayBufferList()
 
     def explore_env(self, env, horizon_len: int) -> List[torch.Tensor]:
         states = torch.zeros((horizon_len, self.env_num, self.state_dim), dtype=torch.float32).to(self.device)
