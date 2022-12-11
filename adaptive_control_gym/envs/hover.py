@@ -1,6 +1,7 @@
 from typing import Optional
 import gym
 import numpy as np
+import torch
 import control as ct
 from icecream import ic
 import imageio
@@ -9,20 +10,26 @@ from adaptive_control_gym import controllers as ctrl
 
 
 class HoverEnv(gym.Env):
-    def __init__(self, render_mode: Optional[str] = None):
-        self.render_mode = render_mode
-        self.screen_width = 50
-        self.screen_height = 200
-        self.screen = None
-        self.clock = None
-        self.isopen = True
-        self.state = None
-
-        self.mass = 1.0
+    def __init__(self, env_num: int = 1, gpu_id: int = 0):
+        # parameters
+        self.mass_mean, self.mass_std = 1.0, 0.2
+        self.disturbance_mean, self.disturbance_std = 0.0, 0.0
+        self.init_x_mean, self.init_x_std = 0.0, 1.0
+        self.init_v_mean, self.init_v_std = 0.0, 1.0
         self.tau = 1.0/60.0  # seconds between state updates
-        self.x_threshold = 5.0
-        self.max_force = 10.0
+        self.force_scale = 1.0
+        self.max_force = 1.0
 
+        # state
+        self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+        self.env_num = env_num
+        self.state_dim = 2
+        self.action_dim = 1
+        self.max_steps = 10
+        self.x, self.v, self.mass = self._get_initial_state()
+        self.step_cnt = torch.zeros(self.env_num)
+
+        # dynamic
         self.A = np.array([[0, 1], [0, 0]])
         self.B = np.array([[0], [1 / self.mass]])
         self.dynamic_info = self._get_dynamic_info()
@@ -41,102 +48,26 @@ class HoverEnv(gym.Env):
             'ctrb_rank': ctrb_rank,
         }
     
+    def _get_initial_state(self):
+        x = torch.randn(self.env_num) * self.init_x_std + self.init_x_mean
+        v = torch.randn(self.env_num) * self.init_v_std + self.init_v_mean
+        mass = torch.randn(self.env_num) * self.mass_std + self.mass_mean
+        return x, v, mass
+    
     def step(self, action):
-        action = np.clip(action, -self.max_force, self.max_force)
-        x, x_dot = self.state
-        self.force = action
-        xacc = self.force / self.mass
-
-        x = x + self.tau * x_dot
-        x_dot = x_dot + self.tau * xacc
-
-        self.state = (x, x_dot)
-
-        return np.array(self.state), 0, False, {}
+        disturbance = torch.randn(self.env_num) * self.disturbance_std + self.disturbance_mean
+        force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) + disturbance
+        self.x += self.x + self.v * self.tau
+        self.v += self.v + force / self.mass * self.tau
+        return torch.stack([self.x,self.v], dim=-1), 0, False, {}
 
     def reset(self):
-        self.state = (4.0, 4.0)
-        self.force = 0.0
-        return self.state
-
-    def render(self, mode='human'):
-        if self.render_mode is None:
-            gym.logger.warn(
-                "You are calling render method without specifying any render mode. "
-                "You can specify the render_mode at initialization, "
-                f'e.g. gym("{self.spec.id}", render_mode="rgb_array")'
-            )
-            return
-
-        try:
-            import pygame
-            from pygame import gfxdraw
-        except ImportError:
-            raise gym.error.DependencyNotInstalled(
-                "pygame is not installed, run `pip install gym[classic_control]`"
-            )
-
-        if self.screen is None:
-            pygame.init()
-            if self.render_mode == "human":
-                pygame.display.init()
-                self.screen = pygame.display.set_mode(
-                    (self.screen_width, self.screen_height)
-                )
-            else:  # mode == "rgb_array"
-                self.screen = pygame.Surface(
-                    (self.screen_width, self.screen_height))
-        if self.clock is None:
-            self.clock = pygame.time.Clock()
-
-        world_height = self.x_threshold * 2
-        scale = self.screen_height / world_height
-        cartwidth = 15.0
-        cartheight = 3.0
-
-        if self.state is None:
-            return None
-        x = self.state
-
-        self.surf = pygame.Surface((self.screen_width, self.screen_height))
-        self.surf.fill((255, 255, 255))
-
-        l, r, t, b = -cartwidth / 2, cartwidth / 2, cartheight / 2, -cartheight / 2
-        carty = x[0] * scale + self.screen_height / 2.0  # MIDDLE OF CART
-        cartx = self.screen_width//2  # TOP OF CART
-        cart_coords = [(l, b), (l, t), (r, t), (r, b)]
-        cart_coords = [(c[0] + cartx, c[1] + carty) for c in cart_coords]
-        gfxdraw.aapolygon(self.surf, cart_coords, (0, 0, 0))
-        gfxdraw.filled_polygon(self.surf, cart_coords, (0, 0, 0))
-
-        # force line
-        gfxdraw.vline(self.surf, self.screen_width//2, int(carty), int(carty+self.force), (1, 1, 0)) 
-
-        gfxdraw.hline(self.surf, 0, self.screen_width, self.screen_height//2, (1, 0, 0))
-
-        self.surf = pygame.transform.flip(self.surf, False, True)
-        self.screen.blit(self.surf, (0, 0))
-        if self.render_mode == "human":
-            pygame.event.pump()
-            self.clock.tick(60)
-            pygame.display.flip()
-
-        elif self.render_mode == "rgb_array":
-            return np.transpose(
-                np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
-            )
-
-    def close(self):
-        if self.screen is not None:
-            import pygame
-
-            pygame.display.quit()
-            pygame.quit()
-            self.isopen = False
+        self.x, self.v, self.mass = self._get_initial_state()
+        return torch.stack([self.x,self.v], dim=-1)
 
 def test_cartpole(policy_name = "lqr"):
     np.set_printoptions(precision=3, suppress=True)
-    env = HoverEnv(render_mode="rgb_array")
+    env = HoverEnv(env_num=1)
     state = env.reset()
     vid = []
     if policy_name == "lqr":

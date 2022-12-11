@@ -1,7 +1,7 @@
 import control as ct
 
 class LRQ:
-    def __init__(self, A, B, Q, R):
+    def __init__(self, A, B, Q, R, gpu_id:int = 0):
         self.A = A
         self.B = B
         self.Q = Q
