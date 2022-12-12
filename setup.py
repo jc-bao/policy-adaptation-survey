@@ -8,5 +8,10 @@ setup(name='adaptive_control_gym',
     install_requires=[
         'matplotlib', 
         'imageio',
+        'wandb', 
+        'control', 
+        'icecream',
+        'torch', 
+        'tqdm'
         ]
 )

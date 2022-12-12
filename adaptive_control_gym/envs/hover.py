@@ -59,7 +59,7 @@ class HoverEnv(gym.Env):
         return x, v, mass
     
     def step(self, action):
-        disturbance = torch.randn(self.env_num, device=self.device) * self.disturbance_std + self.disturbance_mean
+        disturbance = torch.randn([self.env_num,1], device=self.device) * self.disturbance_std + self.disturbance_mean
         force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) + disturbance
         force = force.squeeze(1)
         self.x += self.v * self.tau

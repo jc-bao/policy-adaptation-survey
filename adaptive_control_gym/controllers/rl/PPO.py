@@ -44,7 +44,7 @@ class PPO:
         state = self.last_state  # shape == (env_num, state_dim) for a vectorized env.
 
         if deterministic:
-            get_action = self.act
+            get_action = lambda x: (self.act(x), 0.0)
             convert = lambda x: x
         else:
             get_action = self.act.get_action
@@ -68,32 +68,38 @@ class PPO:
     def update_net(self, states, actions, logprobs, rewards, undones):
         with torch.no_grad():
             buffer_size = states.shape[0]
+            buffer_num = states.shape[1]
 
-            '''get advantages reward_sums'''
-            bs = 2 ** 10  # set a smaller 'batch_size' when out of GPU memory.
-            values = [self.cri(states[i:i + bs]) for i in range(0, buffer_size, bs)]
-            values = torch.cat(values, dim=0).squeeze(1)  # values.shape == (buffer_size, )
+            '''get advantages and reward_sums'''
+            bs = 2 ** 10  # set a smaller 'batch_size' to avoiding out of GPU memory.
+            values = torch.empty_like(rewards)  # values.shape == (buffer_size, buffer_num)
+            for i in range(0, buffer_size, bs):
+                for j in range(buffer_num):
+                    values[i:i + bs, j] = self.cri(states[i:i + bs, j]).squeeze(1)
 
-            advantages = self.get_advantages(rewards, undones, values)  # advantages.shape == (buffer_size, )
-            reward_sums = advantages + values  # reward_sums.shape == (buffer_size, )
+            advantages = self.get_advantages(rewards, undones, values)  # shape == (buffer_size, buffer_num)
+            reward_sums = advantages + values  # shape == (buffer_size, buffer_num)
             del rewards, undones, values
 
-            advantages = (advantages - advantages.mean()) / (advantages.std(dim=0) + 1e-5)
-        assert logprobs.shape == advantages.shape == reward_sums.shape == (buffer_size,)
+            advantages = (advantages - advantages.mean()) / (advantages.std(dim=0) + 1e-4)
 
         '''update network'''
         obj_critics = 0.0
         obj_actors = 0.0
+        sample_len = buffer_size - 1
 
-        update_times = int(buffer_size * self.repeat_times / self.batch_size)
+        update_times = int(buffer_size * buffer_num * self.repeat_times / self.batch_size)
         assert update_times >= 1
         for _ in range(update_times):
-            indices = torch.randint(buffer_size, size=(self.batch_size,), requires_grad=False)
-            state = states[indices]
-            action = actions[indices]
-            logprob = logprobs[indices]
-            advantage = advantages[indices]
-            reward_sum = reward_sums[indices]
+            ids = torch.randint(sample_len * buffer_num, size=(self.batch_size,), requires_grad=False)
+            ids0 = torch.fmod(ids, sample_len)  # ids % sample_len
+            ids1 = torch.div(ids, sample_len, rounding_mode='floor')  # ids // sample_len
+
+            state = states[ids0, ids1]
+            action = actions[ids0, ids1]
+            logprob = logprobs[ids0, ids1]
+            advantage = advantages[ids0, ids1]
+            reward_sum = reward_sums[ids0, ids1]
 
             value = self.cri(state).squeeze(1)  # critic network predicts the reward_sum (Q value) of state
             obj_critic = self.criterion(value, reward_sum)
@@ -110,8 +116,8 @@ class PPO:
 
             obj_critics += obj_critic.item()
             obj_actors += obj_actor.item()
-        action_std = getattr(self.act, 'action_std_log', torch.zeros(1)).exp().mean()
-        return obj_critics / update_times, obj_actors / update_times, action_std.item()
+        a_std_log = self.act.action_std_log.mean()
+        return obj_critics / update_times, obj_actors / update_times, a_std_log.item()
 
     def get_advantages(self, rewards: torch.Tensor, undones: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
         advantages = torch.empty_like(values)  # advantage value
