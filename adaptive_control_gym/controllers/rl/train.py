@@ -11,7 +11,7 @@ def train():
     use_wandb=True
 
     env_num = 1024
-    total_steps = 1e6
+    total_steps = 2e6
     eval_freq = 4
     gpu_id = 0
     net_dims = [128, 128]

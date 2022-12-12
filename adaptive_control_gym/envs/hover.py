@@ -15,7 +15,8 @@ class HoverEnv(gym.Env):
 
         # parameters
         self.mass_mean, self.mass_std = 0.1, 0.000
-        self.disturbance_mean, self.disturbance_std = 0.0, 0.0
+        self.disturb_mean, self.disturb_std = 0.0, 0.5
+        self.disturb_period = 10
         self.init_x_mean, self.init_x_std = 0.0, 1.0
         self.init_v_mean, self.init_v_std = 0.0, 1.0
         self.tau = 1.0/30.0  # seconds between state updates
@@ -61,11 +62,12 @@ class HoverEnv(gym.Env):
         return x, v, mass
     
     def step(self, action):
-        disturbance = torch.randn([self.env_num,1], device=self.device) * self.disturbance_std + self.disturbance_mean
-        force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) + disturbance
-        force = force.squeeze(1)
+        if self.step_cnt % self.disturb_period == 0:
+            self.disturb = torch.randn((self.env_num,1), device=self.device) * self.disturb_std + self.disturb_mean
+        force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) + self.disturb
+        self.force = force.squeeze(1)
         self.x += self.v * self.tau
-        self.v += force / self.mass * self.tau
+        self.v += self.force / self.mass * self.tau
         self.step_cnt += 1
         single_done = self.step_cnt >= self.max_steps
         done = torch.ones(self.env_num, device=self.device)*single_done
@@ -76,6 +78,7 @@ class HoverEnv(gym.Env):
 
     def reset(self):
         self.step_cnt = 0
+        self.disturb = torch.zeros(self.env_num, device=self.device)
         self.x, self.v, self.mass = self._get_initial_state()
         return torch.stack([self.x,self.v], dim=-1)
 
@@ -85,7 +88,7 @@ def test_cartpole(policy_name = "ppo"):
     np.set_printoptions(precision=3, suppress=True)
     env = HoverEnv(env_num=env_num, gpu_id = gpu_id, seed=2)
     state = env.reset()
-    x_list, v_list, a_list, r_list, done_list = [], [], [], [], []
+    x_list, v_list, a_list, force_list, disturb_list, r_list, done_list = [], [], [], [], [], [], []
 
     if policy_name == "lqr":
         Q = np.array([[50, 0],[0, 1]])
@@ -105,25 +108,24 @@ def test_cartpole(policy_name = "ppo"):
         v_list.append(state[0,1].item())
         a_list.append(act[0,0].item())
         r_list.append(rew[0].item())
+        force_list.append(env.force[0].item())
+        disturb_list.append(env.disturb[0].item())
         if done:
             done_list.append(t)
     # plot x_list, v_list, action_list in three subplots
-    fig, axs = plt.subplots(4, 1, figsize=(10, 15))
+    fig, axs = plt.subplots(3, 1, figsize=(10, 10))
     axs[0].plot(x_list, 'g', label="x")
-    axs[0].set_ylabel("x")
-    axs[1].plot(v_list, 'b', label="v")
-    axs[1].set_ylabel("v")
-    axs[2].plot(a_list, 'r', label="a")
-    axs[2].set_ylabel("a")
-    axs[3].plot(r_list, 'y', label="reward")
-    axs[3].set_ylabel("reward")
+    axs[0].plot(v_list, 'b', label="v", alpha=0.2)
+    axs[1].plot(a_list, label="action", alpha=0.2)
+    axs[1].plot(force_list, label="force", alpha=0.2)
+    axs[1].plot(disturb_list, label="disturb")
+    axs[2].plot(r_list, 'y', label="reward")
     # draw vertical lines for done
-    for i in range(3):
-        for t in done_list:
-            axs[i].axvline(t, color="red", linestyle="--")
-        # plot horizontal line for x=0
-        axs[i].axhline(0, color="black", linestyle="--")
-        axs[i].legend()
+    for t in done_list:
+        axs[0].axvline(t, color="red", linestyle="--")
+    # plot horizontal line for x=0
+    axs[0].axhline(0, color="black", linestyle="--")
+    axs[0].legend()
     # save the plot as image
     plt.savefig(f"../../results/hover_{policy_name}.png")
     env.close()
