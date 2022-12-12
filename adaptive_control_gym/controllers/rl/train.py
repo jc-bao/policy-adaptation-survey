@@ -8,13 +8,13 @@ from adaptive_control_gym.envs import HoverEnv
 from adaptive_control_gym.controllers import PPO
 
 def train():
-    use_wandb=False
+    use_wandb=True
 
-    env_num = 128
+    env_num = 1024
     total_steps = 1e6
     eval_freq = 4
     gpu_id = 0
-    net_dims = [64, 64]
+    net_dims = [128, 128]
     
     env = HoverEnv(env_num=env_num, gpu_id=gpu_id)
     agent = PPO(net_dims, env.state_dim, env.action_dim, env_num, gpu_id)
@@ -35,7 +35,7 @@ def train():
 
             # log
             rew_mean = rewards.mean().item()
-            rew_final_mean = rewards[..., -1].mean().item()
+            rew_final_mean = rewards[-1].mean().item()
             if use_wandb:
                 wandb.log({
                     'train/rewards_mean': rew_mean, 
@@ -51,13 +51,13 @@ def train():
                 states, actions, logprobs, rewards, undones = agent.explore_env(env, env.max_steps, deterministic=True)
                 if use_wandb:
                     wandb.log({
-                        'train/rewards_mean': rewards.mean().item(), 
-                        'train/rewards_final': rewards[..., -1].mean().item(),
+                        'eval/rewards_mean': rewards.mean().item(), 
+                        'eval/rewards_final': rewards[-1].mean().item(),
                     }, step=total_steps)
                 else:
-                    ic(rewards.mean().item(), rewards[..., -1].mean().item())
+                    ic(rewards.mean().item(), rewards[-1].mean().item())
     
-    actor_path = '../../../results/rl/actor.pt'
+    actor_path = '../../../results/rl/actor_ppo.pt'
     torch.save(agent.act, actor_path)
     if use_wandb:
         wandb.save(actor_path, base_path="../../../results/rl", policy="now")

@@ -1,4 +1,4 @@
-from typing import Optional
+import torch
 import gym
 import numpy as np
 import torch
@@ -10,7 +10,9 @@ from adaptive_control_gym import controllers as ctrl
 
 
 class HoverEnv(gym.Env):
-    def __init__(self, env_num: int = 1, gpu_id: int = 0):
+    def __init__(self, env_num: int = 1, gpu_id: int = 0, seed:int = 0):
+        torch.manual_seed(seed)
+
         # parameters
         self.mass_mean, self.mass_std = 0.1, 0.000
         self.disturbance_mean, self.disturbance_std = 0.0, 0.0
@@ -25,7 +27,7 @@ class HoverEnv(gym.Env):
         self.env_num = env_num
         self.state_dim = 2
         self.action_dim = 1
-        self.max_steps = 40
+        self.max_steps = 60
         self.x, self.v, self.mass = self._get_initial_state()
         self.step_cnt = 0
 
@@ -67,9 +69,9 @@ class HoverEnv(gym.Env):
         self.step_cnt += 1
         single_done = self.step_cnt >= self.max_steps
         done = torch.ones(self.env_num, device=self.device)*single_done
+        reward = 1.0 - torch.abs(self.x) - torch.abs(self.v)*0.1
         if single_done:
             self.reset()
-        reward = 1.0 - torch.abs(self.x)
         return torch.stack([self.x,self.v], dim=-1), reward, done, {}
 
     def reset(self):
@@ -77,13 +79,13 @@ class HoverEnv(gym.Env):
         self.x, self.v, self.mass = self._get_initial_state()
         return torch.stack([self.x,self.v], dim=-1)
 
-def test_cartpole(policy_name = "lqr"):
+def test_cartpole(policy_name = "ppo"):
     env_num = 1
     gpu_id = 0
     np.set_printoptions(precision=3, suppress=True)
-    env = HoverEnv(env_num=env_num, gpu_id = gpu_id)
+    env = HoverEnv(env_num=env_num, gpu_id = gpu_id, seed=2)
     state = env.reset()
-    x_list, v_list, done_list = [], [], []
+    x_list, v_list, a_list, r_list, done_list = [], [], [], [], []
 
     if policy_name == "lqr":
         Q = np.array([[50, 0],[0, 1]])
@@ -91,6 +93,8 @@ def test_cartpole(policy_name = "lqr"):
         policy = ctrl.LRQ(env.A, env.B, Q, R, gpu_id = gpu_id)
     elif policy_name == "random":
         policy = ctrl.Random(env.action_space)
+    elif policy_name == "ppo":
+        policy = torch.load('../../results/rl/actor_ppo.pt')
     else: 
         raise NotImplementedError
 
@@ -99,16 +103,27 @@ def test_cartpole(policy_name = "lqr"):
         state, rew, done, info = env.step(act)  # take a random action
         x_list.append(state[0,0].item())
         v_list.append(state[0,1].item())
+        a_list.append(act[0,0].item())
+        r_list.append(rew[0].item())
         if done:
             done_list.append(t)
-    # plot x_list, v_list, action_list
-    plt.figure()
-    plt.plot(x_list, label="x")
-    plt.plot(v_list, label="v")
+    # plot x_list, v_list, action_list in three subplots
+    fig, axs = plt.subplots(4, 1, figsize=(10, 15))
+    axs[0].plot(x_list, 'g', label="x")
+    axs[0].set_ylabel("x")
+    axs[1].plot(v_list, 'b', label="v")
+    axs[1].set_ylabel("v")
+    axs[2].plot(a_list, 'r', label="a")
+    axs[2].set_ylabel("a")
+    axs[3].plot(r_list, 'y', label="reward")
+    axs[3].set_ylabel("reward")
     # draw vertical lines for done
-    for t in done_list:
-        plt.axvline(t, color="red", linestyle="--")
-    plt.legend()
+    for i in range(3):
+        for t in done_list:
+            axs[i].axvline(t, color="red", linestyle="--")
+        # plot horizontal line for x=0
+        axs[i].axhline(0, color="black", linestyle="--")
+        axs[i].legend()
     # save the plot as image
     plt.savefig(f"../../results/hover_{policy_name}.png")
     env.close()

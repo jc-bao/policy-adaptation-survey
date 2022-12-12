@@ -3,6 +3,7 @@ import torch
 
 class LRQ:
     def __init__(self, A, B, Q, R, gpu_id:int = 0):
+        self.action_max = 1.0
         self.A = torch.tensor(A).to(gpu_id)
         self.B = torch.tensor(B).to(gpu_id)
         self.Q = torch.tensor(Q).to(gpu_id)
@@ -12,4 +13,4 @@ class LRQ:
 
     def __call__(self, state):
         act = -torch.einsum('eas,es->ea', self.K, state)
-        return act
+        return torch.clip(act, -self.action_max, self.action_max)

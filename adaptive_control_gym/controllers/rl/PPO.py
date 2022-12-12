@@ -15,7 +15,7 @@ class PPO:
         self.reward_scale = 1.0
         # update network
         self.gamma = 0.99
-        self.batch_size = 128
+        self.batch_size = 1024
         self.repeat_times = 1
         self.learning_rate = 1e-3
         self.clip_grad_norm = 3.0
@@ -71,11 +71,10 @@ class PPO:
             buffer_num = states.shape[1]
 
             '''get advantages and reward_sums'''
-            bs = 2 ** 10  # set a smaller 'batch_size' to avoiding out of GPU memory.
             values = torch.empty_like(rewards)  # values.shape == (buffer_size, buffer_num)
-            for i in range(0, buffer_size, bs):
+            for i in range(0, buffer_size, self.batch_size):
                 for j in range(buffer_num):
-                    values[i:i + bs, j] = self.cri(states[i:i + bs, j]).squeeze(1)
+                    values[i:i + self.batch_size, j] = self.cri(states[i:i + self.batch_size, j]).squeeze(1)
 
             advantages = self.get_advantages(rewards, undones, values)  # shape == (buffer_size, buffer_num)
             reward_sums = advantages + values  # shape == (buffer_size, buffer_num)
