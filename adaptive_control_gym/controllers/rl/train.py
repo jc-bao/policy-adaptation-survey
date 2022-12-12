@@ -45,3 +45,8 @@ def train():
                     wandb.log({
                         'eval/rewards': rewards.mean().item(), 
                     }, step=total_steps)
+    
+    actor_path = '../../../results/rl/actor.pt'
+    torch.save(agent.act, actor_path)
+    if use_wandb:
+        wandb.save(actor_path, policy="now")
