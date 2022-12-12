@@ -11,7 +11,7 @@ def train():
     use_wandb=True
 
     env_num = 1024
-    total_steps = 1e6
+    total_steps = 1e5
     eval_freq = 10
     gpu_id = 0
     net_dims = [64, 64]
@@ -55,7 +55,7 @@ def train():
     actor_path = '../../../results/rl/actor.pt'
     torch.save(agent.act, actor_path)
     if use_wandb:
-        wandb.save(actor_path, policy="now")
+        wandb.save(actor_path, base_path="../../../results/rl", policy="now")
 
 if __name__=='__main__':
     train()
