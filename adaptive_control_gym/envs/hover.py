@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 import gym
 import numpy as np
 import torch
@@ -12,12 +13,23 @@ from adaptive_control_gym import controllers as ctrl
 class HoverEnv(gym.Env):
     def __init__(self, dim: int = 1, env_num: int = 1, gpu_id: int = 0, seed:int = 0, expert_mode:bool = False, ood_mode:bool = False, mass_uncertainty_rate:float=0.0, disturb_uncertainty_rate:float=0.0, disturb_period: int = 15):
         torch.manual_seed(seed)
+        self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
 
         # parameters
         self.mass_mean, self.mass_std = 0.1, 0.1 * mass_uncertainty_rate
-        self.mass_min, self.mass_max = 0.01, 1.0
+        self.mass_min, self.mass_max = 0.04, 3.0
+        self.delay_mean, self.delay_std = 0.0, 0.0
+        self.delay_min, self.delay_max = 0, 10
+        self.decay_mean, self.decay_std = 0.0, 0.0
+        self.decay_min, self.decay_max = 0.0, 0.5
         self.disturb_mean, self.disturb_std = 0.0, 1.0 * disturb_uncertainty_rate
         self.disturb_period = disturb_period
+
+        self.res_dyn_scale = 0.0 # 0.2
+        self.res_dyn_mlp = ResDynMLP(input_dim=dim*2, output_dim=dim).to(self.device)
+        self.res_dyn_param_mean, self.res_dyn_param_std = 0.0, 0.0
+        self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
+
         self.init_x_mean, self.init_x_std = 0.0, 1.0
         self.init_v_mean, self.init_v_std = 0.0, 1.0
         self.tau = 1.0/30.0  # seconds between state updates
@@ -25,7 +37,6 @@ class HoverEnv(gym.Env):
         self.max_force = 1.0
 
         # state
-        self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         self.dim = dim
         self.env_num = env_num
         self.ood_mode = ood_mode
@@ -36,8 +47,8 @@ class HoverEnv(gym.Env):
             self.state_dim = 2*dim
         self.action_dim = dim
         self.max_steps = 60
-        self.x, self.v, self.mass = self._get_initial_state()
-        self.step_cnt = 0
+
+        self.reset()
 
         # dynamic
         A = np.array([[0, 1], [0, 0]])
@@ -66,16 +77,39 @@ class HoverEnv(gym.Env):
         if self.ood_mode:
             x = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.init_x_std + self.init_x_mean
             v = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.init_v_std + self.init_v_mean
-            mass = torch.abs(torch.randn((size, 1), device=self.device)) * self.mass_std + self.mass_mean
+            mass = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.mass_std + self.mass_mean
+            delay = torch.abs(torch.randn((size, 1), device=self.device)) * self.delay_std + self.delay_mean
+            decay = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.decay_std + self.decay_mean
+            res_dyn_param = torch.abs(torch.randn(((size, self.dim), self.res_dyn_mlp.param_dim), device=self.device)) * self.res_dyn_param_std + self.res_dyn_param_mean
         else:
             x = torch.randn((size, self.dim), device=self.device) * self.init_x_std + self.init_x_mean
             v = torch.randn((size, self.dim), device=self.device) * self.init_v_std + self.init_v_mean
-            mass = torch.randn((size, 1), device=self.device) * self.mass_std + self.mass_mean
+            mass = torch.randn((size, self.dim), device=self.device) * self.mass_std + self.mass_mean
+            delay = torch.randn((size, 1), device=self.device) * self.delay_std + self.delay_mean
+            decay = torch.randn((size, self.dim), device=self.device) * self.decay_std + self.decay_mean
+            res_dyn_param = torch.randn(((size, self.dim), self.res_dyn_mlp.param_dim), device=self.device) * self.res_dyn_param_std + self.res_dyn_param_mean
         mass = torch.clip(mass, self.mass_min, self.mass_max)
-        return x, v, mass
+        delay = torch.clip(delay, self.delay_min, self.delay_max).astype(torch.int)
+        decay = torch.clip(decay, self.decay_min, self.decay_max)
+        res_dyn_param = torch.clip(res_dyn_param, self.res_dyn_param_min, self.res_dyn_param_max)
+        return x, v, mass, delay, decay, res_dyn_param
     
     def step(self, action):
-        self.force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) + self.disturb
+        current_force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
+        if (self.delay == 0).all():
+            self.force = current_force
+        else:
+            self.force_history.append(current_force)
+            self.force_history.pop(0)
+            self.force = torch.zeros((self.env_num, self.dim))
+            for i in range(self.delay_max):
+                env_mask = (self.delay == i)
+                self.force[env_mask] = self.force_history[-i-1][env_mask]
+        
+        self.force += self.disturb
+        self.force -= (self.decay * self.v)
+        self.force += (self.res_dyn_mlp(torch.cat([self.v, self.res_dyn_param], dim=-1)) * self.res_dyn_scale)
+        
         self.x += self.v * self.tau
         self.v += self.force / self.mass * self.tau
         self.step_cnt += 1
@@ -96,7 +130,8 @@ class HoverEnv(gym.Env):
     def reset(self):
         self.step_cnt = 0
         self._set_disturb()
-        self.x, self.v, self.mass = self._get_initial_state()
+        self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param = self._get_initial_state()
+        self.force_history = [torch.zeros((self.env_num, self.dim), device=self.device)] * self.delay_max
         return self._get_obs()
 
     def _get_obs(self):
@@ -107,6 +142,24 @@ class HoverEnv(gym.Env):
 
     def _set_disturb(self):
         self.disturb = torch.randn((self.env_num,self.dim), device=self.device) * self.disturb_std + self.disturb_mean
+
+class ResDynMLP(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, 16),
+            nn.ReLU(inplace=True),
+            nn.Linear(16, 16),
+            nn.ReLU(inplace=True),
+            nn.Linear(16, output_dim),
+            nn.Tanh(inplace=True)
+        )
+        # freeze the network
+        for p in self.mlp.parameters():
+            p.requires_grad = False
+
+    def forward(self, x):
+        return self.mlp(x)*3 # empirical value for output range
 
 def test_cartpole(policy_name = "ppo"):
     env_num = 1
