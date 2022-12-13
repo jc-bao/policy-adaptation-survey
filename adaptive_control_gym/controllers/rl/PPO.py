@@ -7,8 +7,7 @@ from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
 
 class PPO:
     def __init__(self, 
-        net_dims: List[int], state_dim: int, action_dim: int, 
-        adapt_dim: int, adapt_mode: str,
+        state_dim: int, action_dim: int, 
         env_num: int, gpu_id: int = 0):
         # env
         self.env_num = env_num
@@ -17,15 +16,16 @@ class PPO:
         self.last_state = None  # last state of the trajectory for training
         self.reward_scale = 1.0
         # update network
-        self.gamma = 0.99
+        self.gamma = 0.95
         self.batch_size = 1024
-        self.repeat_times = 1
-        self.learning_rate = 1e-3
+        self.repeat_times = 4
+        self.learning_rate = 1e-4
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         # network
-        self.act = ActorPPO(net_dims, state_dim, action_dim).to(self.device)
-        self.cri = CriticPPO(net_dims, state_dim, action_dim).to(self.device)
+        self.net_dims = [128, 64]
+        self.act = ActorPPO(self.net_dims, state_dim, action_dim).to(self.device)
+        self.cri = CriticPPO(self.net_dims, state_dim, action_dim).to(self.device)
         # self.adaptor = Adaptor(adapt_dim, adapt_mode).to(self.device)
         self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
@@ -33,7 +33,7 @@ class PPO:
         # ppo
         self.ratio_clip = 0.25  # `ratio.clamp(1 - clip, 1 + clip)`
         self.lambda_gae_adv = 0.95  # could be 0.50~0.99 # GAE for sparse reward
-        self.lambda_entropy = 0.01  # could be 0.00~0.20
+        self.lambda_entropy = 0.005  # could be 0.00~0.20
         self.lambda_entropy = torch.tensor(self.lambda_entropy, dtype=torch.float32, device=self.device)
         # buffer
         self.buffer = ReplayBufferList()

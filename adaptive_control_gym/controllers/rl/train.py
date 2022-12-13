@@ -27,13 +27,12 @@ def train(args:Args)->None:
     total_steps = 5e6
     eval_freq = 4
     gpu_id = 0
-    net_dims = [128, 128]
     
     env = HoverEnv(
         env_num=env_num, gpu_id=gpu_id, dim=args.dim, seed = args.seed, 
         expert_mode=args.expert_mode, ood_mode=args.ood_mode, 
         mass_uncertainty_rate=args.mass_uncertainty_rate, disturb_uncertainty_rate=args.disturb_uncertainty_rate, disturb_period=args.disturb_period)
-    agent = PPO(net_dims, env.state_dim, env.action_dim, env_num, gpu_id)
+    agent = PPO(state_dim=env.state_dim, action_dim=env.action_dim, env_num=env_num, gpu_id=gpu_id)
     agent.last_state = env.reset()
 
     if args.use_wandb:
