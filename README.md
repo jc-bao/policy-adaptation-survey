@@ -13,7 +13,7 @@
    - [x] GPU-based environment
    - [x] Model uncertainty + Disturbulence
    - [x] RL example
-   - [ ] RMA example
+   - [x] RMA example
 
 ## Policy
 

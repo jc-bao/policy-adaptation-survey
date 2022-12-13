@@ -6,7 +6,10 @@ from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO
 from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
 
 class PPO:
-    def __init__(self, net_dims: List[int], state_dim: int, action_dim: int, env_num: int, gpu_id: int = 0):
+    def __init__(self, 
+        net_dims: List[int], state_dim: int, action_dim: int, 
+        adapt_dim: int, adapt_mode: str,
+        env_num: int, gpu_id: int = 0):
         # env
         self.env_num = env_num
         self.action_dim = action_dim
@@ -23,6 +26,7 @@ class PPO:
         # network
         self.act = ActorPPO(net_dims, state_dim, action_dim).to(self.device)
         self.cri = CriticPPO(net_dims, state_dim, action_dim).to(self.device)
+        # self.adaptor = Adaptor(adapt_dim, adapt_mode).to(self.device)
         self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
         self.criterion = torch.nn.SmoothL1Loss(reduction="mean")

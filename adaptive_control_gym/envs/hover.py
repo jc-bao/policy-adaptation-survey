@@ -31,7 +31,7 @@ class HoverEnv(gym.Env):
         self.ood_mode = ood_mode
         self.expert_mode = expert_mode
         if expert_mode:
-            self.state_dim = 2*dim+2
+            self.state_dim = 2*dim+1+dim
         else:
             self.state_dim = 2*dim
         self.action_dim = dim

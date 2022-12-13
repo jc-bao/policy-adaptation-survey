@@ -9,7 +9,7 @@ do
     do
         for pp in ${disturb_periods[@]}
         do
-            python train.py --use_wandb --program $program --export_mode --ood_mode --mass_uncertainty_rate $mm --disturb_uncertainty_rate $dd --disturb_period $pp
+            python train.py --use_wandb --program $program --expert_mode --ood_mode --mass_uncertainty_rate $mm --disturb_uncertainty_rate $dd --disturb_period $pp
             python train.py --use_wandb --program $program --ood_mode --mass_uncertainty_rate $mm --disturb_uncertainty_rate $dd --disturb_period $pp
         done
     done

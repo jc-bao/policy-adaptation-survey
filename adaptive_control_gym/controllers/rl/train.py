@@ -16,7 +16,7 @@ class Args:
     program:str='tmp'
     seed:int=0
     dim:int=1
-    export_mode:bool=False
+    expert_mode:bool=False
     ood_mode:bool=False
     mass_uncertainty_rate:float=0.0
     disturb_uncertainty_rate:float=0.0
@@ -24,20 +24,20 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 2e6
+    total_steps = 5e6
     eval_freq = 4
     gpu_id = 0
     net_dims = [128, 128]
     
     env = HoverEnv(
         env_num=env_num, gpu_id=gpu_id, dim=args.dim, seed = args.seed, 
-        expert_mode=args.export_mode, ood_mode=args.ood_mode, 
+        expert_mode=args.expert_mode, ood_mode=args.ood_mode, 
         mass_uncertainty_rate=args.mass_uncertainty_rate, disturb_uncertainty_rate=args.disturb_uncertainty_rate, disturb_period=args.disturb_period)
     agent = PPO(net_dims, env.state_dim, env.action_dim, env_num, gpu_id)
     agent.last_state = env.reset()
 
     if args.use_wandb:
-        wandb.init(project=args.program, name=f'P{args.disturb_period}_M{args.mass_uncertainty_rate:.1f}_D{args.disturb_uncertainty_rate:.1f}_OOD{args.ood_mode}_EXP{args.export_mode}', config=args)
+        wandb.init(project=args.program, name=f'P{args.disturb_period}_M{args.mass_uncertainty_rate:.1f}_D{args.disturb_uncertainty_rate:.1f}_OOD{args.ood_mode}_EXP{args.expert_mode}', config=args)
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
     with trange(n_ep) as t:
