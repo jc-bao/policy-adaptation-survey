@@ -12,7 +12,7 @@
    - [x] Basic environment and render
    - [x] GPU-based environment
    - [x] Model uncertainty + Disturbulence
-   - [ ] RL example
+   - [x] RL example
    - [ ] RMA example
 
 ## Policy
@@ -23,4 +23,4 @@
   - [ ] MPC
 * RL
   - [ ] SAC
-  - [ ] PPO 
+  - [x] PPO 

@@ -13,6 +13,7 @@ from adaptive_control_gym.controllers import PPO
 @dataclass
 class Args:
     use_wandb:bool=False
+    program:str='tmp'
     seed:int=0
     export_mode:bool=False
     ood_mode:bool=False
@@ -35,7 +36,7 @@ def train(args:Args)->None:
     agent.last_state = env.reset()
 
     if args.use_wandb:
-        wandb.init(project="test-project", entity="adaptive-control") 
+        wandb.init(project=args.program, name=f'P{args.disturb_period}_M{args.mass_uncertainty_rate:.1f}_D{args.disturb_uncertainty_rate:.1f}_OOD{args.ood_mode}_EXP{args.export_mode}', config=args)
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
     with trange(n_ep) as t:

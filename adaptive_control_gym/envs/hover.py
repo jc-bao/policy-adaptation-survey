@@ -5,7 +5,6 @@ import torch
 import control as ct
 from icecream import ic
 from matplotlib import pyplot as plt
-from typ
 
 from adaptive_control_gym import controllers as ctrl
 
