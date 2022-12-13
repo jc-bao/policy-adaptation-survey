@@ -10,7 +10,7 @@ from adaptive_control_gym import controllers as ctrl
 
 
 class HoverEnv(gym.Env):
-    def __init__(self, env_num: int = 1, gpu_id: int = 0, seed:int = 0, expert_mode:bool = False, ood_mode:bool = False, mass_uncertainty_rate:float=0.0, disturb_uncertainty_rate:float=0.0, disturb_period: int = 15):
+    def __init__(self, dim: int = 1, env_num: int = 1, gpu_id: int = 0, seed:int = 0, expert_mode:bool = False, ood_mode:bool = False, mass_uncertainty_rate:float=0.0, disturb_uncertainty_rate:float=0.0, disturb_period: int = 15):
         torch.manual_seed(seed)
 
         # parameters
@@ -26,14 +26,15 @@ class HoverEnv(gym.Env):
 
         # state
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+        self.dim = dim
         self.env_num = env_num
         self.ood_mode = ood_mode
         self.expert_mode = expert_mode
         if expert_mode:
-            self.state_dim = 4
+            self.state_dim = 2*dim+2
         else:
-            self.state_dim = 2
-        self.action_dim = 1
+            self.state_dim = 2*dim
+        self.action_dim = dim
         self.max_steps = 60
         self.x, self.v, self.mass = self._get_initial_state()
         self.step_cnt = 0
@@ -43,11 +44,11 @@ class HoverEnv(gym.Env):
         self.A = np.stack([A] * self.env_num, axis=0)
         B = (1 / self.mass).detach().cpu().numpy()
         self.B = np.expand_dims(np.stack([np.zeros_like(B), B], axis=1), axis=2)
-        self.dynamic_info = self._get_dynamic_info()
-        ic(self.dynamic_info)
+        # self.dynamic_info = self._get_dynamic_info()
+        # ic(self.dynamic_info)
 
         self.action_space = gym.spaces.Box(
-            low=-self.max_force, high=self.max_force, shape=(1,), dtype=float)
+            low=-self.max_force, high=self.max_force, shape=(self.dim,), dtype=float)
 
     def _get_dynamic_info(self):
         eig_A = np.linalg.eig(self.A[0])
@@ -63,25 +64,24 @@ class HoverEnv(gym.Env):
         if size is None:
             size = self.env_num
         if self.ood_mode:
-            x = torch.abs(torch.randn(size, device=self.device)) * self.init_x_std + self.init_x_mean
-            v = torch.abs(torch.randn(size, device=self.device)) * self.init_v_std + self.init_v_mean
-            mass = torch.abs(torch.randn(size, device=self.device)) * self.mass_std + self.mass_mean
+            x = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.init_x_std + self.init_x_mean
+            v = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.init_v_std + self.init_v_mean
+            mass = torch.abs(torch.randn((size, 1), device=self.device)) * self.mass_std + self.mass_mean
         else:
-            x = torch.randn(size, device=self.device) * self.init_x_std + self.init_x_mean
-            v = torch.randn(size, device=self.device) * self.init_v_std + self.init_v_mean
-            mass = torch.randn(size, device=self.device) * self.mass_std + self.mass_mean
+            x = torch.randn((size, self.dim), device=self.device) * self.init_x_std + self.init_x_mean
+            v = torch.randn((size, self.dim), device=self.device) * self.init_v_std + self.init_v_mean
+            mass = torch.randn((size, 1), device=self.device) * self.mass_std + self.mass_mean
         mass = torch.clip(mass, self.mass_min, self.mass_max)
         return x, v, mass
     
     def step(self, action):
-        force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) + self.disturb
-        self.force = force.squeeze(1)
+        self.force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) + self.disturb
         self.x += self.v * self.tau
         self.v += self.force / self.mass * self.tau
         self.step_cnt += 1
         single_done = self.step_cnt >= self.max_steps
         done = torch.ones(self.env_num, device=self.device)*single_done
-        reward = 1.0 - torch.abs(self.x) - torch.abs(self.v)*0.1
+        reward = 1.0 - torch.norm(self.x,dim=1) - torch.norm(self.v,dim=1)*0.1
         # update disturb
         if self.step_cnt % self.disturb_period == 0:
             self._set_disturb()
@@ -101,12 +101,12 @@ class HoverEnv(gym.Env):
 
     def _get_obs(self):
         if self.expert_mode:
-            return torch.stack([self.x,self.v,self.disturb[:,0], self.mass], dim=-1)
+            return torch.concat([self.x,self.v,self.disturb, self.mass], dim=-1)
         else:
-            return torch.stack([self.x,self.v], dim=-1)
+            return torch.concat([self.x,self.v], dim=-1)
 
     def _set_disturb(self):
-        self.disturb = torch.randn((self.env_num,1), device=self.device) * self.disturb_std + self.disturb_mean
+        self.disturb = torch.randn((self.env_num,self.dim), device=self.device) * self.disturb_std + self.disturb_mean
 
 def test_cartpole(policy_name = "ppo"):
     env_num = 1

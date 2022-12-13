@@ -15,6 +15,7 @@ class Args:
     use_wandb:bool=False
     program:str='tmp'
     seed:int=0
+    dim:int=1
     export_mode:bool=False
     ood_mode:bool=False
     mass_uncertainty_rate:float=0.0
@@ -29,7 +30,7 @@ def train(args:Args)->None:
     net_dims = [128, 128]
     
     env = HoverEnv(
-        env_num=env_num, gpu_id=gpu_id, seed = args.seed, 
+        env_num=env_num, gpu_id=gpu_id, dim=args.dim, seed = args.seed, 
         expert_mode=args.export_mode, ood_mode=args.ood_mode, 
         mass_uncertainty_rate=args.mass_uncertainty_rate, disturb_uncertainty_rate=args.disturb_uncertainty_rate, disturb_period=args.disturb_period)
     agent = PPO(net_dims, env.state_dim, env.action_dim, env_num, gpu_id)

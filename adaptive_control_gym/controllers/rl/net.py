@@ -31,7 +31,7 @@ class ProprioAdaptTConv(nn.Module):
         x = self.low_dim_proj(x.flatten(1))
         return x
 
-class ProprioAdapt(nn.Module):
+class ProprioAdaptMLP(nn.Module):
     def __init__(self, state_dim, horizon, output_dim):
         super().__init__()
         self.mlp = nn.Sequential(
