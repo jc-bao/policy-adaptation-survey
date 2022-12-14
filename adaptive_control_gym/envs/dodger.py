@@ -49,8 +49,8 @@ class DodgerEnv(gym.Env):
 
         self.init_x_mean, self.init_x_std = -1.0, 0.3 # self.traj_A, 0.0
         self.init_v_mean, self.init_v_std = 0.0, 1.0 # 0.0, 0.0
-        self.obstacle_r = 0.6
-        self.obstacle_pos = torch.tensor([0.0, 0.0], device=self.device)
+        self.obstacle_radius = 0.6
+        self.obstacle_pos = torch.zeros(dim, device=self.device)
 
         # state
         self.dim = dim
@@ -206,53 +206,66 @@ def test_hover(env, policy, save_path = None):
     for t in range(time_limit):
         act = policy(state)
         state, rew, done, info = env.step(act)  # take a random action
-        x_list.append(state[0,0].item())
-        v_list.append(state[0,1].item()*0.3)
-        a_list.append(act[0,0].item())
+        x_list.append(state[0,:env.dim].numpy())
+        v_list.append(state[0,env.dim:env.dim*2].numpy()*0.3)
+        traj_x_list.append(env.goal[0].numpy())
+        traj_v_list.append(env.obstacle_pos.numpy()*0.3)
+        a_list.append(act[0].numpy())
         r_list.append(rew[0].item())
-        force_list.append(env.force[0].item())
-        disturb_list.append(env.disturb[0].item())
-        decay_list.append(env.decay_force[0].item())
-        res_dyn_list.append(env.res_dyn_force[0].item())
-        mass_list.append(env.mass[0,0].item()*10)
+        force_list.append(env.force[0].numpy())
+        disturb_list.append(env.disturb[0].numpy())
+        decay_list.append(env.decay_force[0].numpy())
+        res_dyn_list.append(env.res_dyn_force[0].numpy())
+        mass_list.append(env.mass[0,:].numpy()*10)
         delay_list.append(env.delay[0,0].item()*0.2)
-        traj_x_list.append(env.traj_x[0,t%env.max_steps].item())
-        traj_v_list.append(env.traj_v[0,t%env.max_steps].item()*0.3)
-        res_dyn_param_list.append(env.res_dyn_param[0,0].item())
+        res_dyn_param_list.append(env.res_dyn_param[0,:].numpy())
         if done:
             done_list.append(t)
     # set matplotlib style
     plt.style.use('seaborn')
     # plot x_list, v_list, action_list in three subplots
-    fig, axs = plt.subplots(3, 1, figsize=(10, 10))
-    axs[0].plot(x_list, label="x")
-    axs[0].plot(v_list, label="v*0.3", alpha=0.3)
-    axs[0].plot(traj_x_list, label="traj_x")
-    axs[0].plot(traj_v_list, label="traj_v*0.3", alpha=0.3)
-    axs[1].plot(res_dyn_list, label="res_dyn")
-    axs[1].plot(a_list, label="action", linestyle='--', alpha=0.5)
-    axs[1].plot(force_list, label="force", alpha=0.5)
-    axs[1].plot(disturb_list, label="disturb", alpha=0.2)
-    axs[1].plot(decay_list, label="decay", alpha=0.3)
-    axs[2].plot(mass_list, label="mass*10", alpha=0.5)
-    axs[2].plot(delay_list, label="delay*0.2", alpha=0.5)
-    axs[2].plot(res_dyn_param_list, label="res_dyn_param", alpha=0.5)
-    axs[2].plot(r_list, 'y', label="reward")
+    plot_num = 2*env.dim+1
+    fig, axs = plt.subplots(plot_num, 1, figsize=(10, 3*plot_num))
+    x_numpy, v_array = np.array(x_list), np.array(v_list)
+    traj_x_array, traj_v_array = np.array(traj_x_list), np.array(traj_v_list)
+    for i in range(env.dim):
+        axs[i].set_title(f"kinematics measurement dim={i}")
+        axs[i].plot(x_numpy[:,i], label="x")
+        axs[i].plot(v_array[:,i], label="v*0.3", alpha=0.3)
+        axs[i].plot(traj_x_array[:,i], label="goal")
+        axs[i].plot(traj_v_array[:,i], label="obstacle", alpha=0.3)
+    res_dyn_numpy, a_numpy, force_array = np.array(res_dyn_list), np.array(a_list), np.array(force_list)
+    disturb_array, decay_array = np.array(disturb_list), np.array(decay_list)
+    for i in range(env.dim):
+        axs[env.dim+i].set_title(f"force measurement dim={i}")
+        axs[env.dim+i].plot(res_dyn_numpy[:,i], label="res_dyn")
+        axs[env.dim+i].plot(a_numpy[:,i], label="action", linestyle='--', alpha=0.5)
+        axs[env.dim+i].plot(force_array[:,i], label="force", alpha=0.5)
+        axs[env.dim+i].plot(disturb_array[:,i], label="disturb", alpha=0.2)
+        axs[env.dim+i].plot(decay_array[:,i], label="decay", alpha=0.3)
+    mass_array = np.array(mass_list)
+    res_dyn_param_numpy = np.array(res_dyn_param_list)
+    axs[env.dim*2].set_title(f"system parameters and reward")
+    for i in range(env.dim):
+        axs[env.dim*2].plot(mass_array[:,i], label=f"mass-{i}*10", alpha=0.5)
+        axs[env.dim*2].plot(res_dyn_param_numpy[:,i], label=f"res_dyn_param-{i}", alpha=0.5)
+    axs[env.dim*2].plot(delay_list, label="delay*0.2", alpha=0.5)
+    axs[env.dim*2].plot(r_list, 'y', label="reward")
     # add mean reward to axs 2 as text
-    axs[2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
+    axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # draw vertical lines for done
     for t in done_list:
         axs[0].axvline(t, color="red", linestyle="--", label='reset')
-    for i in range(3):
+    for i in range(plot_num):
         axs[i].legend()
     # save the plot as image
     if save_path == None:
         package_path = os.path.dirname(adaptive_control_gym.__file__)
-        save_path = f"{package_path}/../results/hover.png"
+        save_path = f"{package_path}/../results/dodger.png"
     plt.savefig(save_path)
     env.close()
 
 if __name__ == "__main__":
-    env = HoverEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True)
+    env = DodgerEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True, dim=2)
     policy = get_hover_policy(env, policy_name = "random")
     test_hover(env, policy)
