@@ -1,5 +1,7 @@
+import torch
+
 class Random:
-    def __init__(self, action_space):
-        self.action_space = action_space
+    def __init__(self, action_dim):
+        self.action_dim = action_dim
     def __call__(self, state):
-        return self.action_space.sample()
+        return torch.rand((1, self.action_dim))*2-1
