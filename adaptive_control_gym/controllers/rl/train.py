@@ -7,7 +7,7 @@ import tyro
 
 install()
 
-from adaptive_control_gym.envs import HoverEnv  
+from adaptive_control_gym.envs import HoverEnv, test_hover
 from adaptive_control_gym.controllers import PPO
 
 @dataclass
@@ -24,7 +24,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 5e6
+    total_steps = 1.5e6
     eval_freq = 4
     gpu_id = 0
     
@@ -80,6 +80,8 @@ def train(args:Args)->None:
     
     actor_path = '../../../results/rl/actor_ppo.pt'
     torch.save(agent.act, actor_path)
+    test_hover(HoverEnv(env_num=1, gpu_id =-1, seed=0), agent.act.to('cpu'))
+    # evaluate
     if args.use_wandb:
         wandb.save(actor_path, base_path="../../../results/rl", policy="now")
 
