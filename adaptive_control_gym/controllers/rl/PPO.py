@@ -23,7 +23,7 @@ class PPO:
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         # network
-        self.net_dims = [128, 64]
+        self.net_dims = [512, 256, 128]
         self.act = ActorPPO(self.net_dims, state_dim, action_dim).to(self.device)
         self.cri = CriticPPO(self.net_dims, state_dim, action_dim).to(self.device)
         # self.adaptor = Adaptor(adapt_dim, adapt_mode).to(self.device)

@@ -16,17 +16,17 @@ class HoverEnv(gym.Env):
     def __init__(self, 
         dim: int = 1, env_num: int = 1, gpu_id: int = 0, seed:int = 0, 
         expert_mode:bool = False, ood_mode:bool = False, 
-        mass_uncertainty_rate:float=0.0, 
+        mass_mean:float = 0.05, mass_std:float=0.02, 
         disturb_uncertainty_rate:float=0.0, disturb_period: int = 15,
-        delay_mean:float = 0.0, delay_std:float = 0.0,
-        decay_mean:float = 0.2, decay_std:float = 0.0, 
-        res_dyn_scale: float = 0.6, res_dyn_param_std:float = 1.0,
+        delay_mean:float = 5.0, delay_std:float = 2.0,
+        decay_mean:float = 0.2, decay_std:float = 0.1, 
+        res_dyn_scale: float = 1.0, res_dyn_param_std:float = 1.0,
         ):
         torch.manual_seed(seed)
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
         # parameters
-        self.mass_mean, self.mass_std = 0.1, 0.1 * mass_uncertainty_rate
-        self.mass_min, self.mass_max = 0.04, 3.0
+        self.mass_mean, self.mass_std = mass_mean, mass_std
+        self.mass_min, self.mass_max = 0.01, 1.0
         self.delay_mean, self.delay_std = delay_mean, delay_std
         self.delay_min, self.delay_max = 0, 10
         self.decay_mean, self.decay_std = decay_mean, decay_std
@@ -35,32 +35,35 @@ class HoverEnv(gym.Env):
         self.disturb_period = disturb_period
 
         self.res_dyn_scale = res_dyn_scale
-        self.res_dyn_mlp = ResDynMLP(input_dim=dim*2, output_dim=dim).to(self.device)
+        self.res_dyn_mlp = ResDynMLP(input_dim=dim*3, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0.0, res_dyn_param_std
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
 
-        self.traj_T, self.traj_A = 60, 1
-        # generate a sin trajectory with torch
-        self.traj_t = torch.arange(0, self.traj_T, 1).float().to(self.device)
-        self.traj_x = self.traj_A * torch.sin(2 * np.pi * self.traj_t / self.traj_T)
-
-        self.init_x_mean, self.init_x_std = 0.0, 1.0
-        self.init_v_mean, self.init_v_std = 0.0, 1.0
         self.tau = 1.0/30.0  # seconds between state updates
         self.force_scale = 1.0
         self.max_force = 1.0
+
+        # generate a sin trajectory with torch
+        self.traj_T_cnt, self.traj_A = 60, 1
+        self.traj_T = self.traj_T_cnt * self.tau
+        self.traj_t = torch.arange(0, self.traj_T_cnt*10, 1).float().to(self.device)
+        self.traj_x = self.traj_A * torch.cos(2 * np.pi * self.traj_t / self.traj_T_cnt)
+        self.traj_v = -self.traj_A * 2 * np.pi * torch.sin(2 * np.pi * self.traj_t / self.traj_T_cnt) / self.traj_T
+        self.obs_traj_len = 10
+
+        self.init_x_mean, self.init_x_std = 0.0, 1.0 # self.traj_A, 0.0
+        self.init_v_mean, self.init_v_std = 0.0, 1.0 # 0.0, 0.0
 
         # state
         self.dim = dim
         self.env_num = env_num
         self.ood_mode = ood_mode
         self.expert_mode = expert_mode
+        self.state_dim = 4*dim+2*dim*self.obs_traj_len
         if expert_mode:
-            self.state_dim = 2*dim+1+dim
-        else:
-            self.state_dim = 2*dim
+            self.state_dim += (1+dim*3)
         self.action_dim = dim
-        self.max_steps = 60
+        self.max_steps = 60*2
 
         self.reset()
 
@@ -123,7 +126,7 @@ class HoverEnv(gym.Env):
         self.force += self.disturb
         self.decay_force = self.decay * self.v
         self.force -= self.decay_force
-        self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.v, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
+        self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.v, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
         self.force += self.res_dyn_force
         
         self.x += self.v * self.tau
@@ -131,7 +134,7 @@ class HoverEnv(gym.Env):
         self.step_cnt += 1
         single_done = self.step_cnt >= self.max_steps
         done = torch.ones(self.env_num, device=self.device)*single_done
-        reward = 1.0 - torch.norm(self.x-self.traj_x[self.step_cnt],dim=1) - torch.norm(self.v,dim=1)*0.0
+        reward = 1.0 - torch.norm(self.x-self.traj_x[self.step_cnt-1],dim=1) - torch.norm(self.v-self.traj_v[self.step_cnt-1],dim=1)*0.2
         # update disturb
         if self.step_cnt % self.disturb_period == 0:
             self._set_disturb()
@@ -151,10 +154,13 @@ class HoverEnv(gym.Env):
         return self._get_obs()
 
     def _get_obs(self):
+        future_traj_x = self.traj_x[self.step_cnt:self.step_cnt+self.obs_traj_len]
+        future_traj_v = self.traj_v[self.step_cnt:self.step_cnt+self.obs_traj_len]
+        err_x, err_v = future_traj_x[[0]] - self.x, future_traj_v[[0]] - self.v
+        obs = torch.concat([self.x, self.v, err_x, err_v, torch.tile(future_traj_x, dims=(self.env_num, 1)), torch.tile(future_traj_v, dims=(self.env_num, 1))], dim=-1)
         if self.expert_mode:
-            return torch.concat([self.x,self.v,self.disturb, self.mass], dim=-1)
-        else:
-            return torch.concat([self.x,self.v], dim=-1)
+            obs = torch.concat([obs, self.mass, self.delay, self.decay, self.res_dyn_param], dim=-1)
+        return obs
 
     def _set_disturb(self):
         self.disturb = torch.randn((self.env_num,self.dim), device=self.device) * self.disturb_std + self.disturb_mean
@@ -192,11 +198,12 @@ def get_hover_policy(env, policy_name = "ppo"):
     return policy
 
 
-def test_hover(env, policy):
+def test_hover(env, policy, save_path = None):
     state = env.reset()
-    x_list, v_list, a_list, force_list, disturb_list, decay_list, res_dyn_list, r_list, done_list = [], [], [], [], [], [], [], [], []
+    x_list, v_list, a_list, force_list, disturb_list, decay_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], []
 
-    for t in range(180):
+    time_limit = 120*5
+    for t in range(time_limit):
         act = policy(state)
         state, rew, done, info = env.step(act)  # take a random action
         x_list.append(state[0,0].item())
@@ -207,6 +214,9 @@ def test_hover(env, policy):
         disturb_list.append(env.disturb[0].item())
         decay_list.append(env.decay_force[0].item())
         res_dyn_list.append(env.res_dyn_force[0].item())
+        mass_list.append(env.mass[0,0].item()*10)
+        delay_list.append(env.delay[0,0].item()*0.2)
+        res_dyn_param_list.append(env.res_dyn_param[0,0].item())
         if done:
             done_list.append(t)
     # set matplotlib style
@@ -220,20 +230,27 @@ def test_hover(env, policy):
     axs[1].plot(force_list, label="force", alpha=0.5)
     axs[1].plot(disturb_list, label="disturb", alpha=0.2)
     axs[1].plot(decay_list, label="decay", alpha=0.3)
+    axs[2].plot(mass_list, label="mass*10", alpha=0.5)
+    axs[2].plot(delay_list, label="delay*0.2", alpha=0.5)
+    axs[2].plot(res_dyn_param_list, label="res_dyn_param", alpha=0.5)
     axs[2].plot(r_list, 'y', label="reward")
+    # add mean reward to axs 2 as text
+    axs[2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # draw vertical lines for done
     for t in done_list:
         axs[0].axvline(t, color="red", linestyle="--", label='reset')
-    # plot horizontal line for x=0
-    axs[0].plot(env.traj_x.numpy(), color="black", linestyle="--", label='ref traj')
+    # tile the reference trajectory for three times
+    axs[0].plot(env.traj_x[:time_limit], color="black", linestyle="--", label='ref traj')
     for i in range(3):
         axs[i].legend()
     # save the plot as image
-    package_path = os.path.dirname(adaptive_control_gym.__file__)
-    plt.savefig(f"{package_path}/../results/hover.png")
+    if save_path == None:
+        package_path = os.path.dirname(adaptive_control_gym.__file__)
+        save_path = f"{package_path}/../results/hover.png"
+    plt.savefig(save_path)
     env.close()
 
 if __name__ == "__main__":
-    env = HoverEnv(env_num=1, gpu_id = -1, seed=0)
+    env = HoverEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True)
     policy = get_hover_policy(env, policy_name = "ppo")
     test_hover(env, policy)
