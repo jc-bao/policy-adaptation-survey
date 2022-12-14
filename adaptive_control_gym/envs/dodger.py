@@ -132,7 +132,7 @@ class DodgerEnv(gym.Env):
         self.v += self.force / self.mass * self.tau
         reward = 1.0 - torch.norm(self.x-self.goal,dim=1) - torch.norm(self.v,dim=1)*0.1
         dist2obstacle = torch.norm(self.x-self.obstacle_pos,dim=1) - self.obstacle_radius
-        reward[dist2obstacle < 0] += dist2obstacle[dist2obstacle < 0]
+        reward[dist2obstacle < 0] += (dist2obstacle[dist2obstacle < 0]-1.0)
 
         self.step_cnt += 1
 
@@ -184,7 +184,7 @@ class ResDynMLP(nn.Module):
     def forward(self, x):
         return self.mlp(x)*3 # empirical value for output range
 
-def get_hover_policy(env, policy_name = "ppo"):
+def get_dodger_policy(env, policy_name = "ppo"):
     if policy_name == "lqr":
         Q = np.array([[50, 0],[0, 1]])
         R = 1
@@ -198,7 +198,7 @@ def get_hover_policy(env, policy_name = "ppo"):
     return policy
 
 
-def test_hover(env, policy, save_path = None):
+def test_dodger(env, policy, save_path = None):
     state = env.reset()
     x_list, v_list, a_list, force_list, disturb_list, decay_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], []
 
@@ -267,5 +267,5 @@ def test_hover(env, policy, save_path = None):
 
 if __name__ == "__main__":
     env = DodgerEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True, dim=2)
-    policy = get_hover_policy(env, policy_name = "random")
-    test_hover(env, policy)
+    policy = get_dodger_policy(env, policy_name = "random")
+    test_dodger(env, policy)

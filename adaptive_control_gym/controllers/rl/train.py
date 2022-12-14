@@ -78,7 +78,7 @@ def train(args:Args)->None:
     actor_path = f'../../../results/rl/actor_ppo_{exp_name}.pt'
     plt_path = f'../../../results/rl/eval_ppo_{exp_name}.png'
     torch.save(agent.act, actor_path)
-    test_hover(HoverEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode), agent.act.to('cpu'), save_path=plt_path)
+    test_hover(HoverEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode, dim = args.dim), agent.act.to('cpu'), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(actor_path, base_path="../../../results/rl", policy="now")
