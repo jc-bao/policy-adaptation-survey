@@ -39,6 +39,11 @@ class HoverEnv(gym.Env):
         self.res_dyn_param_mean, self.res_dyn_param_std = 0.0, res_dyn_param_std
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
 
+        self.traj_T, self.traj_A = 60, 1
+        # generate a sin trajectory with torch
+        self.traj_t = torch.arange(0, self.traj_T, 1).float().to(self.device)
+        self.traj_x = self.traj_A * torch.sin(2 * np.pi * self.traj_t / self.traj_T)
+
         self.init_x_mean, self.init_x_std = 0.0, 1.0
         self.init_v_mean, self.init_v_std = 0.0, 1.0
         self.tau = 1.0/30.0  # seconds between state updates
@@ -126,7 +131,7 @@ class HoverEnv(gym.Env):
         self.step_cnt += 1
         single_done = self.step_cnt >= self.max_steps
         done = torch.ones(self.env_num, device=self.device)*single_done
-        reward = 1.0 - torch.norm(self.x,dim=1) - torch.norm(self.v,dim=1)*0.1
+        reward = 1.0 - torch.norm(self.x-self.traj_x[self.step_cnt],dim=1) - torch.norm(self.v,dim=1)*0.0
         # update disturb
         if self.step_cnt % self.disturb_period == 0:
             self._set_disturb()
@@ -220,7 +225,7 @@ def test_hover(env, policy):
     for t in done_list:
         axs[0].axvline(t, color="red", linestyle="--", label='reset')
     # plot horizontal line for x=0
-    axs[0].axhline(0, color="black", linestyle="--", label='hover point')
+    axs[0].plot(env.traj_x.numpy(), color="black", linestyle="--", label='ref traj')
     for i in range(3):
         axs[i].legend()
     # save the plot as image
