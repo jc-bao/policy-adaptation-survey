@@ -21,8 +21,8 @@ class Args:
     ood_mode:bool=False
 
 def train(args:Args)->None:
-    env_num = 4096
-    total_steps = 5e7
+    env_num = 1024
+    total_steps = 3e6
     eval_freq = 4
     
     env = HoverEnv(

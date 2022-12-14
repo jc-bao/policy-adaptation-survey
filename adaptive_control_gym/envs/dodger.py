@@ -12,7 +12,7 @@ import adaptive_control_gym
 from adaptive_control_gym import controllers as ctrl
 
 
-class HoverEnv(gym.Env):
+class DodgerEnv(gym.Env):
     def __init__(self, 
         dim: int = 1, env_num: int = 1, gpu_id: int = 0, seed:int = 0, 
         expert_mode:bool = False, ood_mode:bool = False, 
@@ -44,18 +44,20 @@ class HoverEnv(gym.Env):
         self.max_force = 1.0
 
         # generate a sin trajectory with torch
-        self.max_steps = 120
+        self.max_steps = 60
         self.obs_traj_len = 1
 
-        self.init_x_mean, self.init_x_std = 0.0, 1.0 # self.traj_A, 0.0
+        self.init_x_mean, self.init_x_std = -1.0, 0.3 # self.traj_A, 0.0
         self.init_v_mean, self.init_v_std = 0.0, 1.0 # 0.0, 0.0
+        self.obstacle_r = 0.6
+        self.obstacle_pos = torch.tensor([0.0, 0.0], device=self.device)
 
         # state
         self.dim = dim
         self.env_num = env_num
         self.ood_mode = ood_mode
         self.expert_mode = expert_mode
-        self.state_dim = 4*dim+2*dim*self.obs_traj_len
+        self.state_dim = 3*dim
         if expert_mode:
             self.state_dim += (1+dim*3)
         self.action_dim = dim
@@ -73,20 +75,6 @@ class HoverEnv(gym.Env):
         self.action_space = gym.spaces.Box(
             low=-self.max_force, high=self.max_force, shape=(self.dim,), dtype=float)
 
-    def _generate_traj(self):
-        base_w = 2 * np.pi / self.max_steps
-        t = torch.arange(0, self.max_steps+self.obs_traj_len, 1, device=self.device)
-        t = torch.tile(t, (self.env_num, self.dim, 1))
-        x = torch.zeros((self.env_num, self.dim, self.max_steps+self.obs_traj_len), device=self.device)
-        v = torch.zeros((self.env_num, self.dim, self.max_steps+self.obs_traj_len), device=self.device)
-        for i in np.arange(0,2,1):
-            A = torch.rand((self.env_num,self.dim, 1), device=self.device)*(2.0**(-i))
-            w = base_w*(2**i)
-            phase = torch.rand((self.env_num,self.dim, 1), device=self.device)*(2*np.pi)
-            x += A*torch.cos(t*w+phase)
-            v -= w*A*torch.sin(t*w+phase)/self.tau
-        return x, v
-
     def _get_dynamic_info(self):
         eig_A = np.linalg.eig(self.A[0])
         ctrb_AB = ct.ctrb(self.A[0], self.B[0])
@@ -103,6 +91,7 @@ class HoverEnv(gym.Env):
         if self.ood_mode:
             x = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.init_x_std + self.init_x_mean
             v = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.init_v_std + self.init_v_mean
+            goal = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.init_x_std - self.init_x_mean
             mass = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.mass_std + self.mass_mean
             delay = torch.abs(torch.randn((size, 1), device=self.device)) * self.delay_std + self.delay_mean
             decay = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.decay_std + self.decay_mean
@@ -110,6 +99,7 @@ class HoverEnv(gym.Env):
         else:
             x = torch.randn((size, self.dim), device=self.device) * self.init_x_std + self.init_x_mean
             v = torch.randn((size, self.dim), device=self.device) * self.init_v_std + self.init_v_mean
+            goal = torch.randn((size, self.dim), device=self.device) * self.init_x_std - self.init_x_mean
             mass = torch.randn((size, self.dim), device=self.device) * self.mass_std + self.mass_mean
             delay = torch.randn((size, 1), device=self.device) * self.delay_std + self.delay_mean
             decay = torch.randn((size, self.dim), device=self.device) * self.decay_std + self.decay_mean
@@ -118,7 +108,7 @@ class HoverEnv(gym.Env):
         delay = torch.clip(delay, self.delay_min, self.delay_max).type(torch.int)
         decay = torch.clip(decay, self.decay_min, self.decay_max)
         res_dyn_param = torch.clip(res_dyn_param, self.res_dyn_param_min, self.res_dyn_param_max)
-        return x, v, mass, delay, decay, res_dyn_param
+        return x, v, mass, delay, decay, res_dyn_param, goal
     
     def step(self, action):
         current_force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
@@ -140,7 +130,9 @@ class HoverEnv(gym.Env):
         
         self.x += self.v * self.tau
         self.v += self.force / self.mass * self.tau
-        reward = 1.0 - torch.norm(self.x-self.traj_x[...,self.step_cnt],dim=1) - torch.norm(self.v-self.traj_v[...,self.step_cnt],dim=1)*0.2
+        reward = 1.0 - torch.norm(self.x-self.goal,dim=1) - torch.norm(self.v,dim=1)*0.1
+        dist2obstacle = torch.norm(self.x-self.obstacle_pos,dim=1) - self.obstacle_radius
+        reward[dist2obstacle < 0] += dist2obstacle[dist2obstacle < 0]
 
         self.step_cnt += 1
 
@@ -160,16 +152,12 @@ class HoverEnv(gym.Env):
     def reset(self):
         self.step_cnt = 0
         self._set_disturb()
-        self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param = self._get_initial_state()
+        self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param, self.goal = self._get_initial_state()
         self.force_history = [torch.zeros((self.env_num, self.dim), device=self.device)] * self.delay_max
-        self.traj_x, self.traj_v = self._generate_traj()
         return self._get_obs()
 
     def _get_obs(self):
-        future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
-        future_traj_v = self.traj_v[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
-        err_x, err_v = future_traj_x[..., 0] - self.x, future_traj_v[..., 0] - self.v
-        obs = torch.concat([self.x, self.v, err_x, err_v, future_traj_x.view(self.env_num,-1), future_traj_v.view(self.env_num, -1)], dim=-1)
+        obs = torch.concat([self.x, self.v, self.goal], dim=-1)
         if self.expert_mode:
             obs = torch.concat([obs, self.mass, self.delay, self.decay, self.res_dyn_param], dim=-1)
         return obs
@@ -214,61 +202,48 @@ def test_hover(env, policy, save_path = None):
     state = env.reset()
     x_list, v_list, a_list, force_list, disturb_list, decay_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], []
 
-    time_limit = 120*5
+    time_limit = 60*5
     for t in range(time_limit):
         act = policy(state)
         state, rew, done, info = env.step(act)  # take a random action
-        x_list.append(state[0,:env.dim].numpy())
-        v_list.append(state[0,env.dim:env.dim*2].numpy()*0.3)
-        traj_x_list.append(env.traj_x[0,:,t%env.max_steps].numpy())
-        traj_v_list.append(env.traj_v[0,:,t%env.max_steps].numpy()*0.3)
-        a_list.append(act[0].numpy())
+        x_list.append(state[0,0].item())
+        v_list.append(state[0,1].item()*0.3)
+        a_list.append(act[0,0].item())
         r_list.append(rew[0].item())
-        force_list.append(env.force[0].numpy())
-        disturb_list.append(env.disturb[0].numpy())
-        decay_list.append(env.decay_force[0].numpy())
-        res_dyn_list.append(env.res_dyn_force[0].numpy())
-        mass_list.append(env.mass[0,:].numpy()*10)
+        force_list.append(env.force[0].item())
+        disturb_list.append(env.disturb[0].item())
+        decay_list.append(env.decay_force[0].item())
+        res_dyn_list.append(env.res_dyn_force[0].item())
+        mass_list.append(env.mass[0,0].item()*10)
         delay_list.append(env.delay[0,0].item()*0.2)
-        res_dyn_param_list.append(env.res_dyn_param[0,:].numpy())
+        traj_x_list.append(env.traj_x[0,t%env.max_steps].item())
+        traj_v_list.append(env.traj_v[0,t%env.max_steps].item()*0.3)
+        res_dyn_param_list.append(env.res_dyn_param[0,0].item())
         if done:
             done_list.append(t)
     # set matplotlib style
     plt.style.use('seaborn')
     # plot x_list, v_list, action_list in three subplots
-    plot_num = 2*env.dim+1
-    fig, axs = plt.subplots(plot_num, 1, figsize=(10, 3*plot_num))
-    x_numpy, v_array = np.array(x_list), np.array(v_list)
-    traj_x_array, traj_v_array = np.array(traj_x_list), np.array(traj_v_list)
-    for i in range(env.dim):
-        axs[i].set_title(f"kinematics measurement dim={i}")
-        axs[i].plot(x_numpy[:,i], label="x")
-        axs[i].plot(v_array[:,i], label="v*0.3", alpha=0.3)
-        axs[i].plot(traj_x_array[:,i], label="traj_x")
-        axs[i].plot(traj_v_array[:,i], label="traj_v*0.3", alpha=0.3)
-    res_dyn_numpy, a_numpy, force_array = np.array(res_dyn_list), np.array(a_list), np.array(force_list)
-    disturb_array, decay_array = np.array(disturb_list), np.array(decay_list)
-    for i in range(env.dim):
-        axs[env.dim+i].set_title(f"force measurement dim={i}")
-        axs[env.dim+i].plot(res_dyn_numpy[:,i], label="res_dyn")
-        axs[env.dim+i].plot(a_numpy[:,i], label="action", linestyle='--', alpha=0.5)
-        axs[env.dim+i].plot(force_array[:,i], label="force", alpha=0.5)
-        axs[env.dim+i].plot(disturb_array[:,i], label="disturb", alpha=0.2)
-        axs[env.dim+i].plot(decay_array[:,i], label="decay", alpha=0.3)
-    mass_array = np.array(mass_list)
-    res_dyn_param_numpy = np.array(res_dyn_param_list)
-    axs[env.dim*2].set_title(f"system parameters and reward")
-    for i in range(env.dim):
-        axs[env.dim*2].plot(mass_array[:,i], label=f"mass-{i}*10", alpha=0.5)
-        axs[env.dim*2].plot(res_dyn_param_numpy[:,i], label=f"res_dyn_param-{i}", alpha=0.5)
-    axs[env.dim*2].plot(delay_list, label="delay*0.2", alpha=0.5)
-    axs[env.dim*2].plot(r_list, 'y', label="reward")
+    fig, axs = plt.subplots(3, 1, figsize=(10, 10))
+    axs[0].plot(x_list, label="x")
+    axs[0].plot(v_list, label="v*0.3", alpha=0.3)
+    axs[0].plot(traj_x_list, label="traj_x")
+    axs[0].plot(traj_v_list, label="traj_v*0.3", alpha=0.3)
+    axs[1].plot(res_dyn_list, label="res_dyn")
+    axs[1].plot(a_list, label="action", linestyle='--', alpha=0.5)
+    axs[1].plot(force_list, label="force", alpha=0.5)
+    axs[1].plot(disturb_list, label="disturb", alpha=0.2)
+    axs[1].plot(decay_list, label="decay", alpha=0.3)
+    axs[2].plot(mass_list, label="mass*10", alpha=0.5)
+    axs[2].plot(delay_list, label="delay*0.2", alpha=0.5)
+    axs[2].plot(res_dyn_param_list, label="res_dyn_param", alpha=0.5)
+    axs[2].plot(r_list, 'y', label="reward")
     # add mean reward to axs 2 as text
-    axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
+    axs[2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # draw vertical lines for done
     for t in done_list:
         axs[0].axvline(t, color="red", linestyle="--", label='reset')
-    for i in range(plot_num):
+    for i in range(3):
         axs[i].legend()
     # save the plot as image
     if save_path == None:
@@ -278,6 +253,6 @@ def test_hover(env, policy, save_path = None):
     env.close()
 
 if __name__ == "__main__":
-    env = HoverEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True, dim=2)
+    env = HoverEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True)
     policy = get_hover_policy(env, policy_name = "random")
     test_hover(env, policy)
