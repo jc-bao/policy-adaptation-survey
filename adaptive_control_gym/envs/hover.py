@@ -84,7 +84,7 @@ class HoverEnv(gym.Env):
         t = torch.tile(t, (self.env_num, self.dim))
         x = torch.zeros((self.env_num, self.max_steps+self.obs_traj_len), device=self.device)
         v = torch.zeros((self.env_num, self.max_steps+self.obs_traj_len), device=self.device)
-        for i in range(4):
+        for i in range(3):
             A = torch.rand((self.env_num,self.dim), device=self.device)*(2**(-i))
             w = base_w*(2**i)
             phase = torch.rand((self.env_num,self.dim), device=self.device)*(2*np.pi)
@@ -145,10 +145,12 @@ class HoverEnv(gym.Env):
         
         self.x += self.v * self.tau
         self.v += self.force / self.mass * self.tau
+        reward = 1.0 - torch.norm(self.x-self.traj_x[:,[self.step_cnt]],dim=1) - torch.norm(self.v-self.traj_v[:,[self.step_cnt]],dim=1)*0.2
+
         self.step_cnt += 1
+
         single_done = self.step_cnt >= self.max_steps
         done = torch.ones(self.env_num, device=self.device)*single_done
-        reward = 1.0 - torch.norm(self.x-self.traj_x[:,self.step_cnt-1],dim=1) - torch.norm(self.v-self.traj_v[:,self.step_cnt-1],dim=1)*0.2
         # update disturb
         if self.step_cnt % self.disturb_period == 0:
             self._set_disturb()
@@ -171,8 +173,8 @@ class HoverEnv(gym.Env):
     def _get_obs(self):
         future_traj_x = self.traj_x[:, self.step_cnt:self.step_cnt+self.obs_traj_len]
         future_traj_v = self.traj_v[:, self.step_cnt:self.step_cnt+self.obs_traj_len]
-        err_x, err_v = future_traj_x[:,0] - self.x, future_traj_v[:,0] - self.v
-        obs = torch.concat([self.x, self.v, err_x, err_v, torch.tile(future_traj_x, dims=(self.env_num, 1)), torch.tile(future_traj_v, dims=(self.env_num, 1))], dim=-1)
+        err_x, err_v = future_traj_x[:,[0]] - self.x, future_traj_v[:,[0]] - self.v
+        obs = torch.concat([self.x, self.v, err_x, err_v, future_traj_x, future_traj_v], dim=-1)
         if self.expert_mode:
             obs = torch.concat([obs, self.mass, self.delay, self.decay, self.res_dyn_param], dim=-1)
         return obs
@@ -241,8 +243,8 @@ def test_hover(env, policy, save_path = None):
     # plot x_list, v_list, action_list in three subplots
     fig, axs = plt.subplots(3, 1, figsize=(10, 10))
     axs[0].plot(x_list, label="x")
-    axs[0].plot(traj_x_list, label="traj_x")
     axs[0].plot(v_list, label="v*0.3", alpha=0.3)
+    axs[0].plot(traj_x_list, label="traj_x")
     axs[0].plot(traj_v_list, label="traj_v*0.3", alpha=0.3)
     axs[1].plot(res_dyn_list, label="res_dyn")
     axs[1].plot(a_list, label="action", linestyle='--', alpha=0.5)
