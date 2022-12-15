@@ -33,6 +33,7 @@ class HoverEnv(gym.Env):
         self.decay_min, self.decay_max = 0.0, 0.5
         self.disturb_mean, self.disturb_std = 0.0, 1.0 * disturb_uncertainty_rate
         self.disturb_period = disturb_period
+        self.action_noise_std, self.obs_noise_std = 0.2, 0.2
 
         self.res_dyn_scale = res_dyn_scale
         self.res_dyn_mlp = ResDynMLP(input_dim=dim*4, output_dim=dim).to(self.device)
@@ -121,6 +122,8 @@ class HoverEnv(gym.Env):
         return x, v, mass, delay, decay, res_dyn_param
     
     def step(self, action):
+        # add noise to action
+        action += torch.randn_like(action, device=self.device) * self.action_noise_std
         current_force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
         if (self.delay == 0).all():
             self.force = current_force
@@ -155,7 +158,10 @@ class HoverEnv(gym.Env):
             'mass': self.mass, 
             'disturb': self.disturb,
         }
-        return self._get_obs(), reward, done, info
+        next_obs = self._get_obs()
+        # add gaussian noise to next_obs
+        next_obs += next_obs + torch.randn_like(next_obs, device=self.device) * self.obs_noise_std
+        return next_obs, reward, done, info
 
     def reset(self):
         self.step_cnt = 0
@@ -169,7 +175,7 @@ class HoverEnv(gym.Env):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
         future_traj_v = self.traj_v[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
         err_x, err_v = future_traj_x[..., 0] - self.x, future_traj_v[..., 0] - self.v
-        obs = torch.concat([self.x, self.v, err_x, err_v, future_traj_x.view(self.env_num,-1), future_traj_v.view(self.env_num, -1)], dim=-1)
+        obs = torch.concat([self.x, self.v*0.3, err_x, err_v*0.3, future_traj_x.view(self.env_num,-1), future_traj_v.view(self.env_num, -1)], dim=-1)
         if self.expert_mode:
             obs = torch.concat([obs, self.mass, self.delay, self.decay, self.res_dyn_param], dim=-1)
         return obs
@@ -227,9 +233,9 @@ def test_hover(env, policy, save_path = None):
         act = policy(state)
         state, rew, done, info = env.step(act)  # take a random action
         x_list.append(state[0,:env.dim].numpy())
-        v_list.append(state[0,env.dim:env.dim*2].numpy()*0.3)
+        v_list.append(state[0,env.dim:env.dim*2].numpy())
         traj_x_list.append(env.traj_x[0,:,t%env.max_steps].numpy())
-        traj_v_list.append(env.traj_v[0,:,t%env.max_steps].numpy()*0.3)
+        traj_v_list.append(env.traj_v[0,:,t%env.max_steps].numpy())
         a_list.append(act[0].numpy())
         r_list.append(rew[0].item())
         force_list.append(env.force[0].numpy())
