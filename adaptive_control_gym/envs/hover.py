@@ -20,7 +20,7 @@ class HoverEnv(gym.Env):
         disturb_uncertainty_rate:float=0.0, disturb_period: int = 15,
         delay_mean:float = 0.0, delay_std:float = 0.0,
         decay_mean:float = 0.2, decay_std:float = 0.1, 
-        res_dyn_scale: float = 5.0, res_dyn_param_std:float = 1.0,
+        res_dyn_scale: float = 10.0, res_dyn_param_std:float = 1.0,
         ):
         torch.manual_seed(seed)
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
@@ -33,9 +33,9 @@ class HoverEnv(gym.Env):
         self.decay_min, self.decay_max = 0.0, 0.5
         self.disturb_mean, self.disturb_std = 0.0, 1.0 * disturb_uncertainty_rate
         self.disturb_period = disturb_period
-        self.action_noise_std, self.obs_noise_std = 0.00, 0.00
+        self.action_noise_std, self.obs_noise_std = 0.05, 0.05
 
-        self.res_dyn_scale = res_dyn_scale
+        self.res_dyn_scale = res_dyn_scale / (2**dim)
         self.res_dyn_mlp = ResDynMLP(input_dim=dim*4, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0.0, res_dyn_param_std
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
@@ -163,7 +163,7 @@ class HoverEnv(gym.Env):
         }
         next_obs = self._get_obs()
         # add gaussian noise to next_obs
-        next_obs += next_obs + torch.randn_like(next_obs, device=self.device) * self.obs_noise_std
+        next_obs += torch.randn_like(next_obs, device=self.device) * self.obs_noise_std
         return next_obs, reward, done, info
 
     def reset(self):
@@ -272,6 +272,8 @@ def test_hover(env, policy, save_path = None):
         axs[env.dim+i].plot(force_array[:,i], label="force", alpha=0.5)
         axs[env.dim+i].plot(disturb_array[:,i], label="disturb", alpha=0.2)
         axs[env.dim+i].plot(decay_array[:,i], label="decay", alpha=0.3)
+        for t in done_list:
+            axs[env.dim+i].axvline(t, color="red", linestyle="--", label='reset')
     mass_array = np.array(mass_list)
     res_dyn_param_numpy = np.array(res_dyn_param_list)
     axs[env.dim*2].set_title(f"system parameters and reward")
@@ -283,8 +285,6 @@ def test_hover(env, policy, save_path = None):
     # add mean reward to axs 2 as text
     axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # draw vertical lines for done
-    for t in done_list:
-        axs[0].axvline(t, color="red", linestyle="--", label='reset')
     for i in range(plot_num):
         axs[i].legend()
     # save the plot as image

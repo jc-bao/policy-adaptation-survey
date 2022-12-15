@@ -22,7 +22,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 3e6
+    total_steps = 2e6
     eval_freq = 4
     
     env = HoverEnv(
