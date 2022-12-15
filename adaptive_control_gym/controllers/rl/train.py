@@ -7,7 +7,7 @@ import tyro
 
 install()
 
-from adaptive_control_gym.envs import HoverEnv, test_hover
+from adaptive_control_gym.envs import HoverEnv, test_hover, DodgerEnv, test_dodger
 from adaptive_control_gym.controllers import PPO
 
 @dataclass

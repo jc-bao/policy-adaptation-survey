@@ -18,9 +18,9 @@ class HoverEnv(gym.Env):
         expert_mode:bool = False, ood_mode:bool = False, 
         mass_mean:float = 0.05, mass_std:float=0.02, 
         disturb_uncertainty_rate:float=0.0, disturb_period: int = 15,
-        delay_mean:float = 0.0, delay_std:float = 0.0,
+        delay_mean:float = 5.0, delay_std:float = 2.0,
         decay_mean:float = 0.2, decay_std:float = 0.1, 
-        res_dyn_scale: float = 1.0, res_dyn_param_std:float = 1.0,
+        res_dyn_scale: float = 4.0, res_dyn_param_std:float = 1.0,
         ):
         torch.manual_seed(seed)
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
@@ -35,7 +35,7 @@ class HoverEnv(gym.Env):
         self.disturb_period = disturb_period
 
         self.res_dyn_scale = res_dyn_scale
-        self.res_dyn_mlp = ResDynMLP(input_dim=dim*3, output_dim=dim).to(self.device)
+        self.res_dyn_mlp = ResDynMLP(input_dim=dim*4, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0.0, res_dyn_param_std
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
 
@@ -65,7 +65,7 @@ class HoverEnv(gym.Env):
         # dynamic
         A = np.array([[0, 1], [0, 0]])
         self.A = np.stack([A] * self.env_num, axis=0)
-        B = (1 / self.mass).detach().cpu().numpy()
+        B = (1 / self.mass).cpu().numpy()
         self.B = np.expand_dims(np.stack([np.zeros_like(B), B], axis=1), axis=2)
         # self.dynamic_info = self._get_dynamic_info()
         # ic(self.dynamic_info)
@@ -129,13 +129,13 @@ class HoverEnv(gym.Env):
             self.force_history.pop(0)
             self.force = torch.zeros((self.env_num, self.dim), device=self.device)
             for i in range(self.delay_max):
-                env_mask = (self.delay == i)
+                env_mask = (self.delay == i)[:,0]
                 self.force[env_mask] = self.force_history[-i-1][env_mask]
         
         self.force += self.disturb
         self.decay_force = self.decay * self.v
         self.force -= self.decay_force
-        self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.v, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
+        self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
         self.force += self.res_dyn_force
         
         self.x += self.v * self.tau
@@ -180,7 +180,7 @@ class HoverEnv(gym.Env):
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
-        embedding_size = 64
+        embedding_size = 128
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, embedding_size),
             nn.ReLU(inplace=True),
@@ -189,12 +189,17 @@ class ResDynMLP(nn.Module):
             nn.Linear(embedding_size, output_dim),
             nn.Tanh()
         )
+        # initialize weights with uniform and bias with uniform
+        for m in self.mlp.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=1)
+                nn.init.uniform_(m.bias, -0.2, 0.25)
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
 
     def forward(self, x):
-        return self.mlp(x)*3 # empirical value for output range
+        return self.mlp(x) # empirical value for output range
 
 def get_hover_policy(env, policy_name = "ppo"):
     if policy_name == "lqr":
@@ -205,6 +210,9 @@ def get_hover_policy(env, policy_name = "ppo"):
         policy = ctrl.Random(env.action_dim)
     elif policy_name == "ppo":
         policy = torch.load('../../results/rl/actor_ppo_OODFalse_EXPTrue_S0.pt').to('cpu')
+        # freeze the policy
+        for p in policy.parameters():
+            p.requires_grad = False
     else: 
         raise NotImplementedError
     return policy
@@ -278,6 +286,6 @@ def test_hover(env, policy, save_path = None):
     env.close()
 
 if __name__ == "__main__":
-    env = HoverEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True, dim=2)
-    policy = get_hover_policy(env, policy_name = "random")
+    env = HoverEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True, dim=1)
+    policy = get_hover_policy(env, policy_name = "ppo")
     test_hover(env, policy)

@@ -18,7 +18,7 @@ class DodgerEnv(gym.Env):
         expert_mode:bool = False, ood_mode:bool = False, 
         mass_mean:float = 0.05, mass_std:float=0.02, 
         disturb_uncertainty_rate:float=0.0, disturb_period: int = 15,
-        delay_mean:float = 0.0, delay_std:float = 0.0,
+        delay_mean:float = 5.0, delay_std:float = 2.0,
         decay_mean:float = 0.2, decay_std:float = 0.1, 
         res_dyn_scale: float = 1.0, res_dyn_param_std:float = 1.0,
         ):
@@ -119,7 +119,7 @@ class DodgerEnv(gym.Env):
             self.force_history.pop(0)
             self.force = torch.zeros((self.env_num, self.dim), device=self.device)
             for i in range(self.delay_max):
-                env_mask = (self.delay == i)
+                env_mask = (self.delay == i)[:,0]
                 self.force[env_mask] = self.force_history[-i-1][env_mask]
         
         self.force += self.disturb
