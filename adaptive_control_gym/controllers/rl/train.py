@@ -15,25 +15,27 @@ class Args:
     use_wandb:bool=False
     program:str='tmp'
     seed:int=0
-    dim:int=1
+    dim:int=2
     gpu_id:int=0
     expert_mode:bool=False
     ood_mode:bool=False
+    model_delay_alpha:float=0.9
+    exp_name:str=f'Alpha{model_delay_alpha}_OOD{ood_mode}_EXP{expert_mode}_S{seed}'
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 2e6
+    total_steps = 3e6
     eval_freq = 4
     
     env = HoverEnv(
         env_num=env_num, gpu_id=args.gpu_id, dim=args.dim, seed = args.seed, 
-        expert_mode=args.expert_mode, ood_mode=args.ood_mode)
+        expert_mode=args.expert_mode, ood_mode=args.ood_mode, 
+        model_delay_alpha=args.model_delay_alpha)
     agent = PPO(state_dim=env.state_dim, action_dim=env.action_dim, env_num=env_num, gpu_id=args.gpu_id)
     agent.last_state = env.reset()
 
-    exp_name = f'OOD{args.ood_mode}_EXP{args.expert_mode}_S{args.seed}'
     if args.use_wandb:
-        wandb.init(project=args.program, name=exp_name, config=args)
+        wandb.init(project=args.program, name=args.exp_name, config=args)
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
     with trange(n_ep) as t:
@@ -75,8 +77,8 @@ def train(args:Args)->None:
                 else:
                     ic(rewards.mean().item(), rewards[-1].mean().item())
     
-    actor_path = f'../../../results/rl/actor_ppo_{exp_name}.pt'
-    plt_path = f'../../../results/rl/eval_ppo_{exp_name}.png'
+    actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
+    plt_path = f'../../../results/rl/eval_ppo_{args.exp_name}.png'
     torch.save(agent.act, actor_path)
     test_hover(HoverEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode, dim = args.dim), agent.act.to('cpu'), save_path=plt_path)
     # evaluate

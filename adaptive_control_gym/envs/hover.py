@@ -14,13 +14,13 @@ from adaptive_control_gym import controllers as ctrl
 
 class HoverEnv(gym.Env):
     def __init__(self, 
-        dim: int = 1, env_num: int = 1, gpu_id: int = 0, seed:int = 0, 
+        dim: int = 2, env_num: int = 1, gpu_id: int = 0, seed:int = 0, 
         expert_mode:bool = False, ood_mode:bool = False, 
         mass_mean:float = 0.05, mass_std:float=0.02, 
         disturb_uncertainty_rate:float=0.0, disturb_period: int = 15,
-        delay_mean:float = 0.0, delay_std:float = 0.0,
+        delay_mean:float = 0.0, delay_std:float = 0.0, model_delay_alpha: float = 0.9, 
         decay_mean:float = 0.2, decay_std:float = 0.1, 
-        res_dyn_scale: float = 10.0, res_dyn_param_std:float = 1.0,
+        res_dyn_scale: float = 10.0, res_dyn_param_dim: int = 8, res_dyn_param_std:float = 1.0,
         ):
         torch.manual_seed(seed)
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
@@ -29,6 +29,7 @@ class HoverEnv(gym.Env):
         self.mass_min, self.mass_max = 0.01, 1.0
         self.delay_mean, self.delay_std = delay_mean, delay_std
         self.delay_min, self.delay_max = 0, 10
+        self.model_delay_alpha = model_delay_alpha
         self.decay_mean, self.decay_std = decay_mean, decay_std
         self.decay_min, self.decay_max = 0.0, 0.5
         self.disturb_mean, self.disturb_std = 0.0, 1.0 * disturb_uncertainty_rate
@@ -36,9 +37,10 @@ class HoverEnv(gym.Env):
         self.action_noise_std, self.obs_noise_std = 0.05, 0.05
 
         self.res_dyn_scale = res_dyn_scale / (2**dim)
-        self.res_dyn_mlp = ResDynMLP(input_dim=dim*4, output_dim=dim).to(self.device)
+        self.res_dyn_mlp = ResDynMLP(input_dim=dim*3+res_dyn_param_dim, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0.0, res_dyn_param_std
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
+        self.res_dyn_param_dim = res_dyn_param_dim
 
         self.tau = 1.0/30.0  # seconds between state updates
         self.force_scale = 1.0
@@ -59,7 +61,7 @@ class HoverEnv(gym.Env):
         self.expert_mode = expert_mode
         self.state_dim = 4*dim+2*dim*self.obs_traj_len
         if expert_mode:
-            self.state_dim += (1+dim*3)
+            self.state_dim += (res_dyn_param_dim+dim*2+1)
         self.action_dim = dim
 
         self.reset()
@@ -108,14 +110,14 @@ class HoverEnv(gym.Env):
             mass = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.mass_std + self.mass_mean
             delay = torch.abs(torch.randn((size, 1), device=self.device)) * self.delay_std + self.delay_mean
             decay = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.decay_std + self.decay_mean
-            res_dyn_param = torch.abs(torch.randn((size, self.dim), device=self.device)) * self.res_dyn_param_std + self.res_dyn_param_mean
+            res_dyn_param = torch.abs(torch.randn((size, self.res_dyn_param_dim), device=self.device)) * self.res_dyn_param_std + self.res_dyn_param_mean
         else:
             x = torch.randn((size, self.dim), device=self.device) * self.init_x_std + self.init_x_mean
             v = torch.randn((size, self.dim), device=self.device) * self.init_v_std + self.init_v_mean
             mass = torch.randn((size, self.dim), device=self.device) * self.mass_std + self.mass_mean
             delay = torch.randn((size, 1), device=self.device) * self.delay_std + self.delay_mean
             decay = torch.randn((size, self.dim), device=self.device) * self.decay_std + self.decay_mean
-            res_dyn_param = torch.randn((size, self.dim), device=self.device) * self.res_dyn_param_std + self.res_dyn_param_mean
+            res_dyn_param = torch.randn((size, self.res_dyn_param_dim), device=self.device) * self.res_dyn_param_std + self.res_dyn_param_mean
         x = torch.clip(x, self.x_min, self.x_max)
         mass = torch.clip(mass, self.mass_min, self.mass_max)
         delay = torch.clip(delay, self.delay_min, self.delay_max).type(torch.int)
@@ -128,14 +130,15 @@ class HoverEnv(gym.Env):
         action += torch.randn_like(action, device=self.device) * self.action_noise_std
         current_force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
         if (self.delay == 0).all():
-            self.force = current_force
+            force = current_force
         else:
             self.force_history.append(current_force)
             self.force_history.pop(0)
-            self.force = torch.zeros((self.env_num, self.dim), device=self.device)
+            force = torch.zeros((self.env_num, self.dim), device=self.device)
             for i in range(self.delay_max):
                 env_mask = (self.delay == i)[:,0]
                 self.force[env_mask] = self.force_history[-i-1][env_mask]
+        self.force = force*self.model_delay_alpha + self.force*(1-self.model_delay_alpha)
         
         self.force += self.disturb
         self.decay_force = self.decay * self.v
@@ -171,6 +174,7 @@ class HoverEnv(gym.Env):
         self._set_disturb()
         self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param = self._get_initial_state()
         self.force_history = [torch.zeros((self.env_num, self.dim), device=self.device)] * self.delay_max
+        self.force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.traj_x, self.traj_v = self._generate_traj()
         return self._get_obs()
 
@@ -238,7 +242,7 @@ def test_hover(env, policy, save_path = None):
         x_list.append(state[0,:env.dim].numpy())
         v_list.append(state[0,env.dim:env.dim*2].numpy())
         traj_x_list.append(env.traj_x[0,:,t%env.max_steps].numpy())
-        traj_v_list.append(env.traj_v[0,:,t%env.max_steps].numpy())
+        traj_v_list.append(env.traj_v[0,:,t%env.max_steps].numpy()*0.3)
         a_list.append(act[0].numpy())
         r_list.append(rew[0].item())
         force_list.append(env.force[0].numpy())
@@ -263,6 +267,8 @@ def test_hover(env, policy, save_path = None):
         axs[i].plot(v_array[:,i], label="v*0.3", alpha=0.3)
         axs[i].plot(traj_x_array[:,i], label="traj_x")
         axs[i].plot(traj_v_array[:,i], label="traj_v*0.3", alpha=0.3)
+        for t in done_list:
+            axs[i].axvline(t, color="red", linestyle="--", label='reset')
     res_dyn_numpy, a_numpy, force_array = np.array(res_dyn_list), np.array(a_list), np.array(force_list)
     disturb_array, decay_array = np.array(disturb_list), np.array(decay_list)
     for i in range(env.dim):
@@ -272,8 +278,6 @@ def test_hover(env, policy, save_path = None):
         axs[env.dim+i].plot(force_array[:,i], label="force", alpha=0.5)
         axs[env.dim+i].plot(disturb_array[:,i], label="disturb", alpha=0.2)
         axs[env.dim+i].plot(decay_array[:,i], label="decay", alpha=0.3)
-        for t in done_list:
-            axs[env.dim+i].axvline(t, color="red", linestyle="--", label='reset')
     mass_array = np.array(mass_list)
     res_dyn_param_numpy = np.array(res_dyn_param_list)
     axs[env.dim*2].set_title(f"system parameters and reward")
