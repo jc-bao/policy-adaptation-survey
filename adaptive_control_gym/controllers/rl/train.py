@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import wandb
 from tqdm import trange
 from icecream import install
@@ -7,7 +8,7 @@ import tyro
 
 install()
 
-from adaptive_control_gym.envs import HoverEnv, test_hover, DodgerEnv, test_dodger
+from adaptive_control_gym.envs import HoverEnv, test_hover, DodgerEnv, test_dodger, DroneEnv, test_drone
 from adaptive_control_gym.controllers import PPO
 
 @dataclass
@@ -15,7 +16,7 @@ class Args:
     use_wandb:bool=False
     program:str='tmp'
     seed:int=0
-    dim:int=2
+    dim:int=3
     gpu_id:int=0
     expert_mode:bool=False
     ood_mode:bool=False
@@ -24,10 +25,10 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 3e6
+    total_steps = 5e7
     eval_freq = 4
     
-    env = HoverEnv(
+    env = DroneEnv(
         env_num=env_num, gpu_id=args.gpu_id, dim=args.dim, seed = args.seed, 
         expert_mode=args.expert_mode, ood_mode=args.ood_mode, 
         model_delay_alpha=args.model_delay_alpha)
@@ -42,7 +43,8 @@ def train(args:Args)->None:
         for i_ep in t:
             # train
             total_steps = i_ep * steps_per_ep
-            states, actions, logprobs, rewards, undones = agent.explore_env(env, env.max_steps)
+            explore_steps = int(env.max_steps * np.clip(i_ep/20, 0.2, 1))
+            states, actions, logprobs, rewards, undones = agent.explore_env(env, explore_steps)
             torch.set_grad_enabled(True)
             critic_loss, actor_loss, action_std = agent.update_net(states, actions, logprobs, rewards, undones)
             torch.set_grad_enabled(False)
@@ -80,7 +82,7 @@ def train(args:Args)->None:
     actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
     plt_path = f'../../../results/rl/eval_ppo_{args.exp_name}.png'
     torch.save(agent.act, actor_path)
-    test_hover(HoverEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode, dim = args.dim), agent.act.to('cpu'), save_path=plt_path)
+    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode, dim = args.dim), agent.act.to('cpu'), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(actor_path, base_path="../../../results/rl", policy="now")

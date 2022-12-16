@@ -18,9 +18,9 @@ class DroneEnv(gym.Env):
         expert_mode:bool = False, ood_mode:bool = False, 
         mass_mean:float = 0.05, mass_std:float=0.02, 
         disturb_uncertainty_rate:float=0.0, disturb_period: int = 15,
-        delay_mean:float = 0.0, delay_std:float = 0.0, model_delay_alpha: float = 0.9, 
-        decay_mean:float = 0.2, decay_std:float = 0.1, 
-        res_dyn_scale: float = 10.0, res_dyn_param_dim: int = 8, res_dyn_param_std:float = 1.0,
+        delay_mean:float = 0.0, delay_std:float = 0.0, model_delay_alpha: float = 1.0, 
+        decay_mean:float = 0.2, decay_std:float = 0.0, 
+        res_dyn_scale: float = 0.0, res_dyn_param_dim: int = 8, res_dyn_param_std:float = 1.0,
         ):
         assert dim == 3, "Only 2D drone is supported."
         torch.manual_seed(seed)
@@ -35,7 +35,7 @@ class DroneEnv(gym.Env):
         self.decay_min, self.decay_max = 0.0, 0.5
         self.disturb_mean, self.disturb_std = 0.0, 1.0 * disturb_uncertainty_rate
         self.disturb_period = disturb_period
-        self.action_noise_std, self.obs_noise_std = 0.05, 0.05
+        self.action_noise_std, self.obs_noise_std = 0.0, 0.0
 
         self.res_dyn_scale = res_dyn_scale / (2**dim)
         self.res_dyn_mlp = ResDynMLP(input_dim=dim*3+res_dyn_param_dim, output_dim=dim).to(self.device)
@@ -90,8 +90,6 @@ class DroneEnv(gym.Env):
             phase = torch.rand((self.env_num,self.dim, 1), device=self.device)*(2*np.pi)
             x += A*torch.cos(t*w+phase)
             v -= w*A*torch.sin(t*w+phase)/self.tau
-        x[:,2] = 0
-        v[:,2] = 0
         return x, v
 
     def _get_dynamic_info(self):
@@ -158,7 +156,7 @@ class DroneEnv(gym.Env):
         self.x += self.v * self.tau
         self.v += self.force / self.mass * self.tau
         self.x[:,:2] = torch.clip(self.x[:,:2], self.x_min, self.x_max)
-        reward = 1.0 - torch.norm(self.x-self.traj_x[...,self.step_cnt],dim=1) - torch.norm(self.v-self.traj_v[...,self.step_cnt],dim=1)*0.2
+        reward = 1.0 - torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1) - torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)*0.2
 
         self.step_cnt += 1
 
@@ -244,7 +242,8 @@ def test_drone(env, policy, save_path = None):
     state = env.reset()
     x_list, v_list, a_list, force_list, disturb_list, decay_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], []
 
-    time_limit = env.max_steps*5
+    n_ep = 5
+    time_limit = env.max_steps*n_ep
     for t in range(time_limit):
         act = policy(state)
         state, rew, done, info = env.step(act)  # take a random action
@@ -274,10 +273,14 @@ def test_drone(env, policy, save_path = None):
         axs[i].set_title(f"kinematics measurement dim={i}")
         axs[i].plot(x_numpy[:,i], label="x")
         axs[i].plot(v_array[:,i], label="v*0.3", alpha=0.3)
-        axs[i].plot(traj_x_array[:,i], label="traj_x")
-        axs[i].plot(traj_v_array[:,i], label="traj_v*0.3", alpha=0.3)
+        if i < 2:
+            axs[i].plot(traj_x_array[:,i], label="traj_x")
+            axs[i].plot(traj_v_array[:,i], label="traj_v*0.3", alpha=0.3)
         for t in done_list:
             axs[i].axvline(t, color="red", linestyle="--", label='reset')
+        if i == 2:
+            # plot horizontal line for the ground
+            axs[i].axhline(0, color="black", linestyle="--", label='ground')
     res_dyn_numpy, a_numpy, force_array = np.array(res_dyn_list), np.array(a_list), np.array(force_list)
     disturb_array, decay_array = np.array(disturb_list), np.array(decay_list)
     for i in range(env.dim):
@@ -303,6 +306,25 @@ def test_drone(env, policy, save_path = None):
     # draw vertical lines for done
     for i in range(plot_num):
         axs[i].legend()
+    # plot the movement of the drone over different timesteps
+    fig, axs = plt.subplots(n_ep, 1, figsize=(5, 5*n_ep))
+    for i in range(n_ep):
+        axs[i].set_title(f"drone movement experiment {i+1} of {n_ep}")
+        axs[i].set_xlabel("x")
+        axs[i].set_ylabel("y")
+        axs[i].set_xlim(-2, 2)
+        axs[i].set_ylim(-2, 2)
+        # get drone position and direction
+        pos_info = traj_x_array[i*env.max_t:(i+1)*env.max_t]
+        x, y, theta = pos_info[:,0], pos_info[:,1], pos_info[:,2]
+        # draw arrow for the drone
+        for t in range(len(x)):
+            axs[i].arrow(x[t], y[t], np.cos(theta[t]), np.sin(theta[t]), head_width=0.1, head_length=0.1, fc='k', ec='k')
+    for t in range(len(x_list)):
+        if t in done_list:
+            axs.plot(x_list[t][0], x_list[t][1], 'ro', alpha=0.5)
+        else:
+            axs.plot(x_list[t][0], x_list[t][1], 'bo', alpha=0.5)
     # save the plot as image
     if save_path == None:
         package_path = os.path.dirname(adaptive_control_gym.__file__)
@@ -312,5 +334,5 @@ def test_drone(env, policy, save_path = None):
 
 if __name__ == "__main__":
     env = DroneEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True)
-    policy = get_drone_policy(env, policy_name = "random")
+    policy = get_drone_policy(env, policy_name = "ppo")
     test_drone(env, policy)
