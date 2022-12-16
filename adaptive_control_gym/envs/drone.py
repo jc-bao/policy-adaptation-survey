@@ -229,7 +229,7 @@ def get_drone_policy(env, policy_name = "ppo"):
     elif policy_name == "random":
         policy = ctrl.Random(env.action_dim)
     elif policy_name == "ppo":
-        policy = torch.load('../../results/rl/actor_ppo_OODFalse_EXPTrue_S0.pt').to('cpu')
+        policy = torch.load('../../results/rl/actor_ppo_Alpha0.9_OODFalse_EXPFalse_S0.pt').to('cpu')
         # freeze the policy
         for p in policy.parameters():
             p.requires_grad = False
@@ -315,16 +315,14 @@ def test_drone(env, policy, save_path = None):
         axs[i].set_xlim(-2, 2)
         axs[i].set_ylim(-2, 2)
         # get drone position and direction
-        pos_info = traj_x_array[i*env.max_t:(i+1)*env.max_t]
+        pos_info = x_numpy[i*env.max_steps:(i+1)*env.max_steps-1]
         x, y, theta = pos_info[:,0], pos_info[:,1], pos_info[:,2]
         # draw arrow for the drone
         for t in range(len(x)):
-            axs[i].arrow(x[t], y[t], np.cos(theta[t]), np.sin(theta[t]), head_width=0.1, head_length=0.1, fc='k', ec='k')
-    for t in range(len(x_list)):
-        if t in done_list:
-            axs.plot(x_list[t][0], x_list[t][1], 'ro', alpha=0.5)
-        else:
-            axs.plot(x_list[t][0], x_list[t][1], 'bo', alpha=0.5)
+            # set color for each arrow according to t
+            axs[i].arrow(x[t], y[t], np.cos(theta[t])*0.1, np.sin(theta[t])*0.1, head_width=0.05, head_length=0.1, fc='k', ec='k', alpha=t/len(x))
+            # plot reference trajectory as dot
+            axs[i].scatter(traj_x_array[i*env.max_steps+t,0], traj_x_array[i*env.max_steps+t,1], alpha=t/len(x), color='red', marker='*', s=5)
     # save the plot as image
     if save_path == None:
         package_path = os.path.dirname(adaptive_control_gym.__file__)
@@ -333,6 +331,6 @@ def test_drone(env, policy, save_path = None):
     env.close()
 
 if __name__ == "__main__":
-    env = DroneEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=True)
+    env = DroneEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=False)
     policy = get_drone_policy(env, policy_name = "ppo")
     test_drone(env, policy)
