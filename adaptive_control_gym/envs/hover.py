@@ -224,21 +224,32 @@ def get_hover_policy(env, policy_name = "ppo"):
     elif policy_name == "ppo":
         policy = torch.load('../../results/rl/actor_ppo_OODFalse_EXPTrue_S0.pt').to('cpu')
         # freeze the policy
-        for p in policy.parameters():
-            p.requires_grad = False
+        # for p in policy.parameters():
+        #     p.requires_grad = False
     else: 
         raise NotImplementedError
     return policy
 
-
 def test_hover(env, policy, save_path = None):
     state = env.reset()
     x_list, v_list, a_list, force_list, disturb_list, decay_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], []
+    # check if the policy is torch neural network
+    if_policy_grad = isinstance(policy, nn.Module)
 
     time_limit = env.max_steps*5
     for t in range(time_limit):
+        if if_policy_grad:
+            # set state as required grad
+            state.requires_grad = True
+            policy.zero_grad()
         act = policy(state)
-        state, rew, done, info = env.step(act)  # take a random action
+        if if_policy_grad:
+            # calculate jacobian respect to state
+            jacobian = torch.autograd.grad(act, state, grad_outputs=torch.ones_like(act), create_graph=True)[0]
+            ic(jacobian)
+            exit()
+        with torch.no_grad():
+            state, rew, done, info = env.step(act)  # take a random action
         x_list.append(state[0,:env.dim].numpy())
         v_list.append(state[0,env.dim:env.dim*2].numpy())
         traj_x_list.append(env.traj_x[0,:,t%env.max_steps].numpy())

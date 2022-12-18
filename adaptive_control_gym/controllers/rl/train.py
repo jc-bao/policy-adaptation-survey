@@ -16,34 +16,35 @@ class Args:
     use_wandb:bool=False
     program:str='tmp'
     seed:int=0
-    dim:int=3
     gpu_id:int=0
     expert_mode:bool=False
     ood_mode:bool=False
-    model_delay_alpha:float=0.9
-    exp_name:str=f'Alpha{model_delay_alpha}_OOD{ood_mode}_EXP{expert_mode}_S{seed}'
+    exp_name:str= ''
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 5e7
+    total_steps = 4.0e6
     eval_freq = 4
+    curri_thereshold = 100.0
     
+    args.exp_name = f'EXP{args.expert_mode}_OOD{args.ood_mode}_S{args.seed}'
     env = DroneEnv(
-        env_num=env_num, gpu_id=args.gpu_id, dim=args.dim, seed = args.seed, 
-        expert_mode=args.expert_mode, ood_mode=args.ood_mode, 
-        model_delay_alpha=args.model_delay_alpha)
+        env_num=env_num, gpu_id=args.gpu_id, seed = args.seed, 
+        expert_mode=args.expert_mode, ood_mode=args.ood_mode)
     agent = PPO(state_dim=env.state_dim, action_dim=env.action_dim, env_num=env_num, gpu_id=args.gpu_id)
-    agent.last_state = env.reset()
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
+    total_steps = 0
+    env.curri_param = 1.0
     with trange(n_ep) as t:
+        agent.last_state = env.reset()
         for i_ep in t:
             # train
-            total_steps = i_ep * steps_per_ep
-            explore_steps = int(env.max_steps * np.clip(i_ep/20, 0.2, 1))
+            explore_steps = int(env.max_steps * np.clip(i_ep/5, 0.2, 1))
+            total_steps += explore_steps * env_num
             states, actions, logprobs, rewards, undones = agent.explore_env(env, explore_steps)
             torch.set_grad_enabled(True)
             critic_loss, actor_loss, action_std = agent.update_net(states, actions, logprobs, rewards, undones)
@@ -58,7 +59,8 @@ def train(args:Args)->None:
                     'train/rewards_final': rew_final_mean,
                     'train/actor_loss': actor_loss, 
                     'train/critic_loss': critic_loss,
-                    'train/action_std': action_std 
+                    'train/action_std': action_std, 
+                    'train/curri': env.curri_param
                 }, step=total_steps)
             t.set_postfix(reward_final=rew_final_mean, actor_loss=actor_loss, critic_loss=critic_loss, rewards=rew_mean, steps = total_steps)
 
@@ -71,23 +73,30 @@ def train(args:Args)->None:
                 states, actions, logprobs, rewards, undones = agent.explore_env(env, env.max_steps, deterministic=True)
                 if have_ood:
                     env.ood_mode = original_mode
+                rew_mean = rewards.mean().item()
                 if args.use_wandb:
                     wandb.log({
-                        'eval/rewards_mean': rewards.mean().item(), 
+                        'eval/rewards_mean': rew_mean,
                         'eval/rewards_final': rewards[-1].mean().item(),
                     }, step=total_steps)
                 else:
-                    ic(rewards.mean().item(), rewards[-1].mean().item())
+                    ic(rew_mean, rewards[-1].mean().item())
+                if rew_mean > curri_thereshold and env.curri_param < 1.0:
+                    env.curri_param+=0.1
+            
     
     actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
-    plt_path = f'../../../results/rl/eval_ppo_{args.exp_name}.png'
+    plt_path = f'../../../results/rl/'
     torch.save(agent.act, actor_path)
-    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode, dim = args.dim), agent.act.to('cpu'), save_path=plt_path)
+    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode), agent.act.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(actor_path, base_path="../../../results/rl", policy="now")
         # save the plot
-        wandb.log({"eval/plot": wandb.Image(plt_path)})
+        wandb.log({
+            "eval/plot": wandb.Image(plt_path+'/plot.png', caption="plot"), 
+            "eval/vis": wandb.Image(plt_path+'/vis.png', caption="vis")
+            })
 
 if __name__=='__main__':
     train(tyro.cli(Args))
