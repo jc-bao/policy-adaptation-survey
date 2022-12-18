@@ -108,6 +108,8 @@ class PPO:
             obj_critic = self.criterion(value, reward_sum)
             self.optimizer_update(self.cri_optimizer, obj_critic)
 
+
+            # judge if self.x contains nan
             new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action)
             ratio = (new_logprob - logprob.detach()).exp()
             surrogate1 = advantage * ratio

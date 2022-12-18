@@ -1,14 +1,14 @@
-import torch
-from torch import nn
+import os
+
+import control as ct
 import gym
 import numpy as np
-import torch
-import control as ct
-from icecream import ic
-import os
-from matplotlib import pyplot as plt
-import seaborn as sns
 import pandas as pd
+import seaborn as sns
+import torch
+from icecream import ic
+from matplotlib import pyplot as plt
+from torch import nn
 from tqdm import trange
 
 import adaptive_control_gym
@@ -26,17 +26,17 @@ class DroneEnv(gym.Env):
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
         # parameters
         self.dim=dim=3
-        self.disturb_period = 15
-        self.res_dyn_param_dim = 4
+        self.disturb_period = 30
         self.model_delay_alpha = 0.9
-        self.res_dyn_scale = 8.0  / (2**dim)
+        self.res_dyn_scale = 0.0  / (2**dim)
+        self.res_dyn_param_dim = 0
         self.curri_param = 1.0
 
-        self.mass_min, self.mass_max = 0.006, 0.04
+        self.mass_min, self.mass_max = 0.005, 0.05
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.2
+        self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_mean, self.disturb_std = 0.0, 0.0
+        self.disturb_min, self.disturb_max = -0.2, 0.2
         self.action_noise_std, self.obs_noise_std = 0, 0 #0.005, 0.005
 
         # generated parameters
@@ -48,6 +48,7 @@ class DroneEnv(gym.Env):
         self.decay_mean, self.decay_std = (self.decay_max+self.decay_min)/2, (self.decay_max-self.decay_min)/2
         if self.decay_std == 0:
             self.decay_std = 1.0
+        self.disturb_mean, self.disturb_std = (self.disturb_max+self.disturb_min)/2, (self.disturb_max-self.disturb_min)/2
 
         self.res_dyn_mlp = ResDynMLP(input_dim=dim*3+self.res_dyn_param_dim, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = (self.res_dyn_param_min+self.res_dyn_param_max)/2, (self.res_dyn_param_max-self.res_dyn_param_min)/2
@@ -79,7 +80,7 @@ class DroneEnv(gym.Env):
         self.ood_mode = ood_mode
         self.expert_mode = expert_mode
         self.state_dim = 4*dim+2*dim*self.obs_traj_len
-        self.expert_dim = (self.res_dyn_param_dim+dim*2+1)
+        self.expert_dim = (self.res_dyn_param_dim+dim*3+1)
         if expert_mode:
             self.state_dim += self.expert_dim
         self.action_dim = dim - 1
@@ -216,11 +217,11 @@ class DroneEnv(gym.Env):
         err_x, err_v = future_traj_x[..., 0] - self.x, future_traj_v[..., 0] - self.v
         obs = torch.concat([self.x, self.v*0.3, err_x, err_v*0.3, future_traj_x.reshape(self.env_num,-1), future_traj_v.reshape(self.env_num, -1)], dim=-1)
         if self.expert_mode:
-            obs = torch.concat([obs, (self.mass-self.mass_mean)/self.mass_std, self.delay/10.0, (self.decay-self.decay_mean)/self.decay_std, self.res_dyn_param], dim=-1)
+            obs = torch.concat([obs, (self.mass-self.mass_mean)/self.mass_std, (self.disturb-self.disturb_mean)/self.disturb_std, self.delay/10.0, (self.decay-self.decay_mean)/self.decay_std, self.res_dyn_param], dim=-1)
         return obs
 
     def _set_disturb(self):
-        self.disturb = torch.randn((self.env_num,self.dim), device=self.device) * self.disturb_std + self.disturb_mean
+        self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * self.disturb_std + self.disturb_mean
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -254,7 +255,7 @@ def get_drone_policy(env, policy_name = "ppo"):
     elif policy_name == "random":
         policy = ctrl.Random(env.action_dim)
     elif policy_name == "ppo":
-        policy = torch.load('../../results/rl/actor_ppo_EXPFalse_OODTrue_S0.pt').to('cpu')
+        policy = torch.load('../../results/rl/actor_ppo_EXPTrue_OODFalse_S0.pt').to('cpu')
         # freeze the policy
         # for p in policy.parameters():
         #     p.requires_grad = False
@@ -267,9 +268,9 @@ def eval_drone(policy, env_args, gpu_id):
     for p in policy.parameters():
         p.requires_grad = False
     device = torch.device("cuda:{}".format(gpu_id) if torch.cuda.is_available() else "cpu")
-    n_mass = 4
-    n_decay = 4
-    n_param = 4
+    n_mass = 6 #4
+    n_decay = 6 #4
+    n_param = 1 # 4
     env_num = (n_mass ** 3) * (n_decay**3) * (n_param**4)
     eval_times = 100
     ic(env_num)
@@ -298,7 +299,8 @@ def eval_drone(policy, env_args, gpu_id):
     rews = torch.zeros(env_num, device=device)
     for i in trange(eval_times):
         state = env.reset()
-        env.mass, env.decay, env.res_dyn_param = mass, decay, res_dyn_param
+        # env.mass, env.decay, env.res_dyn_param = mass, decay, res_dyn_param
+        env.mass, env.decay = mass, decay
         for t in range(env.max_steps-1):
             act = policy(state)
             state, reward, done, _ = env.step(act)
@@ -407,6 +409,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
     axs[env.dim*2].set_title(f"system parameters and reward")
     for i in range(env.dim):
         axs[env.dim*2].plot(mass_array[:,i], label=f"mass-{i}*10", alpha=0.5)
+    for i in range(env.res_dyn_param_dim):
         axs[env.dim*2].plot(res_dyn_param_numpy[:,i], label=f"res_dyn_param-{i}", alpha=0.5)
     axs[env.dim*2].plot(delay_list, label="delay*0.2", alpha=0.5)
     axs[env.dim*2].plot(r_list, 'y', label="reward")
@@ -448,7 +451,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
     env.close()
 
 if __name__ == "__main__":
-    expert_mode = False
+    expert_mode = True
     env = DroneEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=expert_mode)
     policy = get_drone_policy(env, policy_name = "ppo")
     # test_drone(env, policy)
