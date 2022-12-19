@@ -29,8 +29,8 @@ class DroneEnv(gym.Env):
         self.disturb_period = 30
         self.model_delay_alpha = 0.9
         self.res_dyn_scale = 0.0  / (2**dim)
-        self.res_dyn_param_dim = 0
-        self.curri_param = 1.0
+        self.res_dyn_param_dim = 1
+        self.curri_param = 0.0
 
         self.mass_min, self.mass_max = 0.005, 0.05
         self.delay_min, self.delay_max = 0, 0
@@ -170,8 +170,11 @@ class DroneEnv(gym.Env):
         self.force += self.disturb
         self.decay_force = self.decay * self.v
         self.force -= self.decay_force
-        self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, self.force, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
-        self.force += self.res_dyn_force
+        if self.res_dyn_scale > 0:
+            self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, self.force, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
+            self.force += self.res_dyn_force
+        else:
+            self.res_dyn_force = torch.zeros_like(self.force)
         
         self.x += self.v * self.tau
         self.v += self.force / self.mass * self.tau
@@ -221,7 +224,10 @@ class DroneEnv(gym.Env):
         return obs
 
     def _set_disturb(self):
-        self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * self.disturb_std + self.disturb_mean
+        if self.ood_mode:
+            self.disturb = -(torch.rand((self.env_num,self.dim), device=self.device)) * self.disturb_std + self.disturb_mean
+        else:
+            self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * self.disturb_std + self.disturb_mean
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -255,7 +261,7 @@ def get_drone_policy(env, policy_name = "ppo"):
     elif policy_name == "random":
         policy = ctrl.Random(env.action_dim)
     elif policy_name == "ppo":
-        policy = torch.load('../../results/rl/actor_ppo_EXPTrue_OODFalse_S0.pt').to('cpu')
+        policy = torch.load('../../results/rl/actor_ppo_EXPFalse_OODTrue_S0.pt').to('cpu')
         # freeze the policy
         # for p in policy.parameters():
         #     p.requires_grad = False
@@ -451,7 +457,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
     env.close()
 
 if __name__ == "__main__":
-    expert_mode = True
+    expert_mode = False
     env = DroneEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=expert_mode)
     policy = get_drone_policy(env, policy_name = "ppo")
     # test_drone(env, policy)
