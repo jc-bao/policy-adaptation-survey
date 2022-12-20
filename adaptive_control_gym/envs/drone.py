@@ -185,7 +185,7 @@ class DroneEnv(gym.Env):
         self.x[:,:2] = torch.clip(self.x[:,:2], self.x_min, self.x_max)
         err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
         err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
-        reward = 1.0 - err_x - err_v*0.15
+        reward = 1.0 - err_x - err_v*0.1
 
         # for hover task, add penalty for angular velocity
         if self.traj_scale == 0:
@@ -236,6 +236,7 @@ class DroneEnv(gym.Env):
         else:
             self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * (self.disturb_max-self.disturb_min) * 0.5 * self.curri_param + (self.disturb_min+self.disturb_max)*0.5
         self.disturb *= (self.mass*self.gravity)
+        # self.disturb = torch.ones_like(self.mass, device=self.device) * 0.25
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -460,6 +461,13 @@ def test_drone(env:DroneEnv, policy, save_path = None):
             axs[i].arrow(x[t], y[t], np.sin(theta[t])*0.1, np.cos(theta[t])*0.1, head_width=0.05, head_length=0.1, fc='k', ec='k', alpha=t/len(x))
             # plot reference trajectory as dot
             axs[i].scatter(traj_x_array[i*env.max_steps+t,0], traj_x_array[i*env.max_steps+t,1], alpha=t/len(x), color='red', marker='*', s=10)
+        # add related parameters as text
+        # mass
+        axs[i].text(0.3, 0.5, f"mass: {mass_array[i*env.max_steps,0]:.3f}, {mass_array[i*env.max_steps,1]:.3f}, {mass_array[i*env.max_steps,2]:.3f}")
+        # decay
+        axs[i].text(0.3, 0.4, f"decay: {decay_array[i*env.max_steps,0]:.3f}, {decay_array[i*env.max_steps,1]:.3f}, {decay_array[i*env.max_steps,2]:.3f}")
+        # disturb
+        axs[i].text(0.3, 0.3, f"disturb: {disturb_array[i*env.max_steps,0]:.3f}, {disturb_array[i*env.max_steps,1]:.3f}, {disturb_array[i*env.max_steps,2]:.3f}")
     plt.savefig(save_path+'/vis.png')
     
     env.close()
