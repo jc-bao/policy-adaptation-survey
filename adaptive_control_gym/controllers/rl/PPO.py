@@ -44,6 +44,8 @@ class PPO:
         logprobs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         rewards = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         dones = torch.zeros((horizon_len, self.env_num), dtype=torch.bool).to(self.device)
+        err_xs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
+        err_vs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
 
         state = self.last_state  # shape == (env_num, state_dim) for a vectorized env.
 
@@ -57,17 +59,20 @@ class PPO:
             action, logprob = get_action(state)
             states[t] = state
 
-            state, reward, done, _ = env.step(convert(action))  # next_state
+            state, reward, done, info = env.step(convert(action))  # next_state
             actions[t] = action
             logprobs[t] = logprob
             rewards[t] = reward
             dones[t] = done
+            err_xs[t] = info["err_x"]
+            err_vs[t] = info["err_v"]
 
         self.last_state = state
 
         rewards *= self.reward_scale
         undones = 1.0 - dones.type(torch.float32)
-        return states, actions, logprobs, rewards, undones
+        infos = {"err_x": err_xs, "err_v": err_vs}
+        return states, actions, logprobs, rewards, undones, infos
 
     def update_net(self, states, actions, logprobs, rewards, undones):
         with torch.no_grad():
