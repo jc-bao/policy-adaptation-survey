@@ -57,8 +57,8 @@ def train(args:Args)->None:
             rew_final_mean = rewards[-1].mean().item()
             err_x_mean = infos['err_x'].mean().item()
             err_v_mean = infos['err_v'].mean().item()
-            err_x_last10_mean = infos['err_x'][..., -10:].mean().item()
-            err_v_last10_mean = infos['err_v'][..., -10:].mean().item()
+            err_x_last10_mean = infos['err_x'][-10:].mean().item()
+            err_v_last10_mean = infos['err_v'][-10:].mean().item()
             if args.use_wandb:
                 wandb.log({
                     'train/rewards_mean': rew_mean, 
@@ -76,6 +76,7 @@ def train(args:Args)->None:
 
             # evaluate
             if i_ep % eval_freq == 0:
+                agent.last_state = env.reset()
                 have_ood = hasattr(env, 'ood_mode')
                 if have_ood:
                     original_mode = env.ood_mode
@@ -83,11 +84,11 @@ def train(args:Args)->None:
                 states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=True)
                 if have_ood:
                     env.ood_mode = original_mode
-                rew_mean = rewards[].mean().item()
+                rew_mean = rewards.mean().item()
                 err_x_mean = infos['err_x'].mean().item()
                 err_v_mean = infos['err_v'].mean().item()
-                err_x_last10_mean = infos['err_x'][..., -10:].mean().item()
-                err_v_last10_mean = infos['err_v'][..., -10:].mean().item()
+                err_x_last10_mean = infos['err_x'][-10:].mean().item()
+                err_v_last10_mean = infos['err_v'][-10:].mean().item()
                 if args.use_wandb:
                     wandb.log({
                         'eval/rewards_mean': rew_mean,
