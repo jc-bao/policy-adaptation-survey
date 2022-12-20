@@ -23,7 +23,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 10.0e6
+    total_steps = 6.0e6
     eval_freq = 4
     curri_thereshold = 0.0
     
@@ -40,7 +40,7 @@ def train(args:Args)->None:
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
     total_steps = 0
-    env.curri_param = 0.1
+    env.curri_param = 1.0
     with trange(n_ep) as t:
         agent.last_state = env.reset()
         for i_ep in t:

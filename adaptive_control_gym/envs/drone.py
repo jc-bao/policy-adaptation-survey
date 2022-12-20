@@ -130,15 +130,15 @@ class DroneEnv(gym.Env):
         if size is None:
             size = self.env_num
         if self.ood_mode:
-            mass = -(torch.rand((size, self.dim), device=self.device))* self.mass_std*self.curri_param + self.mass_mean
-            delay = -(torch.rand((size, 1), device=self.device)) * self.delay_std*self.curri_param + self.delay_mean
-            decay = -(torch.rand((size, self.dim), device=self.device))* self.decay_std*self.curri_param + self.decay_mean
-            res_dyn_param = -(torch.rand((size, self.res_dyn_param_dim), device=self.device)) * self.res_dyn_param_std*self.curri_param + self.res_dyn_param_mean
+            mass = -(torch.rand((size, self.dim), device=self.device))* (self.mass_max-self.mass_min) * 0.5 * self.curri_param + (self.mass_max+self.mass_min) * 0.5
+            delay = -(torch.rand((size, 1), device=self.device)) * (self.delay_max-self.delay_min) * 0.5 * self.curri_param + (self.delay_max+self.delay_min) * 0.5
+            decay = -(torch.rand((size, self.dim), device=self.device))* (self.decay_max-self.decay_min) * 0.5 * self.curri_param + (self.decay_max+self.decay_min) * 0.5
+            res_dyn_param = -(torch.rand((size, self.res_dyn_param_dim), device=self.device)) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 * self.curri_param + (self.res_dyn_param_max+self.res_dyn_param_min) * 0.5
         else:
-            mass = (torch.rand((size, self.dim), device=self.device)*2-1)* self.mass_std*self.curri_param + self.mass_mean
-            delay = (torch.rand((size, 1), device=self.device)*2-1) * self.delay_std*self.curri_param + self.delay_mean
-            decay = (torch.rand((size, self.dim), device=self.device)*2-1)* self.decay_std*self.curri_param + self.decay_mean
-            res_dyn_param = (torch.rand((size, self.res_dyn_param_dim), device=self.device)*2-1) * self.res_dyn_param_std*self.curri_param + self.res_dyn_param_mean
+            mass = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.mass_max-self.mass_min) *self.curri_param + (self.mass_min+self.mass_max)*0.5
+            delay = (torch.rand((size, 1), device=self.device)*2-1) * (self.delay_max-self.delay_min) *self.curri_param + (self.delay_min+self.delay_max)*0.5
+            decay = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.decay_max-self.decay_min) *self.curri_param + (self.decay_min+self.decay_max)*0.5
+            res_dyn_param = (torch.rand((size, self.res_dyn_param_dim), device=self.device)*2-1) * (self.res_dyn_param_max-self.res_dyn_param_min) *self.curri_param + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
         mass = torch.clip(mass, self.mass_min, self.mass_max)
         mass[:, 1] = mass[:, 0]
         mass[:, 2] *= self.rotate_mass_scale
@@ -232,9 +232,9 @@ class DroneEnv(gym.Env):
 
     def _set_disturb(self):
         if self.ood_mode:
-            self.disturb = -(torch.rand((self.env_num,self.dim), device=self.device)) * self.disturb_std * self.curri_param + self.disturb_mean
+            self.disturb = -(torch.rand((self.env_num,self.dim), device=self.device)) * (self.disturb_max-self.disturb_min) * 0.5 * self.curri_param + (self.disturb_min+self.disturb_max)*0.5
         else:
-            self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * self.disturb_std * self.curri_param + self.disturb_mean
+            self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * (self.disturb_max-self.disturb_min) * 0.5 * self.curri_param + (self.disturb_min+self.disturb_max)*0.5
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
