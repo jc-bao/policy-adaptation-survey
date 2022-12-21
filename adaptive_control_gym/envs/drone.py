@@ -143,7 +143,6 @@ class DroneEnv(gym.Env):
         mass[:, 1] = mass[:, 0]
         mass[:, 2] *= self.rotate_mass_scale
         delay = torch.clip(delay, self.delay_min, self.delay_max).type(torch.int)
-        ic(decay)
         decay = torch.clip(decay, self.decay_min, self.decay_max)
         res_dyn_param = torch.clip(res_dyn_param, self.res_dyn_param_min, self.res_dyn_param_max)
 
@@ -155,6 +154,7 @@ class DroneEnv(gym.Env):
     
     def step(self, action):
         # add noise to action
+        action[:,0] = (action[:,0]+1)/2 # make sure action 0 is always positive
         action += torch.randn_like(action, device=self.device) * self.action_noise_std
         current_force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
         if (self.delay == 0).all():
@@ -467,7 +467,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
         # mass
         axs[i].text(0.3, 0.5, f"mass*10: {mass_array[i*env.max_steps,0]:.3f}, {mass_array[i*env.max_steps,1]:.3f}, {mass_array[i*env.max_steps,2]:.3f}")
         # decay
-        axs[i].text(0.3, 0.4, f"decay: {decay_param_array[i*env.max_steps,0]:.3f}, {decay_array[i*env.max_steps,1]:.3f}, {decay_param_array[i*env.max_steps,2]:.3f}")
+        axs[i].text(0.3, 0.4, f"decay: {decay_param_array[i*env.max_steps,0]:.3f}, {decay_param_array[i*env.max_steps,1]:.3f}, {decay_param_array[i*env.max_steps,2]:.3f}")
         # disturb
         axs[i].text(0.3, 0.3, f"disturb: {disturb_array[i*env.max_steps,0]:.3f}, {disturb_array[i*env.max_steps,1]:.3f}, {disturb_array[i*env.max_steps,2]:.3f}")
     plt.savefig(save_path+'/vis.png')
