@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
+import torch.nn.functional as F
+import numpy as np
 
 class ActorBase(nn.Module):
     def __init__(self, state_dim: int, action_dim: int):
@@ -21,21 +23,37 @@ class ActorBase(nn.Module):
 
 
 class ActorPPO(ActorBase):
-    def __init__(self, dims: [int], state_dim: int, expert_dim: int, action_dim: int, expert_mode: int):
+    def __init__(self, state_dim: int, expert_dim: int, action_dim: int, expert_mode: int):
         super().__init__(state_dim=state_dim, action_dim=action_dim)
         self.expert_dim = expert_dim
         self.expert_mode = expert_mode
-        dims = [state_dim, *dims, action_dim]
-        if expert_mode == 1:
-            dims[0] += expert_dim
+        if expert_mode == 0:
+            fc1 = nn.Linear(state_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256, action_dim)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+        elif expert_mode == 1:
+            fc1 = nn.Linear(state_dim + expert_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256, action_dim)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
         elif expert_mode == 2:
-            dims[-2] += expert_dim
+            fc1 = nn.Linear(state_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256+expert_dim, action_dim)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
         elif expert_mode == 3:
-            dims[:-1] += expert_dim
-        elif expert_mode != 0:
+            fc1 = nn.Linear(state_dim + expert_dim, 256)
+            fc2 = nn.Linear(256 + expert_dim, 256)
+            fc3 = nn.Linear(256 + expert_dim, 256)
+            fc4 = nn.Linear(256 + expert_dim, action_dim)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+        else:
             raise NotImplementedError
-        self.net = build_mlp_net(dims=dims)
-        layer_init_with_orthogonal(self.net[-1], std=0.1)
+        layer_init_with_orthogonal(self.fc[-1], std=0.1)
 
         self.action_std_log = nn.Parameter(torch.zeros(
             (1, action_dim)), requires_grad=True)  # trainable parameter
@@ -45,24 +63,24 @@ class ActorPPO(ActorBase):
         
     def get_action_avg(self, state: Tensor, e: Tensor) -> Tensor:
         if self.expert_mode == 0:
-            return self.net(state)
+            for fc in self.fc[:-1]:
+                state = F.relu(fc(state))
         elif self.expert_mode == 1:
             state = torch.cat([state, e], dim=-1)
-            return self.net(state)
+            for fc in self.fc[:-1]:
+                state = F.relu(fc(state))
         elif self.expert_mode == 2:
             # pass state into last layers of the net
-            for i in range(len(self.net) - 1):
-                state = self.net[i](state)
+            for fc in self.fc[:-1]:
+                state = F.relu(fc(state))
             state = torch.cat([state, e], dim=-1)
-            return self.net[-1](state)
         elif self.expert_mode == 3:
             # pass state into each layers of the net
-            for i in range(len(self.net) - 1):
+            for fc in self.fc[:-1]:
                 state = torch.cat([state, e], dim=-1)
-                state = self.net[i](state)
+                state = F.relu(fc(state))
             state = torch.cat([state, e], dim=-1)
-            return self.net[-1](state)
-            
+        return self.fc[-1](state)
 
     def get_action(self, state: Tensor, e:Tensor) -> (Tensor, Tensor):  # for exploration
         action_avg = self.get_action_avg(state, e)
@@ -109,51 +127,80 @@ class CriticBase(nn.Module):  # todo state_norm, value_norm
 
 
 class CriticPPO(CriticBase):
-    def __init__(self, dims: [int], state_dim: int, expert_dim: int, action_dim: int, expert_mode: int):
+    def __init__(self, state_dim: int, expert_dim: int, action_dim: int, expert_mode: int):
         super().__init__(state_dim=state_dim, action_dim=action_dim)
         self.expert_dim, self.expert_mode = expert_dim, expert_mode
-        dims = [state_dim, *dims, 1]
-        if expert_mode == 1:
-            dims[0] += expert_dim
+        if expert_mode == 0:
+            fc1 = nn.Linear(state_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256, 1)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+        elif expert_mode == 1:
+            fc1 = nn.Linear(state_dim + expert_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256, 1)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
         elif expert_mode == 2:
-            dims[-2] += expert_dim
+            fc1 = nn.Linear(state_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256+expert_dim, 1)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
         elif expert_mode == 3:
-            dims[:-1] += expert_dim
+            fc1 = nn.Linear(state_dim + expert_dim, 256)
+            fc2 = nn.Linear(256 + expert_dim, 256)
+            fc3 = nn.Linear(256 + expert_dim, 256)
+            fc4 = nn.Linear(256 + expert_dim, 1)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
         elif expert_mode == 4:
-            dims = [int(d/1.4) for d in dims]
-            dims[0], dims[-1] = expert_dim, 8
-            self.net_expert = build_mlp_net(dims=dims)
-            layer_init_with_orthogonal(self.net_expert[-1], std=0.5)
-            dims[0] = state_dim
-        elif expert_mode != 0:
+            fc1 = nn.Linear(state_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256, 8)
+            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc1 = nn.Linear(expert_dim, 256)
+            fc2 = nn.Linear(256, 256)
+            fc3 = nn.Linear(256, 256)
+            fc4 = nn.Linear(256, 8)
+            self.fc_expert = nn.Sequential(fc1, fc2, fc3, fc4)
+            layer_init_with_orthogonal(self.fc_expert[-1], std=0.5)
+        else:
             raise NotImplementedError
-        self.net = build_mlp_net(dims=dims)
-        layer_init_with_orthogonal(self.net[-1], std=0.5)
+        layer_init_with_orthogonal(self.fc[-1], std=0.5)
 
     def forward(self, state: Tensor, e: Tensor) -> Tensor:
         if self.expert_mode == 0:
-            return self.net(state)
+            for fc in self.fc[:-1]:
+                state = F.relu(fc(state))
+            return self.fc[-1](state)
         elif self.expert_mode == 1:
             state = torch.cat([state, e], dim=-1)
-            return self.net(state)
+            for fc in self.fc[:-1]:
+                state = F.relu(fc(state))
+            return self.fc[-1](state)
         elif self.expert_mode == 2:
             # pass state into last layers of the net
-            for i in range(len(self.net) - 1):
-                state = self.net[i](state)
+            for fc in self.fc[:-1]:
+                state = F.relu(fc(state))
             state = torch.cat([state, e], dim=-1)
-            return self.net[-1](state)
+            return self.fc[-1](state)
         elif self.expert_mode == 3:
             # pass state into each layers of the net
-            for i in range(len(self.net) - 1):
+            for fc in self.fc[:-1]:
                 state = torch.cat([state, e], dim=-1)
-                state = self.net[i](state)
+                state = F.relu(fc(state))
             state = torch.cat([state, e], dim=-1)
-            return self.net[-1](state)
+            return self.fc[-1](state)
         elif self.expert_mode == 4:
-            embed_x = self.net(state)
-            embed_e = self.net_expert(e)
-            # return the dot product of two embeddings
-            return torch.sum(embed_x * embed_e, dim=-1, keepdim=True)
+            for fc in self.fc[:-1]:
+                state = F.relu(fc(state))
+            state = self.fc[-1](state)
+            for fc in self.fc_expert[:-1]:
+                e = F.relu(fc(e))
+            e = self.fc_expert[-1](e)
+            return torch.sum(state * e, dim=-1, keepdim=True)
 
 
 def build_mlp_net(dims: [int], activation: nn = None, if_raw_out: bool = True) -> nn.Sequential:
@@ -168,7 +215,7 @@ def build_mlp_net(dims: [int], activation: nn = None, if_raw_out: bool = True) -
         activation = nn.ReLU
     net_list = []
     for i in range(len(dims) - 1):
-        net_list.extend([nn.Linear(dims[i], dims[i + 1]), activation()])
+        net_list.extend([nn.Linear(dims[i,0], dims[i,1]), activation()])
     if if_raw_out:
         # delete the activation function of the output layer to keep raw output
         del net_list[-1]

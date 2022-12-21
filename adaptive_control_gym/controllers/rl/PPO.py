@@ -25,9 +25,8 @@ class PPO:
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         # network
-        self.net_dims = [512, 256, 128]
-        self.act = ActorPPO(self.net_dims, state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
-        self.cri = CriticPPO(self.net_dims, state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
+        self.act = ActorPPO(state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
+        self.cri = CriticPPO(state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
         # self.adaptor = Adaptor(adapt_dim, adapt_mode).to(self.device)
         self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
