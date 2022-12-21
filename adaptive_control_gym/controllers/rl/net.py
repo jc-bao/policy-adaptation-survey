@@ -21,21 +21,48 @@ class ActorBase(nn.Module):
 
 
 class ActorPPO(ActorBase):
-    def __init__(self, dims: [int], state_dim: int, action_dim: int):
+    def __init__(self, dims: [int], state_dim: int, expert_dim: int, action_dim: int, expert_mode: int):
         super().__init__(state_dim=state_dim, action_dim=action_dim)
-        self.net = build_mlp_net(dims=[state_dim, *dims, action_dim])
+        self.expert_dim = expert_dim
+        self.expert_mode = expert_mode
+        dims = [state_dim, *dims, action_dim]
+        if expert_mode == 1:
+            dims[0] += expert_dim
+        elif expert_dim == 2:
+            dims[-2] += expert_dim
+        elif expert_dim == 3:
+            dims[:-1] += expert_dim
+        self.net = build_mlp_net(dims=dims)
         layer_init_with_orthogonal(self.net[-1], std=0.1)
 
         self.action_std_log = nn.Parameter(torch.zeros(
             (1, action_dim)), requires_grad=True)  # trainable parameter
 
-    def forward(self, state: Tensor) -> Tensor:
-        state = self.state_norm(state)
-        return self.net(state).tanh()  # action.tanh()
+    def forward(self, state: Tensor, e: Tensor) -> Tensor:
+        return self.convert_action_for_env(self.get_action_avg(state, e))
+        
+    def get_action_avg(self, state: Tensor, e: Tensor) -> Tensor:
+        if self.expert_mode == 0:
+            return self.net(state)
+        elif self.expert_mode == 1:
+            state = torch.cat([state, e], dim=-1)
+            return self.net(state)
+        elif self.expert_mode == 2:
+            # pass state into last layers of the net
+            for i in range(len(self.net) - 1):
+                state = self.net[i](state)
+            state = torch.cat([state, e], dim=-1)
+            return self.net[-1](state)
+        elif self.expert_mode == 3:
+            # pass state into each layers of the net
+            for i in range(len(self.net) - 1):
+                state = torch.cat([state, e], dim=-1)
+                state = self.net[i](state)
+            state = torch.cat([state, e], dim=-1)
+            return self.net[-1](state)
 
-    def get_action(self, state: Tensor) -> (Tensor, Tensor):  # for exploration
-        state = self.state_norm(state)
-        action_avg = self.net(state)
+    def get_action(self, state: Tensor, e:Tensor) -> (Tensor, Tensor):  # for exploration
+        action_avg = self.get_action_avg(state, e)
         action_std = self.action_std_log.exp()
 
         dist = self.ActionDist(action_avg, action_std)
@@ -43,9 +70,8 @@ class ActorPPO(ActorBase):
         logprob = dist.log_prob(action).sum(1)
         return action, logprob
 
-    def get_logprob_entropy(self, state: Tensor, action: Tensor) -> (Tensor, Tensor):
-        state = self.state_norm(state)
-        action_avg = self.net(state)
+    def get_logprob_entropy(self, state: Tensor, action: Tensor, e:Tensor) -> (Tensor, Tensor):
+        action_avg = self.get_action_avg(state, e)
         action_std = self.action_std_log.exp()
 
         dist = self.ActionDist(action_avg, action_std)

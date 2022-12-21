@@ -27,11 +27,12 @@ def train(args:Args)->None:
     eval_freq = 4
     curri_thereshold = 0.0
     
-    args.exp_name = f'EXP{args.expert_mode}_OOD{args.ood_mode}_S{args.seed}'
+    if len(args.exp_name) == 0:
+        args.exp_name = f'EXP{args.expert_mode}_OOD{args.ood_mode}_S{args.seed}'
     env = DroneEnv(
         env_num=env_num, gpu_id=args.gpu_id, seed = args.seed, 
-        expert_mode=args.expert_mode, ood_mode=args.ood_mode)
-    agent = PPO(state_dim=env.state_dim, action_dim=env.action_dim, env_num=env_num, gpu_id=args.gpu_id)
+        ood_mode=args.ood_mode)
+    agent = PPO(state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, env_num=env_num, gpu_id=args.gpu_id)
 
     # agent.act = torch.load('../../../results/rl/actor_ppo_EXPFalse_OODFalse_S0.pt', map_location='cuda:0')
 

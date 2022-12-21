@@ -18,7 +18,7 @@ from adaptive_control_gym import controllers as ctrl
 class DroneEnv(gym.Env):
     def __init__(self, 
         env_num: int = 1, gpu_id: int = 0, seed:int = 0, 
-        expert_mode:bool = False, ood_mode:bool = False,
+        ood_mode:bool = False,
         ):
         torch.random.set_rng_state(torch.manual_seed(1024).get_state())
         torch.manual_seed(seed)
@@ -36,7 +36,7 @@ class DroneEnv(gym.Env):
         self.delay_min, self.delay_max = 0, 0
         self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = 0.0,0.0 #-0.8, 0.8
+        self.disturb_min, self.disturb_max = -0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -80,11 +80,8 @@ class DroneEnv(gym.Env):
         self.dim = dim
         self.env_num = env_num
         self.ood_mode = ood_mode
-        self.expert_mode = expert_mode
         self.state_dim = 4*dim+2*dim*self.obs_traj_len
         self.expert_dim = (self.res_dyn_param_dim+dim*3+1)
-        if expert_mode:
-            self.state_dim += self.expert_dim
         self.action_dim = dim - 1
 
         self.reset()
@@ -202,11 +199,16 @@ class DroneEnv(gym.Env):
             self._set_disturb()
         if single_done:
             self.reset()
+        mass_normed = (self.mass-self.mass_mean)/self.mass_std #* 0.0
+        disturb_normed = (self.disturb-self.disturb_mean)/self.disturb_std # * 0.0
+        delay_normed = self.delay/10.0 # * 0.0
+        decay_normed = (self.decay-self.decay_mean)/self.decay_std # * 0.0
         info = {
             'mass': self.mass, 
             'disturb': self.disturb,
             'err_x': err_x, 
-            'err_v': err_v
+            'err_v': err_v, 
+            'e': torch.concat([mass_normed, disturb_normed, delay_normed, decay_normed, self.res_dyn_param], dim=-1)
         }
         next_obs = self._get_obs()
         # add gaussian noise to next_obs
@@ -227,8 +229,6 @@ class DroneEnv(gym.Env):
         future_traj_v = self.traj_v[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
         err_x, err_v = future_traj_x[..., 0] - self.x, future_traj_v[..., 0] - self.v
         obs = torch.concat([self.x, self.v*0.3, err_x, err_v*0.3, future_traj_x.reshape(self.env_num,-1), future_traj_v.reshape(self.env_num, -1)], dim=-1)
-        if self.expert_mode:
-            obs = torch.concat([obs, (self.mass-self.mass_mean)/self.mass_std, (self.disturb-self.disturb_mean)/self.disturb_std, self.delay/10.0, (self.decay-self.decay_mean)/self.decay_std, self.res_dyn_param], dim=-1)
         return obs
 
     def _set_disturb(self):
@@ -356,7 +356,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
     js = []
     # check if the policy is torch neural network
-    if_policy_grad = (isinstance(policy, nn.Module) and env.expert_mode) and False
+    if_policy_grad =  False
 
     n_ep = 5
     time_limit = env.max_steps*n_ep
@@ -475,9 +475,8 @@ def test_drone(env:DroneEnv, policy, save_path = None):
     env.close()
 
 if __name__ == "__main__":
-    expert_mode = True
-    env = DroneEnv(env_num=1, gpu_id = -1, seed=0, expert_mode=expert_mode)
+    env = DroneEnv(env_num=1, gpu_id = -1, seed=0)
     policy = get_drone_policy(env, policy_name = "ppo")
     test_drone(env, policy)
-    # eval_drone(policy.to("cuda:0"), {'expert_mode':expert_mode, 'seed': 0}, gpu_id = 0)
+    # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()

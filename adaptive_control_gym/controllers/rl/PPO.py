@@ -7,12 +7,13 @@ from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
 
 class PPO:
     def __init__(self, 
-        state_dim: int, action_dim: int, 
+        state_dim: int, expert_dim: int, action_dim: int, 
         env_num: int, gpu_id: int = 0):
         # env
         self.env_num = env_num
         self.action_dim = action_dim
         self.state_dim = state_dim
+        self.expert_dim = expert_dim
         self.last_state = None  # last state of the trajectory for training
         self.reward_scale = 1.0
         # update network
@@ -23,9 +24,11 @@ class PPO:
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         # network
+        act_expert_mode = 0
+        cri_expert_mode = 0
         self.net_dims = [512, 256, 128]
-        self.act = ActorPPO(self.net_dims, state_dim, action_dim).to(self.device)
-        self.cri = CriticPPO(self.net_dims, state_dim, action_dim).to(self.device)
+        self.act = ActorPPO(self.net_dims, state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
+        self.cri = CriticPPO(self.net_dims, state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
         # self.adaptor = Adaptor(adapt_dim, adapt_mode).to(self.device)
         self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
