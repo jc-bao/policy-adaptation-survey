@@ -28,10 +28,12 @@ class ActorPPO(ActorBase):
         dims = [state_dim, *dims, action_dim]
         if expert_mode == 1:
             dims[0] += expert_dim
-        elif expert_dim == 2:
+        elif expert_mode == 2:
             dims[-2] += expert_dim
-        elif expert_dim == 3:
+        elif expert_mode == 3:
             dims[:-1] += expert_dim
+        elif expert_mode != 0:
+            raise NotImplementedError
         self.net = build_mlp_net(dims=dims)
         layer_init_with_orthogonal(self.net[-1], std=0.1)
 
@@ -60,6 +62,7 @@ class ActorPPO(ActorBase):
                 state = self.net[i](state)
             state = torch.cat([state, e], dim=-1)
             return self.net[-1](state)
+            
 
     def get_action(self, state: Tensor, e:Tensor) -> (Tensor, Tensor):  # for exploration
         action_avg = self.get_action_avg(state, e)
@@ -106,16 +109,51 @@ class CriticBase(nn.Module):  # todo state_norm, value_norm
 
 
 class CriticPPO(CriticBase):
-    def __init__(self, dims: [int], state_dim: int, action_dim: int):
+    def __init__(self, dims: [int], state_dim: int, expert_dim: int, action_dim: int, expert_mode: int):
         super().__init__(state_dim=state_dim, action_dim=action_dim)
-        self.net = build_mlp_net(dims=[state_dim, *dims, 1])
+        self.expert_dim, self.expert_mode = expert_dim, expert_mode
+        dims = [state_dim, *dims, 1]
+        if expert_mode == 1:
+            dims[0] += expert_dim
+        elif expert_mode == 2:
+            dims[-2] += expert_dim
+        elif expert_mode == 3:
+            dims[:-1] += expert_dim
+        elif expert_mode == 4:
+            dims = [int(d/1.4) for d in dims]
+            dims[0], dims[-1] = expert_dim, 8
+            self.net_expert = build_mlp_net(dims=dims)
+            layer_init_with_orthogonal(self.net_expert[-1], std=0.5)
+            dims[0] = state_dim
+        elif expert_mode != 0:
+            raise NotImplementedError
+        self.net = build_mlp_net(dims=dims)
         layer_init_with_orthogonal(self.net[-1], std=0.5)
 
-    def forward(self, state: Tensor) -> Tensor:
-        state = self.state_norm(state)
-        value = self.net(state)
-        value = self.value_re_norm(value)
-        return value  # value
+    def forward(self, state: Tensor, e: Tensor) -> Tensor:
+        if self.expert_mode == 0:
+            return self.net(state)
+        elif self.expert_mode == 1:
+            state = torch.cat([state, e], dim=-1)
+            return self.net(state)
+        elif self.expert_mode == 2:
+            # pass state into last layers of the net
+            for i in range(len(self.net) - 1):
+                state = self.net[i](state)
+            state = torch.cat([state, e], dim=-1)
+            return self.net[-1](state)
+        elif self.expert_mode == 3:
+            # pass state into each layers of the net
+            for i in range(len(self.net) - 1):
+                state = torch.cat([state, e], dim=-1)
+                state = self.net[i](state)
+            state = torch.cat([state, e], dim=-1)
+            return self.net[-1](state)
+        elif self.expert_mode == 4:
+            embed_x = self.net(state)
+            embed_e = self.net_expert(e)
+            # return the dot product of two embeddings
+            return torch.sum(embed_x * embed_e, dim=-1, keepdim=True)
 
 
 def build_mlp_net(dims: [int], activation: nn = None, if_raw_out: bool = True) -> nn.Sequential:
