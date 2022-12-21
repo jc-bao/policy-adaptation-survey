@@ -199,16 +199,13 @@ class DroneEnv(gym.Env):
             self._set_disturb()
         if single_done:
             self.reset()
-        mass_normed = (self.mass-self.mass_mean)/self.mass_std #* 0.0
-        disturb_normed = (self.disturb-self.disturb_mean)/self.disturb_std # * 0.0
-        delay_normed = self.delay/10.0 # * 0.0
-        decay_normed = (self.decay-self.decay_mean)/self.decay_std # * 0.0
+        
         info = {
             'mass': self.mass, 
             'disturb': self.disturb,
             'err_x': err_x, 
             'err_v': err_v, 
-            'e': torch.concat([mass_normed, disturb_normed, delay_normed, decay_normed, self.res_dyn_param], dim=-1)
+            'e': self._get_e()
         }
         next_obs = self._get_obs()
         # add gaussian noise to next_obs
@@ -222,7 +219,7 @@ class DroneEnv(gym.Env):
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.traj_x, self.traj_v = self._generate_traj()
         self._set_disturb()
-        return self._get_obs()
+        return self._get_obs(), self._get_e()
 
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
@@ -230,6 +227,13 @@ class DroneEnv(gym.Env):
         err_x, err_v = future_traj_x[..., 0] - self.x, future_traj_v[..., 0] - self.v
         obs = torch.concat([self.x, self.v*0.3, err_x, err_v*0.3, future_traj_x.reshape(self.env_num,-1), future_traj_v.reshape(self.env_num, -1)], dim=-1)
         return obs
+
+    def _get_e(self):
+        mass_normed = (self.mass-self.mass_mean)/self.mass_std #* 0.0
+        disturb_normed = (self.disturb-self.disturb_mean)/self.disturb_std # * 0.0
+        delay_normed = self.delay/10.0 # * 0.0
+        decay_normed = (self.decay-self.decay_mean)/self.decay_std # * 0.0
+        return torch.concat([mass_normed, disturb_normed, delay_normed, decay_normed, self.res_dyn_param], dim=-1)
 
     def _set_disturb(self):
         if self.ood_mode:
@@ -352,7 +356,7 @@ def plot_drone():
 
 
 def test_drone(env:DroneEnv, policy, save_path = None):
-    state = env.reset()
+    state, e = env.reset()
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
     js = []
     # check if the policy is torch neural network
@@ -365,7 +369,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state)
+        act = policy(state, e)
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)

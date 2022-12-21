@@ -8,6 +8,7 @@ from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
 class PPO:
     def __init__(self, 
         state_dim: int, expert_dim: int, action_dim: int, 
+        act_expert_mode: int, cri_expert_mode: int,
         env_num: int, gpu_id: int = 0):
         # env
         self.env_num = env_num
@@ -24,8 +25,6 @@ class PPO:
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         # network
-        act_expert_mode = 0
-        cri_expert_mode = 0
         self.net_dims = [512, 256, 128]
         self.act = ActorPPO(self.net_dims, state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
         self.cri = CriticPPO(self.net_dims, state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
@@ -49,17 +48,18 @@ class PPO:
         dones = torch.zeros((horizon_len, self.env_num), dtype=torch.bool).to(self.device)
         err_xs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         err_vs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
+        es = torch.zeros((horizon_len, self.env_num, self.expert_dim), dtype=torch.float32).to(self.device)
 
-        state = self.last_state  # shape == (env_num, state_dim) for a vectorized env.
+        state, e = self.last_state  # shape == (env_num, state_dim) for a vectorized env.
 
         if deterministic:
-            get_action = lambda x: (self.act(x), 0.0)
+            get_action = lambda x,e: (self.act(x,e), 0.0)
             convert = lambda x: x
         else:
             get_action = self.act.get_action
             convert = self.act.convert_action_for_env
         for t in range(horizon_len):
-            action, logprob = get_action(state)
+            action, logprob = get_action(state, e)
             states[t] = state
 
             state, reward, done, info = env.step(convert(action))  # next_state
@@ -69,15 +69,16 @@ class PPO:
             dones[t] = done
             err_xs[t] = info["err_x"]
             err_vs[t] = info["err_v"]
+            es[t] = info['e']
 
-        self.last_state = state
+        self.last_state = state, info['e']
 
         rewards *= self.reward_scale
         undones = 1.0 - dones.type(torch.float32)
-        infos = {"err_x": err_xs, "err_v": err_vs}
+        infos = {"err_x": err_xs, "err_v": err_vs, 'e': es}
         return states, actions, logprobs, rewards, undones, infos
 
-    def update_net(self, states, actions, logprobs, rewards, undones):
+    def update_net(self, states, es, actions, logprobs, rewards, undones):
         with torch.no_grad():
             buffer_size = states.shape[0]
             buffer_num = states.shape[1]
@@ -86,7 +87,7 @@ class PPO:
             values = torch.empty_like(rewards)  # values.shape == (buffer_size, buffer_num)
             for i in range(0, buffer_size, self.batch_size):
                 for j in range(buffer_num):
-                    values[i:i + self.batch_size, j] = self.cri(states[i:i + self.batch_size, j]).squeeze(1)
+                    values[i:i + self.batch_size, j] = self.cri(states[i:i + self.batch_size, j], es[i:i+self.batch_size, j]).squeeze(1)
 
             advantages = self.get_advantages(rewards, undones, values)  # shape == (buffer_size, buffer_num)
             reward_sums = advantages + values  # shape == (buffer_size, buffer_num)
@@ -107,18 +108,19 @@ class PPO:
             ids1 = torch.div(ids, sample_len, rounding_mode='floor')  # ids // sample_len
 
             state = states[ids0, ids1]
+            e = es[ids0, ids1]
             action = actions[ids0, ids1]
             logprob = logprobs[ids0, ids1]
             advantage = advantages[ids0, ids1]
             reward_sum = reward_sums[ids0, ids1]
 
-            value = self.cri(state).squeeze(1)  # critic network predicts the reward_sum (Q value) of state
+            value = self.cri(state, e).squeeze(1)  # critic network predicts the reward_sum (Q value) of state
             obj_critic = self.criterion(value, reward_sum)
             self.optimizer_update(self.cri_optimizer, obj_critic)
 
 
             # judge if self.x contains nan
-            new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action)
+            new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, e)
             ratio = (new_logprob - logprob.detach()).exp()
             surrogate1 = advantage * ratio
             surrogate2 = advantage * ratio.clamp(1 - self.ratio_clip, 1 + self.ratio_clip)
@@ -138,7 +140,7 @@ class PPO:
         masks = undones * self.gamma
         horizon_len = rewards.shape[0]
 
-        next_value = self.cri(self.last_state).detach().squeeze(1)
+        next_value = self.cri(*self.last_state).detach().squeeze(1)
 
         advantage = torch.zeros_like(next_value)  # last advantage value by GAE (Generalized Advantage Estimate)
         for t in range(horizon_len - 1, -1, -1):

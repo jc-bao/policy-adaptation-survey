@@ -17,7 +17,8 @@ class Args:
     program:str='tmp'
     seed:int=0
     gpu_id:int=0
-    expert_mode:bool=False
+    act_expert_mode:int=0
+    cri_expert_mode:int=0
     ood_mode:bool=False
     exp_name:str= ''
 
@@ -28,11 +29,14 @@ def train(args:Args)->None:
     curri_thereshold = 0.0
     
     if len(args.exp_name) == 0:
-        args.exp_name = f'EXP{args.expert_mode}_OOD{args.ood_mode}_S{args.seed}'
+        args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_OOD{args.ood_mode}_S{args.seed}'
     env = DroneEnv(
         env_num=env_num, gpu_id=args.gpu_id, seed = args.seed, 
         ood_mode=args.ood_mode)
-    agent = PPO(state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, env_num=env_num, gpu_id=args.gpu_id)
+    agent = PPO(
+        state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, 
+        act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
+        env_num=env_num, gpu_id=args.gpu_id)
 
     # agent.act = torch.load('../../../results/rl/actor_ppo_EXPFalse_OODFalse_S0.pt', map_location='cuda:0')
 
@@ -46,11 +50,11 @@ def train(args:Args)->None:
         agent.last_state = env.reset()
         for i_ep in t:
             # train
-            explore_steps = int(env.max_steps * np.clip(i_ep/5, 0.2, 1))
+            explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.2, 1))
             total_steps += explore_steps * env_num
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps)
             torch.set_grad_enabled(True)
-            critic_loss, actor_loss, action_std = agent.update_net(states, actions, logprobs, rewards, undones)
+            critic_loss, actor_loss, action_std = agent.update_net(states, infos['e'], actions, logprobs, rewards, undones)
             torch.set_grad_enabled(False)
 
             # log
@@ -108,7 +112,7 @@ def train(args:Args)->None:
     actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
     plt_path = f'../../../results/rl/'
     torch.save(agent.act, actor_path)
-    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, expert_mode=args.expert_mode, ood_mode=args.ood_mode), agent.act.cpu(), save_path=plt_path)
+    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, ood_mode=args.ood_mode), agent.act.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(actor_path, base_path="../../../results/rl", policy="now")
