@@ -32,11 +32,11 @@ class DroneEnv(gym.Env):
         self.res_dyn_param_dim = 0
         self.curri_param = 1.0
 
-        self.mass_min, self.mass_max = 0.01, 0.04
+        self.mass_min, self.mass_max = 0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.2 
+        self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = -0.8, 0.8
+        self.disturb_min, self.disturb_max = 0.0,0.0 #-0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -64,7 +64,7 @@ class DroneEnv(gym.Env):
         self.gravity = 9.8
 
         # generate a sin trajectory with torch
-        self.obs_traj_len = 5
+        self.obs_traj_len = 1
         self.traj_scale = 0.0
         self.traj_T = 360
         if self.traj_scale == 0:
@@ -135,14 +135,15 @@ class DroneEnv(gym.Env):
             decay = -(torch.rand((size, self.dim), device=self.device))* (self.decay_max-self.decay_min) * 0.5 * self.curri_param + (self.decay_max+self.decay_min) * 0.5
             res_dyn_param = -(torch.rand((size, self.res_dyn_param_dim), device=self.device)) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 * self.curri_param + (self.res_dyn_param_max+self.res_dyn_param_min) * 0.5
         else:
-            mass = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.mass_max-self.mass_min) *self.curri_param + (self.mass_min+self.mass_max)*0.5
-            delay = (torch.rand((size, 1), device=self.device)*2-1) * (self.delay_max-self.delay_min) *self.curri_param + (self.delay_min+self.delay_max)*0.5
-            decay = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.decay_max-self.decay_min) *self.curri_param + (self.decay_min+self.decay_max)*0.5
-            res_dyn_param = (torch.rand((size, self.res_dyn_param_dim), device=self.device)*2-1) * (self.res_dyn_param_max-self.res_dyn_param_min) *self.curri_param + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
+            mass = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.mass_max-self.mass_min) * 0.5 *self.curri_param + (self.mass_min+self.mass_max)*0.5
+            delay = (torch.rand((size, 1), device=self.device)*2-1) * (self.delay_max-self.delay_min) * 0.5 *self.curri_param + (self.delay_min+self.delay_max)*0.5
+            decay = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.decay_max-self.decay_min) * 0.5 *self.curri_param + (self.decay_min+self.decay_max)*0.5
+            res_dyn_param = (torch.rand((size, self.res_dyn_param_dim), device=self.device)*2-1) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 *self.curri_param + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
         mass = torch.clip(mass, self.mass_min, self.mass_max)
         mass[:, 1] = mass[:, 0]
         mass[:, 2] *= self.rotate_mass_scale
         delay = torch.clip(delay, self.delay_min, self.delay_max).type(torch.int)
+        ic(decay)
         decay = torch.clip(decay, self.decay_min, self.decay_max)
         res_dyn_param = torch.clip(res_dyn_param, self.res_dyn_param_min, self.res_dyn_param_max)
 
