@@ -62,13 +62,14 @@ class PPO:
             states[t] = state
 
             state, reward, done, info = env.step(convert(action))  # next_state
+            e = info['e']
             actions[t] = action
             logprobs[t] = logprob
             rewards[t] = reward
             dones[t] = done
+            es[t] = e
             err_xs[t] = info["err_x"]
             err_vs[t] = info["err_v"]
-            es[t] = info['e']
 
         self.last_state = state, info['e']
 

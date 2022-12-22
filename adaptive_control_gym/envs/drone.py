@@ -376,6 +376,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
             jacobian = torch.autograd.grad(act, state, grad_outputs=torch.ones_like(act), create_graph=True)[0][0, -env.expert_dim:]
         with torch.no_grad():
             state, rew, done, info = env.step(act)  # take a random action
+        e = info['e']
         x_list.append(state[0,:env.dim].numpy())
         v_list.append(state[0,env.dim:env.dim*2].numpy())
         traj_x_list.append(env.traj_x[0,:,t%env.max_steps].numpy())
