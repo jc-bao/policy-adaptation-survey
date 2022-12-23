@@ -203,6 +203,15 @@ class CriticPPO(CriticBase):
             return torch.sum(state * e, dim=-1, keepdim=True)
 
 
+class Compressor(nn.Module):
+    def __init__(self, expert_dim, embedding_dim) -> None:
+        super().__init__()
+        self.mlp = build_mlp_net([expert_dim, 128, 128, embedding_dim], activation=nn.ReLU, if_raw_out=False)
+    
+    def forward(self, x):
+        # use tanh as activation
+        return torch.tanh(self.mlp(x))
+
 def build_mlp_net(dims: [int], activation: nn = None, if_raw_out: bool = True) -> nn.Sequential:
     """
     build MLP (MultiLayer Perceptron)
@@ -215,7 +224,7 @@ def build_mlp_net(dims: [int], activation: nn = None, if_raw_out: bool = True) -
         activation = nn.ReLU
     net_list = []
     for i in range(len(dims) - 1):
-        net_list.extend([nn.Linear(dims[i,0], dims[i,1]), activation()])
+        net_list.extend([nn.Linear(dims[i], dims[i+1]), activation()])
     if if_raw_out:
         # delete the activation function of the output layer to keep raw output
         del net_list[-1]

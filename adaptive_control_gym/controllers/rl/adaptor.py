@@ -38,7 +38,9 @@ class AdaptorMLP(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(256, 128),
             nn.ReLU(inplace=True),
-            nn.Linear(128, output_dim),
+            nn.Linear(128, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, output_dim),
         )
 
     def forward(self, x):

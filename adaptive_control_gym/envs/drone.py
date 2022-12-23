@@ -37,7 +37,7 @@ class DroneEnv(gym.Env):
         self.delay_min, self.delay_max = 0, 0
         self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = -0.8, 0.8
+        self.disturb_min, self.disturb_max = 0.0, 0.0 #-0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters

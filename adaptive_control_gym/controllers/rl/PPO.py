@@ -2,20 +2,21 @@ import torch
 from typing import List, Iterable, Union
 import math
 
-from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO
+from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO, Compressor
 from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
 from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP
 
 class PPO:
     def __init__(self, 
         state_dim: int, expert_dim: int, action_dim: int, adapt_horizon: int,
-        act_expert_mode: int, cri_expert_mode: int,
+        act_expert_mode: int, cri_expert_mode: int, compressor_dim: int,
         env_num: int, gpu_id: int = 0):
         # env
         self.env_num = env_num
         self.action_dim = action_dim
         self.state_dim = state_dim
         self.expert_dim = expert_dim
+        self.compressor_dim = compressor_dim
         self.last_state, self.last_info = None, None  # last state of the trajectory for training
         self.reward_scale = 1.0
         # update network
@@ -26,10 +27,16 @@ class PPO:
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         # network
-        self.act = ActorPPO(state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
         self.cri = CriticPPO(state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
-        # self.adaptor = Adaptor(adapt_dim, adapt_mode).to(self.device)
-        self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
+        # compressor
+        if compressor_dim > 0:
+            self.act = ActorPPO(state_dim, compressor_dim, action_dim, act_expert_mode).to(self.device)
+            self.compressor = Compressor(expert_dim, compressor_dim).to(self.device)
+            self.act_optimizer = torch.optim.Adam(list(self.act.parameters())+list(self.compressor.parameters()), self.learning_rate)
+        else:
+            self.act = ActorPPO(state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
+            self.compressor = lambda x: x
+            self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
         self.criterion = torch.nn.SmoothL1Loss(reduction="mean")
         # ppo
@@ -41,8 +48,12 @@ class PPO:
         self.buffer = ReplayBufferList()
         # adaptor
         self.adapt_horizon = adapt_horizon
-        self.adaptor = AdaptorMLP(state_dim, adapt_horizon, expert_dim).to(self.device)
+        if compressor_dim > 0:
+            self.adaptor = AdaptorMLP(state_dim, adapt_horizon, compressor_dim).to(self.device)
+        else:
+            self.adaptor = AdaptorMLP(state_dim, adapt_horizon, expert_dim).to(self.device)
         self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
+
 
     def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False) -> List[torch.Tensor]:
         states = torch.zeros((horizon_len, self.env_num, self.state_dim), dtype=torch.float32).to(self.device)
@@ -67,6 +78,8 @@ class PPO:
         for t in range(horizon_len):
             if use_adaptor:
                 e = self.adaptor(obs_history)
+            else:
+                e = self.compressor(e)
             action, logprob = get_action(state, e)
             states[t] = state
 
@@ -110,6 +123,7 @@ class PPO:
         obj_actors = 0.0
         sample_len = buffer_size - 1
 
+
         update_times = int(buffer_size * buffer_num * self.repeat_times / self.batch_size)
         assert update_times >= 1
         for _ in range(update_times):
@@ -130,7 +144,7 @@ class PPO:
 
 
             # judge if self.x contains nan
-            new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, e)
+            new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, self.compressor(e))
             ratio = (new_logprob - logprob.detach()).exp()
             surrogate1 = advantage * ratio
             surrogate2 = advantage * ratio.clamp(1 - self.ratio_clip, 1 + self.ratio_clip)
@@ -159,11 +173,11 @@ class PPO:
             obs_history = obs_histories[ids0, ids1]
             e = es[ids0, ids1]
 
-
             # predict e with obs_history and adaptor
             e_pred = self.adaptor(obs_history)
+            e_compresed = self.compressor(e_pred)
             # calculate loss and update adaptor
-            obj_adaptor = self.criterion(e_pred, e)
+            obj_adaptor = self.criterion(e_pred, e_compresed)
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
 
             adaptor_loss += obj_adaptor.item()
