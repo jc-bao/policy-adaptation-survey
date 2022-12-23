@@ -24,7 +24,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 6.0e6
+    total_steps = 6.0e6*0.0
     adapt_steps = 6.0e6
     eval_freq = 4
     curri_thereshold = 0.0
@@ -40,7 +40,7 @@ def train(args:Args)->None:
         act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # agent.act = torch.load('../../../results/rl/actor_ppo_EXPFalse_OODFalse_S0.pt', map_location='cuda:0')
+    agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx1_CriEx3_OODFalse_S0.pt', map_location='cuda:0')
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
@@ -96,7 +96,7 @@ def train(args:Args)->None:
     with trange(n_ep) as t:
         agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
-            total_steps+=env.max_steps
+            total_steps+=(env.max_steps*env_num)
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps)
             torch.set_grad_enabled(True)
             adaptor_loss = agent.update_adaptor(infos['e'], infos['obs_history'])

@@ -145,7 +145,7 @@ class PPO:
         return obj_critics / update_times, obj_actors / update_times, a_std_log.item()
 
     def update_adaptor(self, es, obs_histories):
-        obj_adaptor = 0.0
+        adaptor_loss = 0.0
         buffer_size = es.shape[0]
         buffer_num = es.shape[1]
         update_times = int(buffer_size * buffer_num * self.repeat_times / self.batch_size)
@@ -159,13 +159,15 @@ class PPO:
             obs_history = obs_histories[ids0, ids1]
             e = es[ids0, ids1]
 
+
             # predict e with obs_history and adaptor
             e_pred = self.adaptor(obs_history)
+            # calculate loss and update adaptor
             obj_adaptor = self.criterion(e_pred, e)
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
 
-            obj_adaptor += obj_adaptor.item()
-        return obj_adaptor.item() / update_times
+            adaptor_loss += obj_adaptor.item()
+        return adaptor_loss / update_times
 
 
     def get_advantages(self, rewards: torch.Tensor, undones: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
