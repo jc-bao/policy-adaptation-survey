@@ -175,7 +175,7 @@ class PPO:
 
             # predict e with obs_history and adaptor
             e_pred = self.adaptor(obs_history)
-            e_compresed = self.compressor(e_pred)
+            e_compresed = self.compressor(e)
             # calculate loss and update adaptor
             obj_adaptor = self.criterion(e_pred, e_compresed)
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
