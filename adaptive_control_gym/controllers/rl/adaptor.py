@@ -34,11 +34,11 @@ class AdaptorMLP(nn.Module):
     def __init__(self, state_dim, horizon, output_dim):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(state_dim*horizon, 128),
+            nn.Linear(state_dim*horizon, 256),
             nn.ReLU(inplace=True),
-            nn.Linear(128, 64),
+            nn.Linear(256, 128),
             nn.ReLU(inplace=True),
-            nn.Linear(64, output_dim),
+            nn.Linear(128, output_dim),
         )
 
     def forward(self, x):

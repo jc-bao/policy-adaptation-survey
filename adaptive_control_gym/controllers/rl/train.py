@@ -25,7 +25,7 @@ class Args:
 def train(args:Args)->None:
     env_num = 1024
     total_steps = 6.0e6
-    adapt_steps = 100
+    adapt_steps = 6.0e6
     eval_freq = 4
     curri_thereshold = 0.0
     
@@ -62,10 +62,11 @@ def train(args:Args)->None:
             # log
             rew_mean = rewards.mean().item()
             rew_final_mean = rewards[-1].mean().item()
-            err_x_mean = infos['err_x'].mean().item()
-            err_v_mean = infos['err_v'].mean().item()
-            err_x_last10_mean = infos['err_x'][-10:].mean().item()
-            err_v_last10_mean = infos['err_v'][-10:].mean().item()
+            err_x, err_v = infos['err_x'][:-1], infos['err_v'][:-1]
+            err_x_mean = err_x.mean().item()
+            err_v_mean = err_v.mean().item()
+            err_x_last10_mean = err_x[-10:].mean().item()
+            err_v_last10_mean = err_v[-10:].mean().item()
             if args.use_wandb:
                 wandb.log({
                     'train/rewards_mean': rew_mean, 
@@ -87,22 +88,9 @@ def train(args:Args)->None:
                 if args.use_wandb:
                     wandb.log(log_dict, step=total_steps)
                 else:
-                    ic(log_dict['eval/rewards_mean'], rewards[-1].mean().item())
+                    ic(log_dict['eval/rewards_mean'])
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
                     env.curri_param+=0.1
-
-    actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
-    plt_path = f'../../../results/rl/'
-    torch.save(agent.act, actor_path)
-    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, ood_mode=args.ood_mode), agent.act.cpu(), save_path=plt_path)
-    # evaluate
-    if args.use_wandb:
-        wandb.save(actor_path, base_path="../../../results/rl", policy="now")
-        # save the plot
-        wandb.log({
-            "eval/plot": wandb.Image(plt_path+'/plot.png', caption="plot"), 
-            "eval/vis": wandb.Image(plt_path+'/vis.png', caption="vis")
-            })
 
     n_ep = int(adapt_steps//steps_per_ep)
     with trange(n_ep) as t:
@@ -119,14 +107,32 @@ def train(args:Args)->None:
                 wandb.log({
                     'adapt/adaptor_loss': adaptor_loss, 
                 }, step=total_steps)
-            t.set_postfix(adaptor_loss, steps = total_steps)
+            else:
+                ic(adaptor_loss)
+            t.set_postfix(adaptor_loss = adaptor_loss, steps = total_steps)
 
-        # evaluate
-        log_dict = eval_env(env, agent, use_adaptor=True)
-        if args.use_wandb:
-            wandb.log(log_dict, step=total_steps)
-        else:
-            ic(log_dict['eval/rewards_mean'], rewards[-1].mean().item())
+            # evaluate
+            log_dict = eval_env(env, agent, use_adaptor=True)
+            if args.use_wandb:
+                wandb.log(log_dict, step=total_steps)
+            else:
+                ic(log_dict['eval/rewards_mean'])
+    
+    actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
+    adaptor_path = f'../../../results/rl/adaptor_ppo_{args.exp_name}.pt'
+    plt_path = f'../../../results/rl/'
+    torch.save(agent.act, actor_path)
+    torch.save(agent.adaptor, adaptor_path)
+    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, ood_mode=args.ood_mode), agent.act.cpu(), save_path=plt_path)
+    # evaluate
+    if args.use_wandb:
+        wandb.save(actor_path, base_path="../../../results/rl", policy="now")
+        # save the plot
+        wandb.log({
+            "eval/plot": wandb.Image(plt_path+'/plot.png', caption="plot"), 
+            "eval/vis": wandb.Image(plt_path+'/vis.png', caption="vis")
+        })
+
 
 
 def eval_env(env, agent, deterministic=True, use_adaptor=False):
@@ -139,10 +145,11 @@ def eval_env(env, agent, deterministic=True, use_adaptor=False):
     if have_ood:
         env.ood_mode = original_mode
     rew_mean = rewards.mean().item()
-    err_x_mean = infos['err_x'].mean().item()
-    err_v_mean = infos['err_v'].mean().item()
-    err_x_last10_mean = infos['err_x'][-10:].mean().item()
-    err_v_last10_mean = infos['err_v'][-10:].mean().item()
+    err_x, err_v = infos['err_x'][:-1], infos['err_v'][:-1]
+    err_x_mean = err_x.mean().item()
+    err_v_mean = err_v.mean().item()
+    err_x_last10_mean = err_x[-10:].mean().item()
+    err_v_last10_mean = err_v[-10:].mean().item()
     log_dict = {
         'eval/rewards_mean': rew_mean,
         'eval/rewards_final': rewards[-1].mean().item(),

@@ -238,7 +238,7 @@ class DroneEnv(gym.Env):
             'err_x': err_x, 
             'err_v': err_v, 
             'e': self._get_e(),
-            'obs_history': self.obs_history,
+            'obs_history': torch.concat(self.obs_history, dim=-1),
         }
 
 
@@ -370,7 +370,8 @@ def plot_drone():
 
 
 def test_drone(env:DroneEnv, policy, save_path = None):
-    state, e = env.reset()
+    state, info = env.reset()
+    e = info['e']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
     js = []
     # check if the policy is torch neural network

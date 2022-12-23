@@ -165,7 +165,7 @@ class PPO:
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
 
             obj_adaptor += obj_adaptor.item()
-        return obj_adaptor / update_times
+        return obj_adaptor.item() / update_times
 
 
     def get_advantages(self, rewards: torch.Tensor, undones: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
