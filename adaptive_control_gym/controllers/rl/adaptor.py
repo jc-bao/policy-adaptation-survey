@@ -2,11 +2,13 @@ import torch
 from torch import nn
 
 class AdaptorTConv(nn.Module):
-    def __init__(self):
+    def __init__(self, state_dim, action_dim, horizon, output_dim):
         super().__init__()
-        self.embedding_size = 4
-        self.output_size = 2
-        self.input_size = 16 + 16
+        self.state_dim = state_dim
+        self.horizon = horizon
+        self.embedding_size = 32
+        self.output_size = output_dim
+        self.input_size = state_dim + action_dim
         self.channel_transform = nn.Sequential(
             nn.Linear(self.input_size, self.embedding_size),
             nn.ReLU(inplace=True),
@@ -14,27 +16,28 @@ class AdaptorTConv(nn.Module):
             nn.ReLU(inplace=True),
         )
         self.temporal_aggregation = nn.Sequential(
-            nn.Conv1d(self.embedding_size, self.embedding_size, (5,), stride=(2,)),
+            nn.Conv1d(self.embedding_size, self.embedding_size, (4,), stride=(2,)),
             nn.ReLU(inplace=True),
-            nn.Conv1d(self.embedding_size, self.embedding_size, (4,), stride=(1,)),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(self.embedding_size, self.embedding_size, (3,), stride=(1,)),
+            # nn.Conv1d(self.embedding_size, self.embedding_size, (3,), stride=(1,)),
+            # nn.ReLU(inplace=True),
+            nn.Conv1d(self.embedding_size, self.embedding_size, (2,), stride=(1,)),
             nn.ReLU(inplace=True),
         )
         self.low_dim_proj = nn.Linear(self.embedding_size * 3, self.output_size)
 
     def forward(self, x):
-        x = self.channel_transform(x)  # (N, 50, self.embedding_size)
-        x = x.permute((0, 2, 1))  # (N, self.embedding_size, 50)
+        x = x.reshape(-1, self.horizon, self.input_size)  # (N, 10, 20)
+        x = self.channel_transform(x)  # (N, 10, self.embedding_size)
+        x = x.permute((0, 2, 1))  # (N, self.embedding_size, 10)
         x = self.temporal_aggregation(x)  # (N, self.embedding_size, 3)
         x = self.low_dim_proj(x.flatten(1))
         return x
 
 class AdaptorMLP(nn.Module):
-    def __init__(self, state_dim, horizon, output_dim):
+    def __init__(self, state_dim, action_dim, horizon, output_dim):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(state_dim*horizon, 256),
+            nn.Linear((state_dim+action_dim)*horizon, 256),
             nn.ReLU(inplace=True),
             nn.Linear(256, 128),
             nn.ReLU(inplace=True),
@@ -44,4 +47,4 @@ class AdaptorMLP(nn.Module):
         )
 
     def forward(self, x):
-        return self.mlp(x)
+        return torch.tanh(self.mlp(x))

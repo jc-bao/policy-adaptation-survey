@@ -37,7 +37,7 @@ class DroneEnv(gym.Env):
         self.delay_min, self.delay_max = 0, 0
         self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = 0.0, 0.0 #-0.8, 0.8
+        self.disturb_min, self.disturb_max = -0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -203,7 +203,7 @@ class DroneEnv(gym.Env):
         
         next_obs = self._get_obs()
         # update observation history
-        self.obs_history.append(next_obs)
+        self.obs_history.append(torch.cat((next_obs, action), dim=-1))
         self.obs_history.pop(0)
         next_info = self._get_info()
         # add gaussian noise to next_obs
@@ -218,7 +218,7 @@ class DroneEnv(gym.Env):
         self.traj_x, self.traj_v = self._generate_traj()
         self._set_disturb()
         obs = self._get_obs()
-        self.obs_history = [obs] * self.adapt_horizon
+        self.obs_history = [torch.concat((obs, torch.zeros((self.env_num, 2), device=self.device)), dim=-1)] * self.adapt_horizon
         info = self._get_info()
         return obs, info
 
@@ -369,9 +369,9 @@ def plot_drone():
     plt.savefig('../../results/rl/sensitivity.png')
 
 
-def test_drone(env:DroneEnv, policy, save_path = None):
+def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     state, info = env.reset()
-    e = info['e']
+    obs_his = info['obs_history']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
     js = []
     # check if the policy is torch neural network
@@ -384,7 +384,7 @@ def test_drone(env:DroneEnv, policy, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state, e)
+        act = policy(state, adaptor(obs_his))
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)

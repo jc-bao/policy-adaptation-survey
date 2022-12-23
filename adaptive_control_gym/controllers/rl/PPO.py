@@ -4,7 +4,7 @@ import math
 
 from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO, Compressor
 from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
-from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP
+from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP, AdaptorTConv
 
 class PPO:
     def __init__(self, 
@@ -49,9 +49,9 @@ class PPO:
         # adaptor
         self.adapt_horizon = adapt_horizon
         if compressor_dim > 0:
-            self.adaptor = AdaptorMLP(state_dim, adapt_horizon, compressor_dim).to(self.device)
+            self.adaptor = AdaptorTConv(state_dim, action_dim, adapt_horizon, compressor_dim).to(self.device)
         else:
-            self.adaptor = AdaptorMLP(state_dim, adapt_horizon, expert_dim).to(self.device)
+            self.adaptor = AdaptorMLP(state_dim, action_dim, adapt_horizon, expert_dim).to(self.device)
         self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
 
 
@@ -64,7 +64,7 @@ class PPO:
         err_xs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         err_vs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         es = torch.zeros((horizon_len, self.env_num, self.expert_dim), dtype=torch.float32).to(self.device)
-        obs_his = torch.zeros((horizon_len, self.env_num, self.state_dim*self.adapt_horizon), dtype=torch.float32).to(self.device)
+        obs_his = torch.zeros((horizon_len, self.env_num, (self.state_dim+self.action_dim)*self.adapt_horizon), dtype=torch.float32).to(self.device)
 
         state, info = self.last_state, self.last_info  # shape == (env_num, state_dim) for a vectorized env.
         e, obs_history = info['e'], info['obs_history']
