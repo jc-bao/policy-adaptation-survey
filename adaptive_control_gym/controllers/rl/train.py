@@ -35,6 +35,7 @@ def train(args:Args)->None:
         ood_mode=args.ood_mode)
     agent = PPO(
         state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, 
+        adapt_horizon=env.adapt_horizon, 
         act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
         env_num=env_num, gpu_id=args.gpu_id)
 

@@ -4,10 +4,11 @@ import math
 
 from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO
 from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
+from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP
 
 class PPO:
     def __init__(self, 
-        state_dim: int, expert_dim: int, action_dim: int, 
+        state_dim: int, expert_dim: int, action_dim: int, adapt_horizon: int,
         act_expert_mode: int, cri_expert_mode: int,
         env_num: int, gpu_id: int = 0):
         # env
@@ -38,6 +39,8 @@ class PPO:
         self.lambda_entropy = torch.tensor(self.lambda_entropy, dtype=torch.float32, device=self.device)
         # buffer
         self.buffer = ReplayBufferList()
+        # adaptor
+        self.adaptor = AdaptorMLP(state_dim, adapt_horizon, expert_dim).to(self.device)
 
     def explore_env(self, env, horizon_len: int, deterministic: bool=False) -> List[torch.Tensor]:
         states = torch.zeros((horizon_len, self.env_num, self.state_dim), dtype=torch.float32).to(self.device)
@@ -133,6 +136,14 @@ class PPO:
             obj_actors += obj_actor.item()
         a_std_log = self.act.action_std_log.mean()
         return obj_critics / update_times, obj_actors / update_times, a_std_log.item()
+
+    def update_adaptor(self, states, es, actions, logprobs, rewards, undones):
+        with torch.no_grad():
+            buffer_size = states.shape[0]
+            buffer_num = states.shape[1]
+
+            '''get advantages and reward_sums'''
+            values = torch.empty_like(rewards)
 
     def get_advantages(self, rewards: torch.Tensor, undones: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
         advantages = torch.empty_like(values)  # advantage value

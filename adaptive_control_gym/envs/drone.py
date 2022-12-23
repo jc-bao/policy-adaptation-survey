@@ -31,6 +31,7 @@ class DroneEnv(gym.Env):
         self.res_dyn_scale = 0.0  / (2**dim)
         self.res_dyn_param_dim = 0
         self.curri_param = 1.0
+        self.adapt_horizon = 10
 
         self.mass_min, self.mass_max = 0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
@@ -200,17 +201,14 @@ class DroneEnv(gym.Env):
         if single_done:
             self.reset()
         
-        info = {
-            'mass': self.mass, 
-            'disturb': self.disturb,
-            'err_x': err_x, 
-            'err_v': err_v, 
-            'e': self._get_e()
-        }
         next_obs = self._get_obs()
+        # update observation history
+        self.obs_history.append(next_obs)
+        self.obs_history.pop(0)
+        next_info = self._get_info()
         # add gaussian noise to next_obs
         next_obs += torch.randn_like(next_obs, device=self.device) * self.obs_noise_std
-        return next_obs, reward, done, info
+        return next_obs, reward, done, next_info
 
     def reset(self):
         self.step_cnt = 0
@@ -219,7 +217,10 @@ class DroneEnv(gym.Env):
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.traj_x, self.traj_v = self._generate_traj()
         self._set_disturb()
-        return self._get_obs(), self._get_e()
+        obs = self._get_obs()
+        self.obs_history = [obs] * self.adapt_horizon
+        e = self._get_e()
+        return obs, e
 
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
@@ -227,6 +228,19 @@ class DroneEnv(gym.Env):
         err_x, err_v = future_traj_x[..., 0] - self.x, future_traj_v[..., 0] - self.v
         obs = torch.concat([self.x, self.v*0.3, err_x, err_v*0.3, future_traj_x.reshape(self.env_num,-1), future_traj_v.reshape(self.env_num, -1)], dim=-1)
         return obs
+
+    def _get_info(self):
+        err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
+        err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
+        return {
+            'mass': self.mass, 
+            'disturb': self.disturb,
+            'err_x': err_x, 
+            'err_v': err_v, 
+            'e': self._get_e(),
+            'obs_history': self.obs_history,
+        }
+
 
     def _get_e(self):
         mass_normed = (self.mass-self.mass_mean)/self.mass_std #* 0.0
