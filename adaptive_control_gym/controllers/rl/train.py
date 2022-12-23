@@ -25,6 +25,7 @@ class Args:
 def train(args:Args)->None:
     env_num = 1024
     total_steps = 6.0e6
+    adapt_steps = 100
     eval_freq = 4
     curri_thereshold = 0.0
     
@@ -48,7 +49,7 @@ def train(args:Args)->None:
     total_steps = 0
     env.curri_param = 1.0
     with trange(n_ep) as t:
-        agent.last_state = env.reset()
+        agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
             # train
             explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.2, 1))
@@ -82,34 +83,14 @@ def train(args:Args)->None:
 
             # evaluate
             if i_ep % eval_freq == 0:
-                agent.last_state = env.reset()
-                have_ood = hasattr(env, 'ood_mode')
-                if have_ood:
-                    original_mode = env.ood_mode
-                    env.ood_mode = False
-                states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=True)
-                if have_ood:
-                    env.ood_mode = original_mode
-                rew_mean = rewards.mean().item()
-                err_x_mean = infos['err_x'].mean().item()
-                err_v_mean = infos['err_v'].mean().item()
-                err_x_last10_mean = infos['err_x'][-10:].mean().item()
-                err_v_last10_mean = infos['err_v'][-10:].mean().item()
+                log_dict = eval_env(env, agent)
                 if args.use_wandb:
-                    wandb.log({
-                        'eval/rewards_mean': rew_mean,
-                        'eval/rewards_final': rewards[-1].mean().item(),
-                        'eval/err_x': err_x_mean,
-                        'eval/err_v': err_v_mean,
-                        'eval/err_x_last10': err_x_last10_mean,
-                        'eval/err_v_last10': err_v_last10_mean,
-                    }, step=total_steps)
+                    wandb.log(log_dict, step=total_steps)
                 else:
-                    ic(rew_mean, rewards[-1].mean().item())
+                    ic(log_dict['eval/rewards_mean'], rewards[-1].mean().item())
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
                     env.curri_param+=0.1
-            
-    
+
     actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
     plt_path = f'../../../results/rl/'
     torch.save(agent.act, actor_path)
@@ -122,6 +103,57 @@ def train(args:Args)->None:
             "eval/plot": wandb.Image(plt_path+'/plot.png', caption="plot"), 
             "eval/vis": wandb.Image(plt_path+'/vis.png', caption="vis")
             })
+
+    n_ep = int(adapt_steps//steps_per_ep)
+    with trange(n_ep) as t:
+        agent.last_state, agent.last_info = env.reset()
+        for i_ep in t:
+            total_steps+=env.max_steps
+            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps)
+            torch.set_grad_enabled(True)
+            adaptor_loss = agent.update_adaptor(infos['e'], infos['obs_history'])
+            torch.set_grad_enabled(False)
+
+            # log
+            if args.use_wandb:
+                wandb.log({
+                    'adapt/adaptor_loss': adaptor_loss, 
+                }, step=total_steps)
+            t.set_postfix(adaptor_loss, steps = total_steps)
+
+        # evaluate
+        log_dict = eval_env(env, agent, use_adaptor=True)
+        if args.use_wandb:
+            wandb.log(log_dict, step=total_steps)
+        else:
+            ic(log_dict['eval/rewards_mean'], rewards[-1].mean().item())
+
+
+def eval_env(env, agent, deterministic=True, use_adaptor=False):
+    agent.last_state, agent.last_info = env.reset()
+    have_ood = hasattr(env, 'ood_mode')
+    if have_ood:
+        original_mode = env.ood_mode
+        env.ood_mode = False
+    states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
+    if have_ood:
+        env.ood_mode = original_mode
+    rew_mean = rewards.mean().item()
+    err_x_mean = infos['err_x'].mean().item()
+    err_v_mean = infos['err_v'].mean().item()
+    err_x_last10_mean = infos['err_x'][-10:].mean().item()
+    err_v_last10_mean = infos['err_v'][-10:].mean().item()
+    log_dict = {
+        'eval/rewards_mean': rew_mean,
+        'eval/rewards_final': rewards[-1].mean().item(),
+        'eval/err_x': err_x_mean,
+        'eval/err_v': err_v_mean,
+        'eval/err_x_last10': err_x_last10_mean,
+        'eval/err_v_last10': err_v_last10_mean,
+    }
+    return log_dict
+
+
 
 if __name__=='__main__':
     train(tyro.cli(Args))

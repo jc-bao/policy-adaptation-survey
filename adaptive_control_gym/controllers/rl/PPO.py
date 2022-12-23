@@ -16,7 +16,7 @@ class PPO:
         self.action_dim = action_dim
         self.state_dim = state_dim
         self.expert_dim = expert_dim
-        self.last_state = None  # last state of the trajectory for training
+        self.last_state, self.last_info = None, None  # last state of the trajectory for training
         self.reward_scale = 1.0
         # update network
         self.gamma = 0.95
@@ -40,9 +40,11 @@ class PPO:
         # buffer
         self.buffer = ReplayBufferList()
         # adaptor
+        self.adapt_horizon = adapt_horizon
         self.adaptor = AdaptorMLP(state_dim, adapt_horizon, expert_dim).to(self.device)
+        self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
 
-    def explore_env(self, env, horizon_len: int, deterministic: bool=False) -> List[torch.Tensor]:
+    def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False) -> List[torch.Tensor]:
         states = torch.zeros((horizon_len, self.env_num, self.state_dim), dtype=torch.float32).to(self.device)
         actions = torch.zeros((horizon_len, self.env_num, self.action_dim), dtype=torch.float32).to(self.device)
         logprobs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
@@ -51,8 +53,10 @@ class PPO:
         err_xs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         err_vs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         es = torch.zeros((horizon_len, self.env_num, self.expert_dim), dtype=torch.float32).to(self.device)
+        obs_his = torch.zeros((horizon_len, self.env_num, self.state_dim*self.adapt_horizon), dtype=torch.float32).to(self.device)
 
-        state, e = self.last_state  # shape == (env_num, state_dim) for a vectorized env.
+        state, info = self.last_state, self.last_info  # shape == (env_num, state_dim) for a vectorized env.
+        e, obs_history = info['e'], info['obs_history']
 
         if deterministic:
             get_action = lambda x,e: (self.act(x,e), 0.0)
@@ -61,6 +65,8 @@ class PPO:
             get_action = self.act.get_action
             convert = self.act.convert_action_for_env
         for t in range(horizon_len):
+            if use_adaptor:
+                e = self.adaptor(obs_history)
             action, logprob = get_action(state, e)
             states[t] = state
 
@@ -73,12 +79,13 @@ class PPO:
             es[t] = e
             err_xs[t] = info["err_x"]
             err_vs[t] = info["err_v"]
+            obs_his[t] = info["obs_history"]
 
-        self.last_state = state, info['e']
+        self.last_state, self.last_info = state, info
 
         rewards *= self.reward_scale
         undones = 1.0 - dones.type(torch.float32)
-        infos = {"err_x": err_xs, "err_v": err_vs, 'e': es}
+        infos = {"err_x": err_xs, "err_v": err_vs, 'e': es, 'obs_history': obs_his}
         return states, actions, logprobs, rewards, undones, infos
 
     def update_net(self, states, es, actions, logprobs, rewards, undones):
@@ -137,13 +144,29 @@ class PPO:
         a_std_log = self.act.action_std_log.mean()
         return obj_critics / update_times, obj_actors / update_times, a_std_log.item()
 
-    def update_adaptor(self, states, es, actions, logprobs, rewards, undones):
-        with torch.no_grad():
-            buffer_size = states.shape[0]
-            buffer_num = states.shape[1]
+    def update_adaptor(self, es, obs_histories):
+        obj_adaptor = 0.0
+        buffer_size = es.shape[0]
+        buffer_num = es.shape[1]
+        update_times = int(buffer_size * buffer_num * self.repeat_times / self.batch_size)
+        sample_len = buffer_size - 1
+        assert update_times >= 1
+        for _ in range(update_times):
+            ids = torch.randint(sample_len * buffer_num, size=(self.batch_size,), requires_grad=False)
+            ids0 = torch.fmod(ids, sample_len)  # ids % sample_len
+            ids1 = torch.div(ids, sample_len, rounding_mode='floor')  # ids // sample_len
 
-            '''get advantages and reward_sums'''
-            values = torch.empty_like(rewards)
+            obs_history = obs_histories[ids0, ids1]
+            e = es[ids0, ids1]
+
+            # predict e with obs_history and adaptor
+            e_pred = self.adaptor(obs_history)
+            obj_adaptor = self.criterion(e_pred, e)
+            self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
+
+            obj_adaptor += obj_adaptor.item()
+        return obj_adaptor / update_times
+
 
     def get_advantages(self, rewards: torch.Tensor, undones: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
         advantages = torch.empty_like(values)  # advantage value
@@ -151,7 +174,7 @@ class PPO:
         masks = undones * self.gamma
         horizon_len = rewards.shape[0]
 
-        next_value = self.cri(*self.last_state).detach().squeeze(1)
+        next_value = self.cri(self.last_state, self.last_info['e']).detach().squeeze(1)
 
         advantage = torch.zeros_like(next_value)  # last advantage value by GAE (Generalized Advantage Estimate)
         for t in range(horizon_len - 1, -1, -1):

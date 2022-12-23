@@ -219,8 +219,8 @@ class DroneEnv(gym.Env):
         self._set_disturb()
         obs = self._get_obs()
         self.obs_history = [obs] * self.adapt_horizon
-        e = self._get_e()
-        return obs, e
+        info = self._get_info()
+        return obs, info
 
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
