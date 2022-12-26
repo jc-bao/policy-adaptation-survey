@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from icecream import ic
+from icecream import install
 from matplotlib import pyplot as plt
 from torch import nn
 from tqdm import trange
@@ -14,6 +14,7 @@ from tqdm import trange
 import adaptive_control_gym
 from adaptive_control_gym import controllers as ctrl
 
+install()
 
 class DroneEnv(gym.Env):
     def __init__(self, 
@@ -152,7 +153,7 @@ class DroneEnv(gym.Env):
     
     def step(self, action):
         # add noise to action
-        action[:,0] = (action[:,0]+1)/2 # make sure action 0 is always positive
+        # action[:,0] = (action[:,0]+1)/2 # make sure action 0 is always positive
         action += torch.randn_like(action, device=self.device) * self.action_noise_std
         current_force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
         if (self.delay == 0).all():
@@ -233,8 +234,11 @@ class DroneEnv(gym.Env):
         err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
         err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
         return {
+            'pos': self.x,
+            'vel': self.v,
             'mass': self.mass, 
             'disturb': self.disturb,
+            'decay': self.decay,
             'err_x': err_x, 
             'err_v': err_v, 
             'e': self._get_e(),
@@ -286,6 +290,8 @@ def get_drone_policy(env, policy_name = "ppo"):
         Q = np.array([[50, 0],[0, 1]])
         R = 1
         policy = ctrl.LRQ(env.A, env.B, Q, R, gpu_id = -1)
+    if policy_name == "pid":
+        policy = ctrl.PID()
     elif policy_name == "random":
         policy = ctrl.Random(env.action_dim)
     elif policy_name == "ppo":
@@ -384,7 +390,8 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state, adaptor(obs_his))
+        # act = policy(state, adaptor(obs_his))
+        act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)
@@ -496,7 +503,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
 
 if __name__ == "__main__":
     env = DroneEnv(env_num=1, gpu_id = -1, seed=0)
-    policy = get_drone_policy(env, policy_name = "ppo")
-    test_drone(env, policy)
+    policy = get_drone_policy(env, policy_name = "pid")
+    test_drone(env, policy, None)
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
