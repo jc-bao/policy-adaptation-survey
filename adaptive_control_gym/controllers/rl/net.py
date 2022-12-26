@@ -206,7 +206,7 @@ class CriticPPO(CriticBase):
 class Compressor(nn.Module):
     def __init__(self, expert_dim, embedding_dim) -> None:
         super().__init__()
-        self.mlp = build_mlp_net([expert_dim, 128, 128, embedding_dim], activation=nn.ReLU, if_raw_out=False)
+        self.mlp = build_mlp_net([expert_dim, 128, embedding_dim], activation=nn.ReLU, if_raw_out=False)
     
     def forward(self, x):
         # use tanh as activation

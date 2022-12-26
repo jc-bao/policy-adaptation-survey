@@ -24,11 +24,12 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 1e5#6.0e6
-    adapt_steps = 2e5#6.0e6
+    total_steps = 6.0e6
+    adapt_steps = 6.0e6
     eval_freq = 4
     curri_thereshold = 0.0
-    
+    compression_dim = 0
+
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_OOD{args.ood_mode}_S{args.seed}'
     env = DroneEnv(
@@ -38,7 +39,7 @@ def train(args:Args)->None:
         state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, 
         adapt_horizon=env.adapt_horizon, 
         act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
-        compressor_dim=4, 
+        compressor_dim=compression_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
     # agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx1_CriEx3_OODFalse_S0.pt', map_location='cuda:0')
@@ -81,7 +82,7 @@ def train(args:Args)->None:
                     'train/err_x_last10': err_x_last10_mean,
                     'train/err_v_last10': err_v_last10_mean,
                 }, step=total_steps)
-            t.set_postfix(reward_final=rew_final_mean, actor_loss=actor_loss, critic_loss=critic_loss, rewards=rew_mean, steps = total_steps)
+            t.set_postfix(e10=err_x_last10_mean, rewards=rew_mean, actor_loss=actor_loss, critic_loss=critic_loss, steps = total_steps)
 
             # evaluate
             if i_ep % eval_freq == 0:
@@ -89,7 +90,7 @@ def train(args:Args)->None:
                 if args.use_wandb:
                     wandb.log(log_dict, step=total_steps)
                 else:
-                    ic(log_dict['eval/rewards_mean'])
+                    ic(log_dict['eval/err_x_last10'])
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
                     env.curri_param+=0.1
 
@@ -117,7 +118,7 @@ def train(args:Args)->None:
             if args.use_wandb:
                 wandb.log(log_dict, step=total_steps)
             else:
-                ic(log_dict['eval/rewards_mean'])
+                ic(log_dict['eval/err_x_last10'])
     
     actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
     adaptor_path = f'../../../results/rl/adaptor_ppo_{args.exp_name}.pt'
