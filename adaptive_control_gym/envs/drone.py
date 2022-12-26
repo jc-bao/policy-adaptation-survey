@@ -27,7 +27,7 @@ class DroneEnv(gym.Env):
         # parameters
         self.dim=dim=3
         self.disturb_period = 120
-        self.model_delay_alpha = 1.0 #0.9
+        self.model_delay_alpha = 0.9
         self.res_dyn_scale = 0.0  / (2**dim)
         self.res_dyn_param_dim = 0
         self.curri_param = 1.0
@@ -141,6 +141,8 @@ class DroneEnv(gym.Env):
         x[:, 2] = torch.rand((size), device=self.device) * 2 * np.pi - np.pi
         v = (torch.rand((size, self.dim), device=self.device)*2-1)* self.init_v_std + self.init_v_mean
         x = torch.clip(x, self.x_min, self.x_max)
+        # x[:, 2] *= 0.0
+        # v[:, 2] *= 0.0
         return x, v, mass, delay, decay, res_dyn_param
     
     def step(self, action):
@@ -379,8 +381,8 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        # act = policy(state, adaptor(obs_his))
-        act = policy(state, info)
+        act = policy(state, adaptor(obs_his))
+        # act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)
