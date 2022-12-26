@@ -19,7 +19,6 @@ class Args:
     gpu_id:int=0
     act_expert_mode:int=3
     cri_expert_mode:int=1
-    ood_mode:bool=False
     exp_name:str= ''
 
 def train(args:Args)->None:
@@ -31,10 +30,9 @@ def train(args:Args)->None:
     compression_dim = 0
 
     if len(args.exp_name) == 0:
-        args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_OOD{args.ood_mode}_S{args.seed}'
+        args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
     env = DroneEnv(
-        env_num=env_num, gpu_id=args.gpu_id, seed = args.seed, 
-        ood_mode=args.ood_mode)
+        env_num=env_num, gpu_id=args.gpu_id, seed = args.seed) 
     agent = PPO(
         state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, 
         adapt_horizon=env.adapt_horizon, 
@@ -125,7 +123,7 @@ def train(args:Args)->None:
     plt_path = f'../../../results/rl/'
     torch.save(agent.act, actor_path)
     torch.save(agent.adaptor, adaptor_path)
-    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0, ood_mode=args.ood_mode), agent.act.cpu(), agent.adaptor.cpu(), save_path=plt_path)
+    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0), agent.act.cpu(), agent.adaptor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(actor_path, base_path="../../../results/rl", policy="now")
@@ -139,13 +137,7 @@ def train(args:Args)->None:
 
 def eval_env(env, agent, deterministic=True, use_adaptor=False):
     agent.last_state, agent.last_info = env.reset()
-    have_ood = hasattr(env, 'ood_mode')
-    if have_ood:
-        original_mode = env.ood_mode
-        env.ood_mode = False
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
-    if have_ood:
-        env.ood_mode = original_mode
     rew_mean = rewards.mean().item()
     err_x, err_v = infos['err_x'][:-1], infos['err_v'][:-1]
     err_x_mean = err_x.mean().item()
