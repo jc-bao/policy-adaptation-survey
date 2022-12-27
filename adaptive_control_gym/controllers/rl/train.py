@@ -23,11 +23,11 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 1.0e5
-    adapt_steps = 0.0e6
+    total_steps = 1.0e7
+    adapt_steps = 0.0e7
     eval_freq = 4
     curri_thereshold = 0.0
-    compressor_dim = 0
+    compressor_dim = 8
 
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
