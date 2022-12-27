@@ -27,7 +27,7 @@ def train(args:Args)->None:
     adapt_steps = 0.0e6
     eval_freq = 4
     curri_thereshold = 0.0
-    compression_dim = 0
+    compressor_dim = 0
 
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
@@ -37,10 +37,11 @@ def train(args:Args)->None:
         state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, 
         adapt_horizon=env.adapt_horizon, 
         act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
-        compressor_dim=compression_dim, 
+        compressor_dim=compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx1_CriEx3_OODFalse_S0.pt', map_location='cuda:0')
+    # agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx0_CriEx0_S0.pt', map_location='cuda:0')
+    # agent.adaptor = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/adaptor_ppo_ActEx0_CriEx0_S0.pt', map_location='cuda:0')
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
