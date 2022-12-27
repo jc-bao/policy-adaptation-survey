@@ -23,7 +23,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 6.0e6
+    total_steps = 1.0e7
     adapt_steps = 0.0e6
     eval_freq = 4
     curri_thereshold = 0.0
@@ -53,7 +53,7 @@ def train(args:Args)->None:
         agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
             # train
-            explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.2, 1))
+            explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.1, 1))
             total_steps += explore_steps * env_num
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps)
             torch.set_grad_enabled(True)

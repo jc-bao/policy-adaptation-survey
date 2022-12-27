@@ -37,7 +37,7 @@ class DroneEnv(gym.Env):
         self.delay_min, self.delay_max = 0, 0
         self.decay_min, self.decay_max = 0.0, 0.0#0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = -0.8, -0.8#0.8
+        self.disturb_min, self.disturb_max = 0.0, 0.0 #-0.8, -0.8#0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -180,12 +180,16 @@ class DroneEnv(gym.Env):
         self.x[:,:2] = torch.clip(self.x[:,:2], self.x_min, self.x_max)
         err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
         err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
-        reward = 1.0 - err_x - err_v*0.1
+        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - torch.clip(err_v, 0, 1)*0.1
+        reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1 # for 0.2
+        reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1 # for 0.1
+        reward -= torch.clip(torch.log(err_x+1)*20, 0, 1)*0.1 # for 0.05
+        reward -= torch.clip(torch.log(err_x+1)*50, 0, 1)*0.1 # for 0.02
 
         # for hover task, add penalty for angular velocity
         if self.traj_scale == 0:
             reward -= torch.abs(self.x[:,2])*0.00
-            reward -= torch.abs(self.v[:,2])*0.02
+            reward -= torch.tanh(torch.abs(self.v[:,2]))*0.05
 
         self.step_cnt += 1
 
