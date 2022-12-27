@@ -3,8 +3,8 @@ import torch
 
 class PID:
     def __init__(self) -> None:
-        self.Kp = 2.0
-        self.Kd = 2.0
+        self.Kp = 6
+        self.Kd = 4.5
         self.Krotp = 30.0
         self.Krotd = 8.0
 
@@ -15,12 +15,11 @@ class PID:
         x, y, theta = info['pos'].numpy()[0]
         vx, vy, w = info['vel'].numpy()[0]
 
-        target_force_x = -mass_x * self.Kp * x - mass_x * (self.Kd-decay_x) * vx - disturb_x
-        target_force_y = -mass_y * self.Kp * y - mass_y * (self.Kd-decay_y) * vy - disturb_y + mass_y * 9.8
+        target_force_x = -mass_x * self.Kp * x - mass_x * self.Kd * vx - disturb_x + decay_x*vx
+        target_force_y = -mass_y * self.Kp * y - mass_y * self.Kd * vy - disturb_y + mass_y * 9.8 + decay_y*vy
         thrust = target_force_y * np.cos(theta) + target_force_x * np.sin(theta)
 
         target_angle = np.arctan2(target_force_x, target_force_y)
-        torque = - moment * self.Krotp * (theta-target_angle) - moment * (self.Krotd - decay_w) * w - disturb_w
-
+        torque = - moment * self.Krotp * (theta-target_angle) - moment * self.Krotd * w - disturb_w + decay_w * w
 
         return torch.Tensor([[thrust, torque]])

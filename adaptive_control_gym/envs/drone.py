@@ -35,9 +35,9 @@ class DroneEnv(gym.Env):
 
         self.mass_min, self.mass_max = 0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.0 #0.0, 0.3
+        self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = 0.0, 0.0 # -0.8, 0.8
+        self.disturb_min, self.disturb_max = -0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -148,21 +148,22 @@ class DroneEnv(gym.Env):
     def step(self, action):
         # add noise to action
         # action[:,0] = (action[:,0]+1)/2 # make sure action 0 is always positive
-        action += torch.randn_like(action, device=self.device) * self.action_noise_std
-        current_force = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
-        if (self.delay == 0).all():
-            force = current_force
-        else:
-            self.force_history.append(current_force)
-            self.force_history.pop(0)
-            force = torch.zeros((self.env_num, self.dim), device=self.device)
+        if not (self.delay == 0).all():
+            self.action_history.append(action)
+            self.action_history.pop(0)
+            action = torch.zeros((self.env_num, self.dim), device=self.device)
             for i in range(self.delay_max):
                 env_mask = (self.delay == i)[:,0]
-                self.force[env_mask] = self.force_history[-i-1][env_mask]
+                action[env_mask] = self.action_history[-i-1][env_mask]
+        if self.step_cnt == 0:
+            self.action = action
+        else:
+            self.action = action*self.model_delay_alpha + self.action*(1-self.model_delay_alpha)
+        action += torch.randn_like(action, device=self.device) * self.action_noise_std
+        action = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
         theta = self.x[:,[2]]
-        F, M = force[:,[0]], force[:,[1]]
-        force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
-        self.force = force*self.model_delay_alpha + self.force*(1-self.model_delay_alpha)
+        F, M = action[:,[0]], action[:,[1]]
+        self.force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
         
         self.force += self.disturb
         self.decay_force = self.decay * self.v
@@ -208,8 +209,9 @@ class DroneEnv(gym.Env):
     def reset(self):
         self.step_cnt = 0
         self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param = self._get_initial_state()
-        self.force_history = [torch.zeros((self.env_num, self.dim), device=self.device)] * self.delay_max
+        self.action_history = [torch.zeros((self.env_num, 2), device=self.device)] * self.delay_max
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
+        self.action = torch.zeros((self.env_num, self.dim-1), device=self.device)
         self.traj_x, self.traj_v = self._generate_traj()
         self._set_disturb()
         obs = self._get_obs()
@@ -381,8 +383,8 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        # act = policy(state, adaptor(obs_his))
-        act = policy(state, info)
+        act = policy(state, adaptor(obs_his))
+        # act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)
