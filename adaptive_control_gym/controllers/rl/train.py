@@ -40,8 +40,8 @@ def train(args:Args)->None:
         compressor_dim=compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx0_CriEx0_S0.pt', map_location='cuda:0')
-    # agent.adaptor = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/adaptor_ppo_ActEx0_CriEx0_S0.pt', map_location='cuda:0')
+    # agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
+    # agent.adaptor = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/adaptor_ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
