@@ -147,7 +147,7 @@ class DroneEnv(gym.Env):
     
     def step(self, action):
         # add noise to action
-        # action[:,0] = (action[:,0]+1)/2 # make sure action 0 is always positive
+        action[:,0] = (action[:,0]+1)/2 # make sure action 0 is always positive
         if not (self.delay == 0).all():
             self.action_history.append(action)
             self.action_history.pop(0)
@@ -383,8 +383,8 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state, adaptor(obs_his))
-        # act = policy(state, info)
+        # act = policy(state, adaptor(obs_his))
+        act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)

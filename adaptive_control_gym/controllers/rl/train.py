@@ -17,7 +17,7 @@ class Args:
     program:str='tmp'
     seed:int=0
     gpu_id:int=0
-    act_expert_mode:int=3
+    act_expert_mode:int=1
     cri_expert_mode:int=1
     exp_name:str= ''
 
