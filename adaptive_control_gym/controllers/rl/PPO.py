@@ -29,13 +29,12 @@ class PPO:
         # network
         self.cri = CriticPPO(state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
         # compressor
+        self.compressor = Compressor(expert_dim, compressor_dim).to(self.device)
         if compressor_dim > 0:
             self.act = ActorPPO(state_dim, compressor_dim, action_dim, act_expert_mode).to(self.device)
-            self.compressor = Compressor(expert_dim, compressor_dim).to(self.device)
             self.act_optimizer = torch.optim.Adam(list(self.act.parameters())+list(self.compressor.parameters()), self.learning_rate)
         else:
             self.act = ActorPPO(state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
-            self.compressor = lambda x: x
             self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
         self.criterion = torch.nn.SmoothL1Loss(reduction="mean")

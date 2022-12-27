@@ -23,7 +23,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 1.0e7
+    total_steps = 1.0e5
     adapt_steps = 0.0e6
     eval_freq = 4
     curri_thereshold = 0.0
@@ -119,15 +119,18 @@ def train(args:Args)->None:
             else:
                 ic(log_dict['eval/err_x_last10'])
     
-    actor_path = f'../../../results/rl/actor_ppo_{args.exp_name}.pt'
-    adaptor_path = f'../../../results/rl/adaptor_ppo_{args.exp_name}.pt'
+    path = f'../../../results/rl/ppo_{args.exp_name}.pt'
     plt_path = f'../../../results/rl/'
-    torch.save(agent.act, actor_path)
-    torch.save(agent.adaptor, adaptor_path)
+    # save agent.act, agent.adaptor, agent.compressor
+    torch.save({
+            'actor': agent.act, 
+            'adaptor': agent.adaptor,
+            'compressor': agent.compressor,
+        }, path)
     test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0), agent.act.cpu(), agent.adaptor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
-        wandb.save(actor_path, base_path="../../../results/rl", policy="now")
+        wandb.save(path, base_path="../../../results/rl", policy="now")
         # save the plot
         wandb.log({
             "eval/plot": wandb.Image(plt_path+'/plot.png', caption="plot"), 
