@@ -4,7 +4,7 @@ import math
 
 from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO, Compressor
 from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
-from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP, AdaptorTConv
+from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP, AdaptorTConv, AdaptorOracle
 
 class PPO:
     def __init__(self, 
@@ -49,9 +49,9 @@ class PPO:
         self.adapt_horizon = adapt_horizon
         if compressor_dim > 0:
             self.adaptor = AdaptorTConv(state_dim, action_dim, adapt_horizon, compressor_dim).to(self.device)
+            self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
         else:
-            self.adaptor = AdaptorMLP(state_dim, action_dim, adapt_horizon, expert_dim).to(self.device)
-        self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
+            self.adaptor = AdaptorOracle(state_dim, action_dim, adapt_horizon, expert_dim).to(self.device)
 
 
     def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False) -> List[torch.Tensor]:
@@ -76,7 +76,7 @@ class PPO:
             convert = self.act.convert_action_for_env
         for t in range(horizon_len):
             if use_adaptor:
-                e = self.adaptor(obs_history)
+                e = self.adaptor(info)
             else:
                 e = self.compressor(e)
             action, logprob = get_action(state, e)

@@ -27,7 +27,7 @@ class DroneEnv(gym.Env):
         # parameters
         self.dim=dim=3
         self.disturb_period = 120
-        self.model_delay_alpha = 0.9
+        self.model_delay_alpha = 1.0
         self.res_dyn_scale = 0.0  / (2**dim)
         self.res_dyn_param_dim = 0
         self.curri_param = 1.0
@@ -97,6 +97,9 @@ class DroneEnv(gym.Env):
         self.action_space = gym.spaces.Box(
             low=-self.max_force, high=self.max_force, shape=(self.dim,), dtype=float)
 
+    def _update_history(self):
+        pass
+
     def _generate_traj(self):
         base_w = 2 * np.pi / self.traj_T
         t = torch.arange(0, self.max_steps+self.obs_traj_len, 1, device=self.device)
@@ -146,38 +149,62 @@ class DroneEnv(gym.Env):
         return x, v, mass, delay, decay, res_dyn_param
     
     def step(self, action):
-        # add noise to action
-        action[:,0] = (action[:,0]+1)/2 # make sure action 0 is always positive
+        # delay action
         if not (self.delay == 0).all():
             self.action_history.append(action)
             self.action_history.pop(0)
-            action = torch.zeros((self.env_num, self.dim), device=self.device)
+            action_delay = torch.zeros((self.env_num, self.dim), device=self.device)
             for i in range(self.delay_max):
                 env_mask = (self.delay == i)[:,0]
-                action[env_mask] = self.action_history[-i-1][env_mask]
-        if self.step_cnt == 0:
-            self.action = action
+                action_delay[env_mask] = self.action_history[-i-1][env_mask]
         else:
-            self.action = action*self.model_delay_alpha + self.action*(1-self.model_delay_alpha)
-        action += torch.randn_like(action, device=self.device) * self.action_noise_std
-        action = torch.clip(action*self.force_scale, -self.max_force, self.max_force) 
+            action_delay = action
+
+        # calculate u
+        u = action_delay
+        u[:,0] = (u[:,0]+1)/2 # make sure thrust 0 is always positive
+        self.u_his.append(u_delay_noise)
+        self.u_his.pop(0)
+        self.d_u_his.append((self.u_his[-1]-self.u_his[-2]))
+
+        # calculate u_delay
+        if self.step_cnt == 0:
+            u_delay = u
+        else:
+            u_delay = u*self.model_delay_alpha + self.last_u*(1-self.model_delay_alpha)
+        self.last_u = u_delay
+
+        # add noise
+        u_delay_noise = torch.randn_like(action, device=self.device) * self.action_noise_std + u_delay
+        u_delay_noise = torch.clip(u_delay_noise*self.force_scale, -self.max_force, self.max_force) 
+
+        # calculate force
         theta = self.x[:,[2]]
         F, M = action[:,[0]], action[:,[1]]
-        self.force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
+        self.action_force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
         
-        self.force += self.disturb
         self.decay_force = self.decay * self.v
-        self.force -= self.decay_force
+        self.force = self.action_force + self.disturb - self.decay_force
         if self.res_dyn_scale > 0:
             self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, self.force, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
             self.force += self.res_dyn_force
         else:
             self.res_dyn_force = torch.zeros_like(self.force)
         
+        # system dynamics
         self.x += self.v * self.tau
+        self.acc = self.force / self.mass
         self.v += self.force / self.mass * self.tau
         self.v[:,1] -= self.gravity * self.tau
         self.x[:,:2] = torch.clip(self.x[:,:2], self.x_min, self.x_max)
+        self.v_his.append(self.v)
+        self.v_his.pop(0)
+        self.acc_his.append(self.acc)
+        self.acc_his.pop(0)
+        self.d_acc_his.append((self.acc_his[-1]-self.acc_his[-2]))
+        self.d_acc_his.pop(0)
+
+        # calculate reward
         err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
         err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - torch.clip(err_v, 0, 1)*0.1
@@ -193,6 +220,7 @@ class DroneEnv(gym.Env):
 
         self.step_cnt += 1
 
+        # auto reset
         single_done = self.step_cnt >= self.max_steps
         done = torch.ones(self.env_num, device=self.device)*single_done
         # update disturb
@@ -213,15 +241,32 @@ class DroneEnv(gym.Env):
     def reset(self):
         self.step_cnt = 0
         self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param = self._get_initial_state()
-        self.action_history = [torch.zeros((self.env_num, 2), device=self.device)] * self.delay_max
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
+        self.action_force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.action = torch.zeros((self.env_num, self.dim-1), device=self.device)
+        self.acc = torch.zeros((self.env_num, self.dim), device=self.device)
         self.traj_x, self.traj_v = self._generate_traj()
         self._set_disturb()
         obs = self._get_obs()
-        self.obs_history = [torch.concat((obs, torch.zeros((self.env_num, 2), device=self.device)), dim=-1)] * self.adapt_horizon
         info = self._get_info()
+        self._set_history(obs, info)
         return obs, info
+
+    def _set_history(self, obs, info):
+        # for delay controller
+        self.action_history = [torch.zeros((self.env_num, 2), device=self.device)] * self.delay_max
+        # for adaptive controller
+        self.u_his = [torch.zeros((self.env_num, 2), device=self.device)] * self.adapt_horizon
+        self.d_u_his = [torch.zeros((self.env_num, 2), device=self.device)] * self.adapt_horizon
+        self.v_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
+        self.acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
+        self.d_acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
+        self.obs_history = [torch.concat((obs, torch.zeros((self.env_num, 2), device=self.device)), dim=-1)] * self.adapt_horizon
+
+    def _update_history(self, obs, info):
+        pass
+        
+
 
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
@@ -236,6 +281,9 @@ class DroneEnv(gym.Env):
         return {
             'pos': self.x,
             'vel': self.v,
+            'acc': self.acc, 
+            'action': self.action, 
+            'action_force': self.action_force, 
             'mass': self.mass, 
             'disturb': self.disturb,
             'decay': self.decay,
@@ -243,6 +291,7 @@ class DroneEnv(gym.Env):
             'err_v': err_v, 
             'e': self._get_e(),
             'obs_history': torch.concat(self.obs_history, dim=-1),
+            'delay': self.delay,
         }
 
 

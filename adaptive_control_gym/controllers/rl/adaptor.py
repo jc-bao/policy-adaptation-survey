@@ -48,3 +48,17 @@ class AdaptorMLP(nn.Module):
 
     def forward(self, x):
         return torch.tanh(self.mlp(x))
+
+class AdaptorOracle(nn.Module):
+    def __init__(self, state_dim, action_dim, horizon, output_dim):
+        super().__init__()
+
+    def forward(self, info):
+        total_force = info['acc'] * 0.01
+        disturb = total_force - info['action_force']
+        disturb[:,1] -= 0.01*9.8
+        mass_normed = torch.zeros_like(info['mass'], device=info['mass'].device)
+        disturb_normed = disturb / 0.1
+        delay_normed = torch.zeros_like(info['delay'], device=info['delay'].device)
+        decay_normed = torch.zeros_like(info['decay'], device=info['decay'].device)
+        return torch.concat([mass_normed, disturb_normed, delay_normed, decay_normed], dim=-1)

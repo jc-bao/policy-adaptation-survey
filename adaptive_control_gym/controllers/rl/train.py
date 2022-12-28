@@ -14,12 +14,14 @@ from adaptive_control_gym.controllers import PPO
 @dataclass
 class Args:
     use_wandb:bool=False
+    use_adaptor: bool=False
     program:str='tmp'
     seed:int=0
     gpu_id:int=0
     act_expert_mode:int=1
     cri_expert_mode:int=1
     exp_name:str= ''
+    compressor_dim: int = 0
 
 def train(args:Args)->None:
     env_num = 1024
@@ -27,7 +29,7 @@ def train(args:Args)->None:
     adapt_steps = 0.0e7
     eval_freq = 4
     curri_thereshold = 0.0
-    compressor_dim = 8
+    
 
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
@@ -37,7 +39,7 @@ def train(args:Args)->None:
         state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, 
         adapt_horizon=env.adapt_horizon, 
         act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
-        compressor_dim=compressor_dim, 
+        compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
     # agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
@@ -55,7 +57,7 @@ def train(args:Args)->None:
             # train
             explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.1, 1))
             total_steps += explore_steps * env_num
-            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps)
+            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=args.use_adaptor)
             torch.set_grad_enabled(True)
             critic_loss, actor_loss, action_std = agent.update_net(states, infos['e'], actions, logprobs, rewards, undones)
             torch.set_grad_enabled(False)
@@ -85,7 +87,7 @@ def train(args:Args)->None:
 
             # evaluate
             if i_ep % eval_freq == 0:
-                log_dict = eval_env(env, agent)
+                log_dict = eval_env(env, agent, use_adaptor=args.use_adaptor)
                 if args.use_wandb:
                     wandb.log(log_dict, step=total_steps)
                 else:
