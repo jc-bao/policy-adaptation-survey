@@ -301,23 +301,7 @@ class DroneEnv(gym.Env):
             'd_acc_his': torch.stack(self.d_acc_his, dim=0),
             'delay': self.delay,
         }
-        da1, da2 = info['d_acc_his'][-2], info['d_acc_his'][-1]
-        du1, du2 = info['d_u_force_his'][-2], info['d_u_force_his'][-1]
-        a1, a2 = info['acc_his'][-2], info['acc_his'][-1]
-        u1, u2 = info['u_force_his'][-2], info['u_force_his'][-1]
-        v1, v2 = info['v_his'][-2], info['v_his'][-1]
-        # ic(da1, da2, a1, a2, u1, u2, v1, v2)
 
-        k = (da1*du2 - da2*du1) / (a2*da1 - a1*da2) * 30
-        k = torch.where(torch.isnan(k), torch.ones_like(k, device=self.device)*0.15, k)
-        m = (du2-k*a2*1/30) / da2
-        m = torch.where(torch.isnan(m), torch.ones_like(m, device=self.device)*0.03, m)
-        F = m * a1 - u1 + k * v1 + m * torch.Tensor([0,9.8,0], device=self.device)
-        # replace NaN with mean value
-        F = torch.where(torch.isnan(F), torch.ones_like(F, device=self.device)*0.0, F)
-        # ic(k, self.decay)
-        ic(m, self.mass)
-        # ic(F, self.disturb)
         if self.delay_max > 0:
             info['action_history'] = torch.stack(self.action_history, dim=1)
         return info
@@ -332,8 +316,7 @@ class DroneEnv(gym.Env):
 
     def _set_disturb(self):
         self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * (self.disturb_max-self.disturb_min) * 0.5 * self.curri_param + (self.disturb_min+self.disturb_max)*0.5
-        self.disturb *= (self.mass*self.gravity)
-        # self.disturb = torch.ones_like(self.mass, device=self.device) * 0.25
+        self.disturb *= (self.mass*self.gravity[1])
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):

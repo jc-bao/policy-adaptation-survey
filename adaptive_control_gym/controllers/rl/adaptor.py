@@ -54,21 +54,21 @@ class AdaptorOracle(nn.Module):
         super().__init__()
 
     def forward(self, info):
-        da1, da2 = info['acc_his'][-2], info['acc_his'][-1]
-        du1, du2 = info['u_his'][-2], info['u_his'][-1]
-        a1, a2 = info['acc'][-2], info['acc'][-1]
-        u1, u2 = info['u'][-2], info['u'][-1]
-        v1, v2 = info['v'][-2], info['v'][-1]
+        da2, da3 = info['d_acc_his'][-2], info['d_acc_his'][-1]
+        du2, du3 = info['d_u_force_his'][-2], info['d_u_force_his'][-1]
+        a1, a2, a3 = info['acc_his'][-3], info['acc_his'][-2], info['acc_his'][-1]
+        u2, u3 = info['u_force_his'][-2], info['u_force_his'][-1]
+        v2, v3 = info['v_his'][-2], info['v_his'][-1]
 
-        k = (da1*du2 - da2*du1) / (a2*da1 - a1*da2) * 30
-        m = (u1-u2-k*(v1-v2)) / (a1-a2)
-        F = m * a1 - u1 + k * v1
+        k = (da2*du3 - da3*du2) / (a2*da2 - a1*da3) * 30
+        k = torch.where(torch.isnan(k), torch.ones_like(k, device=self.device)*0.15, k)
+        m = (du3-k*a2*1/30) / da3
+        m = torch.where(torch.isnan(m), torch.ones_like(m, device=self.device)*0.03, m)
+        F = m * a3 - u3 + k * v2 + m * torch.Tensor([0,9.8,0], device=self.device)
+        F = torch.where(torch.isnan(F), torch.ones_like(F, device=self.device)*0.0, F)
 
-        total_force = info['acc'] * 0.01
-        disturb = total_force - info['action_force']
-        disturb[:,1] -= 0.01*9.8
-        mass_normed = torch.zeros_like(info['mass'], device=info['mass'].device)
-        disturb_normed = disturb / 0.1
+        mass_normed = (m - 0.03)/0.02
+        disturb_normed = F / 0.3
         delay_normed = torch.zeros_like(info['delay'], device=info['delay'].device)
-        decay_normed = torch.zeros_like(info['decay'], device=info['decay'].device)
+        decay_normed = (k-0.15)/0.15
         return torch.concat([mass_normed, disturb_normed, delay_normed, decay_normed], dim=-1)
