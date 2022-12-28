@@ -33,9 +33,9 @@ class DroneEnv(gym.Env):
         self.curri_param = 1.0
         self.adapt_horizon = 10
 
-        self.mass_min, self.mass_max = 0.01, 0.01#0.05
+        self.mass_min, self.mass_max = 0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.0#0.3
+        self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
@@ -144,8 +144,6 @@ class DroneEnv(gym.Env):
         x[:, 2] = torch.rand((size), device=self.device) * 2 * np.pi - np.pi
         v = (torch.rand((size, self.dim), device=self.device)*2-1)* self.init_v_std + self.init_v_mean
         x = torch.clip(x, self.x_min, self.x_max)
-        # x[:, 2] *= 0.0
-        # v[:, 2] *= 0.0
         return x, v, mass, delay, decay, res_dyn_param
     
     def step(self, action):
@@ -163,16 +161,12 @@ class DroneEnv(gym.Env):
         # calculate u
         u = action_delay
         u[:,0] = (u[:,0]+1)/2 # make sure thrust 0 is always positive
-        self.u_his.append(u_delay_noise)
+        self.u_his.append(u)
         self.u_his.pop(0)
         self.d_u_his.append((self.u_his[-1]-self.u_his[-2]))
 
         # calculate u_delay
-        if self.step_cnt == 0:
-            u_delay = u
-        else:
-            u_delay = u*self.model_delay_alpha + self.last_u*(1-self.model_delay_alpha)
-        self.last_u = u_delay
+        u_delay = u*self.model_delay_alpha + self.u_his[-2]*(1-self.model_delay_alpha)
 
         # add noise
         u_delay_noise = torch.randn_like(action, device=self.device) * self.action_noise_std + u_delay
@@ -180,22 +174,22 @@ class DroneEnv(gym.Env):
 
         # calculate force
         theta = self.x[:,[2]]
-        F, M = action[:,[0]], action[:,[1]]
+        F, M = u_delay_noise[:,[0]], u_delay_noise[:,[1]]
         self.action_force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
         
         self.decay_force = self.decay * self.v
         self.force = self.action_force + self.disturb - self.decay_force
+        self.force[:,1] -= self.gravity * self.mass[:,1]
         if self.res_dyn_scale > 0:
             self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, self.force, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
-            self.force += self.res_dyn_force
         else:
             self.res_dyn_force = torch.zeros_like(self.force)
+        self.force += self.res_dyn_force
         
         # system dynamics
         self.x += self.v * self.tau
         self.acc = self.force / self.mass
-        self.v += self.force / self.mass * self.tau
-        self.v[:,1] -= self.gravity * self.tau
+        self.v += self.acc * self.tau
         self.x[:,:2] = torch.clip(self.x[:,:2], self.x_min, self.x_max)
         self.v_his.append(self.v)
         self.v_his.pop(0)
@@ -212,7 +206,6 @@ class DroneEnv(gym.Env):
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1 # for 0.1
         reward -= torch.clip(torch.log(err_x+1)*20, 0, 1)*0.1 # for 0.05
         reward -= torch.clip(torch.log(err_x+1)*50, 0, 1)*0.1 # for 0.02
-
         # for hover task, add penalty for angular velocity
         if self.traj_scale == 0:
             reward -= torch.abs(self.x[:,2])*0.00
@@ -248,11 +241,11 @@ class DroneEnv(gym.Env):
         self.traj_x, self.traj_v = self._generate_traj()
         self._set_disturb()
         obs = self._get_obs()
+        self._set_history(obs)
         info = self._get_info()
-        self._set_history(obs, info)
         return obs, info
 
-    def _set_history(self, obs, info):
+    def _set_history(self, obs):
         # for delay controller
         self.action_history = [torch.zeros((self.env_num, 2), device=self.device)] * self.delay_max
         # for adaptive controller
@@ -261,12 +254,9 @@ class DroneEnv(gym.Env):
         self.v_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
         self.acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
         self.d_acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
-        self.obs_history = [torch.concat((obs, torch.zeros((self.env_num, 2), device=self.device)), dim=-1)] * self.adapt_horizon
-
-    def _update_history(self, obs, info):
-        pass
-        
-
+        obs_his_shape = list(obs.shape)
+        obs_his_shape[-1] += 2
+        self.obs_history = [torch.zeros(obs_his_shape, device=self.device)] * self.adapt_horizon
 
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
@@ -278,7 +268,7 @@ class DroneEnv(gym.Env):
     def _get_info(self):
         err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
         err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
-        return {
+        info = {
             'pos': self.x,
             'vel': self.v,
             'acc': self.acc, 
@@ -290,9 +280,17 @@ class DroneEnv(gym.Env):
             'err_x': err_x, 
             'err_v': err_v, 
             'e': self._get_e(),
-            'obs_history': torch.concat(self.obs_history, dim=-1),
+            'obs_history': torch.stack(self.obs_history, dim=1),
+            'u_his': torch.stack(self.u_his, dim=1),
+            'd_u_his': torch.stack(self.d_u_his, dim=1),
+            'v_his': torch.stack(self.v_his, dim=1),
+            'acc_his': torch.stack(self.acc_his, dim=1),
+            'd_acc_his': torch.stack(self.d_acc_his, dim=1),
             'delay': self.delay,
         }
+        if self.delay_max > 0:
+            info['action_history'] = torch.stack(self.action_history, dim=1)
+        return info
 
 
     def _get_e(self):
@@ -436,8 +434,8 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state, adaptor(obs_his))
-        # act = policy(state, info)
+        # act = policy(state, adaptor(obs_his))
+        act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)
