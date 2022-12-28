@@ -62,7 +62,7 @@ class DroneEnv(gym.Env):
         self.tau = 1.0/30.0  # seconds between state updates
         self.force_scale = 1.0
         self.max_force = 1.0
-        self.gravity = 9.8
+        self.gravity = torch.Tensor([0, -9.8, 0]).to(self.device)
 
         # generate a sin trajectory with torch
         self.obs_traj_len = 1
@@ -160,10 +160,18 @@ class DroneEnv(gym.Env):
 
         # calculate u
         u = action_delay
-        u[:,0] = (u[:,0]+1)/2 # make sure thrust 0 is always positive
+        # u[:,0] = (u[:,0]+1)/2 # make sure thrust 0 is always positive
+        theta = self.x[:,[2]]
+        F, M = u[:,[0]], u[:,[1]]
+        u_force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
         self.u_his.append(u)
         self.u_his.pop(0)
         self.d_u_his.append((self.u_his[-1]-self.u_his[-2]))
+        self.d_u_his.pop(0)
+        self.u_force_his.append(u_force)
+        self.u_force_his.pop(0)
+        self.d_u_force_his.append((self.u_force_his[-1]-self.u_force_his[-2]))
+        self.d_u_force_his.pop(0)
 
         # calculate u_delay
         u_delay = u*self.model_delay_alpha + self.u_his[-2]*(1-self.model_delay_alpha)
@@ -173,13 +181,11 @@ class DroneEnv(gym.Env):
         u_delay_noise = torch.clip(u_delay_noise*self.force_scale, -self.max_force, self.max_force) 
 
         # calculate force
-        theta = self.x[:,[2]]
         F, M = u_delay_noise[:,[0]], u_delay_noise[:,[1]]
         self.action_force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
         
         self.decay_force = self.decay * self.v
-        self.force = self.action_force + self.disturb - self.decay_force
-        self.force[:,1] -= self.gravity * self.mass[:,1]
+        self.force = self.action_force + self.disturb - self.decay_force + self.gravity * self.mass
         if self.res_dyn_scale > 0:
             self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, self.force, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
         else:
@@ -191,7 +197,7 @@ class DroneEnv(gym.Env):
         self.acc = self.force / self.mass
         self.v += self.acc * self.tau
         self.x[:,:2] = torch.clip(self.x[:,:2], self.x_min, self.x_max)
-        self.v_his.append(self.v)
+        self.v_his.append(self.v.clone())
         self.v_his.pop(0)
         self.acc_his.append(self.acc)
         self.acc_his.pop(0)
@@ -251,12 +257,17 @@ class DroneEnv(gym.Env):
         # for adaptive controller
         self.u_his = [torch.zeros((self.env_num, 2), device=self.device)] * self.adapt_horizon
         self.d_u_his = [torch.zeros((self.env_num, 2), device=self.device)] * self.adapt_horizon
+        self.u_force_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
+        self.d_u_force_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
         self.v_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
         self.acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
         self.d_acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
         obs_his_shape = list(obs.shape)
         obs_his_shape[-1] += 2
         self.obs_history = [torch.zeros(obs_his_shape, device=self.device)] * self.adapt_horizon
+
+        self.v_his.append(self.v.clone())
+        self.v_his.pop(0)
 
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
@@ -280,14 +291,33 @@ class DroneEnv(gym.Env):
             'err_x': err_x, 
             'err_v': err_v, 
             'e': self._get_e(),
-            'obs_history': torch.stack(self.obs_history, dim=1),
-            'u_his': torch.stack(self.u_his, dim=1),
-            'd_u_his': torch.stack(self.d_u_his, dim=1),
-            'v_his': torch.stack(self.v_his, dim=1),
-            'acc_his': torch.stack(self.acc_his, dim=1),
-            'd_acc_his': torch.stack(self.d_acc_his, dim=1),
+            'obs_history': torch.stack(self.obs_history, dim=0),
+            'u_his': torch.stack(self.u_his, dim=0),
+            'd_u_his': torch.stack(self.d_u_his, dim=0),
+            'u_force_his': torch.stack(self.u_force_his, dim=0),
+            'd_u_force_his': torch.stack(self.d_u_force_his, dim=0),
+            'v_his': torch.stack(self.v_his, dim=0),
+            'acc_his': torch.stack(self.acc_his, dim=0),
+            'd_acc_his': torch.stack(self.d_acc_his, dim=0),
             'delay': self.delay,
         }
+        da1, da2 = info['d_acc_his'][-2], info['d_acc_his'][-1]
+        du1, du2 = info['d_u_force_his'][-2], info['d_u_force_his'][-1]
+        a1, a2 = info['acc_his'][-2], info['acc_his'][-1]
+        u1, u2 = info['u_force_his'][-2], info['u_force_his'][-1]
+        v1, v2 = info['v_his'][-2], info['v_his'][-1]
+        # ic(da1, da2, a1, a2, u1, u2, v1, v2)
+
+        k = (da1*du2 - da2*du1) / (a2*da1 - a1*da2) * 30
+        k = torch.where(torch.isnan(k), torch.ones_like(k, device=self.device)*0.15, k)
+        m = (du2-k*a2*1/30) / da2
+        m = torch.where(torch.isnan(m), torch.ones_like(m, device=self.device)*0.03, m)
+        F = m * a1 - u1 + k * v1 + m * torch.Tensor([0,9.8,0], device=self.device)
+        # replace NaN with mean value
+        F = torch.where(torch.isnan(F), torch.ones_like(F, device=self.device)*0.0, F)
+        # ic(k, self.decay)
+        ic(m, self.mass)
+        # ic(F, self.disturb)
         if self.delay_max > 0:
             info['action_history'] = torch.stack(self.action_history, dim=1)
         return info

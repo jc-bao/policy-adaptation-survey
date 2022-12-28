@@ -54,6 +54,16 @@ class AdaptorOracle(nn.Module):
         super().__init__()
 
     def forward(self, info):
+        da1, da2 = info['acc_his'][-2], info['acc_his'][-1]
+        du1, du2 = info['u_his'][-2], info['u_his'][-1]
+        a1, a2 = info['acc'][-2], info['acc'][-1]
+        u1, u2 = info['u'][-2], info['u'][-1]
+        v1, v2 = info['v'][-2], info['v'][-1]
+
+        k = (da1*du2 - da2*du1) / (a2*da1 - a1*da2) * 30
+        m = (u1-u2-k*(v1-v2)) / (a1-a2)
+        F = m * a1 - u1 + k * v1
+
         total_force = info['acc'] * 0.01
         disturb = total_force - info['action_force']
         disturb[:,1] -= 0.01*9.8
