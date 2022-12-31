@@ -8,7 +8,7 @@ from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP, AdaptorTConv
 
 class PPO:
     def __init__(self, 
-        state_dim: int, expert_dim: int, action_dim: int, adapt_horizon: int,
+        state_dim: int, expert_dim: int, adapt_dim: int, action_dim: int, adapt_horizon: int,
         act_expert_mode: int, cri_expert_mode: int, compressor_dim: int,
         env_num: int, gpu_id: int = 0):
         # env
@@ -16,6 +16,7 @@ class PPO:
         self.action_dim = action_dim
         self.state_dim = state_dim
         self.expert_dim = expert_dim
+        self.adapt_dim = adapt_dim
         self.compressor_dim = compressor_dim
         self.last_state, self.last_info = None, None  # last state of the trajectory for training
         self.reward_scale = 1.0
@@ -49,9 +50,9 @@ class PPO:
         self.adapt_horizon = adapt_horizon
         if compressor_dim > 0:
             self.adaptor = AdaptorTConv(state_dim, action_dim, adapt_horizon, compressor_dim).to(self.device)
-            self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
         else:
-            self.adaptor = AdaptorOracle(state_dim, action_dim, adapt_horizon, expert_dim).to(self.device)
+            self.adaptor = AdaptorMLP(self.adapt_dim, adapt_horizon, expert_dim).to(self.device)
+        self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
 
 
     def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False) -> List[torch.Tensor]:
@@ -63,10 +64,10 @@ class PPO:
         err_xs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         err_vs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
         es = torch.zeros((horizon_len, self.env_num, self.expert_dim), dtype=torch.float32).to(self.device)
-        obs_his = torch.zeros((horizon_len, self.env_num, (self.state_dim+self.action_dim)*self.adapt_horizon), dtype=torch.float32).to(self.device)
+        adapt_obses = torch.zeros((horizon_len, self.env_num, env.adapt_dim), dtype=torch.float32).to(self.device)
 
         state, info = self.last_state, self.last_info  # shape == (env_num, state_dim) for a vectorized env.
-        e, obs_history = info['e'], info['obs_history']
+        e = info['e']
 
         if deterministic:
             get_action = lambda x,e: (self.act(x,e), 0.0)
@@ -76,7 +77,7 @@ class PPO:
             convert = self.act.convert_action_for_env
         for t in range(horizon_len):
             if use_adaptor:
-                e = self.adaptor(info)
+                e = self.adaptor(info['adapt_obs'])
             else:
                 e = self.compressor(e)
             action, logprob = get_action(state, e)
@@ -91,13 +92,13 @@ class PPO:
             es[t] = e
             err_xs[t] = info["err_x"]
             err_vs[t] = info["err_v"]
-            obs_his[t] = info["obs_history"]
+            adapt_obses[t] = info["adapt_obs"]
 
         self.last_state, self.last_info = state, info
 
         rewards *= self.reward_scale
         undones = 1.0 - dones.type(torch.float32)
-        infos = {"err_x": err_xs, "err_v": err_vs, 'e': es, 'obs_history': obs_his}
+        infos = {"err_x": err_xs, "err_v": err_vs, 'e': es, 'adapt_obs': adapt_obses}
         return states, actions, logprobs, rewards, undones, infos
 
     def update_net(self, states, es, actions, logprobs, rewards, undones):
@@ -157,7 +158,7 @@ class PPO:
         a_std_log = self.act.action_std_log.mean()
         return obj_critics / update_times, obj_actors / update_times, a_std_log.item()
 
-    def update_adaptor(self, es, obs_histories):
+    def update_adaptor(self, es, adapt_obs):
         adaptor_loss = 0.0
         buffer_size = es.shape[0]
         buffer_num = es.shape[1]
@@ -169,11 +170,11 @@ class PPO:
             ids0 = torch.fmod(ids, sample_len)  # ids % sample_len
             ids1 = torch.div(ids, sample_len, rounding_mode='floor')  # ids // sample_len
 
-            obs_history = obs_histories[ids0, ids1]
+            obs_his = adapt_obs[ids0, ids1]
             e = es[ids0, ids1]
 
-            # predict e with obs_history and adaptor
-            e_pred = self.adaptor(obs_history)
+            # predict e with obs_his and adaptor
+            e_pred = self.adaptor(obs_his)
             e_compresed = self.compressor(e)
             # calculate loss and update adaptor
             obj_adaptor = self.criterion(e_pred, e_compresed)

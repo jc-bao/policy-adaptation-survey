@@ -25,8 +25,8 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 1.0e7
-    adapt_steps = 0.0e7
+    total_steps = 1e7
+    adapt_steps = 1e7
     eval_freq = 4
     curri_thereshold = 0.0
     
@@ -36,7 +36,8 @@ def train(args:Args)->None:
     env = DroneEnv(
         env_num=env_num, gpu_id=args.gpu_id, seed = args.seed) 
     agent = PPO(
-        state_dim=env.state_dim, expert_dim=env.expert_dim, action_dim=env.action_dim, 
+        state_dim=env.state_dim, expert_dim=env.expert_dim, 
+        adapt_dim=env.adapt_dim, action_dim=env.action_dim, 
         adapt_horizon=env.adapt_horizon, 
         act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
         compressor_dim=args.compressor_dim, 
@@ -102,7 +103,7 @@ def train(args:Args)->None:
             total_steps+=(env.max_steps*env_num)
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps)
             torch.set_grad_enabled(True)
-            adaptor_loss = agent.update_adaptor(infos['e'], infos['obs_history'])
+            adaptor_loss = agent.update_adaptor(infos['e'], infos['adapt_obs'])
             torch.set_grad_enabled(False)
 
             # log

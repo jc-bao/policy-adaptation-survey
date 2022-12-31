@@ -31,7 +31,7 @@ class DroneEnv(gym.Env):
         self.res_dyn_scale = 0.0  / (2**dim)
         self.res_dyn_param_dim = 0
         self.curri_param = 1.0
-        self.adapt_horizon = 10
+        self.adapt_horizon = 3
 
         self.mass_min, self.mass_max = 0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
@@ -83,6 +83,8 @@ class DroneEnv(gym.Env):
         self.state_dim = 4*dim+2*dim*self.obs_traj_len
         self.expert_dim = (self.res_dyn_param_dim+dim*3+1)
         self.action_dim = dim - 1
+        self.adapt_dim = (3+3+3+3+3)*self.adapt_horizon
+        # [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']]
 
         self.reset()
 
@@ -144,6 +146,8 @@ class DroneEnv(gym.Env):
         x[:, 2] = torch.rand((size), device=self.device) * 2 * np.pi - np.pi
         v = (torch.rand((size, self.dim), device=self.device)*2-1)* self.init_v_std + self.init_v_mean
         x = torch.clip(x, self.x_min, self.x_max)
+        mass = torch.ones_like(mass, device=self.device)*self.mass_mean
+        decay = torch.ones_like(decay, device=self.device)*self.decay_mean
         return x, v, mass, delay, decay, res_dyn_param
     
     def step(self, action):
@@ -230,8 +234,8 @@ class DroneEnv(gym.Env):
         
         next_obs = self._get_obs()
         # update observation history
-        self.obs_history.append(torch.cat((next_obs, action), dim=-1))
-        self.obs_history.pop(0)
+        self.obs_his.append(torch.cat((next_obs, action), dim=-1))
+        self.obs_his.pop(0)
         next_info = self._get_info()
         # add gaussian noise to next_obs
         next_obs += torch.randn_like(next_obs, device=self.device) * self.obs_noise_std
@@ -264,7 +268,7 @@ class DroneEnv(gym.Env):
         self.d_acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
         obs_his_shape = list(obs.shape)
         obs_his_shape[-1] += 2
-        self.obs_history = [torch.zeros(obs_his_shape, device=self.device)] * self.adapt_horizon
+        self.obs_his = [torch.zeros(obs_his_shape, device=self.device)] * self.adapt_horizon
 
         self.v_his.append(self.v.clone())
         self.v_his.pop(0)
@@ -291,7 +295,7 @@ class DroneEnv(gym.Env):
             'err_x': err_x, 
             'err_v': err_v, 
             'e': self._get_e(),
-            'obs_history': torch.stack(self.obs_history, dim=0),
+            'obs_his': torch.stack(self.obs_his, dim=0),
             'u_his': torch.stack(self.u_his, dim=0),
             'd_u_his': torch.stack(self.d_u_his, dim=0),
             'u_force_his': torch.stack(self.u_force_his, dim=0),
@@ -301,6 +305,10 @@ class DroneEnv(gym.Env):
             'd_acc_his': torch.stack(self.d_acc_his, dim=0),
             'delay': self.delay,
         }
+
+        info['adapt_obs'] = torch.cat(
+            [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']], dim=-1
+        ).reshape(self.env_num, -1)
 
         if self.delay_max > 0:
             info['action_history'] = torch.stack(self.action_history, dim=1)
@@ -434,7 +442,7 @@ def plot_drone():
 
 def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     state, info = env.reset()
-    obs_his = info['obs_history']
+    obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
     js = []
     # check if the policy is torch neural network
@@ -447,8 +455,8 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        # act = policy(state, adaptor(obs_his))
-        act = policy(state, info)
+        act = policy(state, adaptor(info['adapt_obs']))
+        # act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
             ic(act.requires_grad, state.requires_grad)

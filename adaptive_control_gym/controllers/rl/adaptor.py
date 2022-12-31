@@ -34,10 +34,10 @@ class AdaptorTConv(nn.Module):
         return x
 
 class AdaptorMLP(nn.Module):
-    def __init__(self, state_dim, action_dim, horizon, output_dim):
+    def __init__(self, adapt_dim, horizon, output_dim):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear((state_dim+action_dim)*horizon, 256),
+            nn.Linear(adapt_dim, 256),
             nn.ReLU(inplace=True),
             nn.Linear(256, 128),
             nn.ReLU(inplace=True),
@@ -46,14 +46,16 @@ class AdaptorMLP(nn.Module):
             nn.Linear(64, output_dim),
         )
 
-    def forward(self, x):
-        return torch.tanh(self.mlp(x))
+    def forward(self, adapt_obs):
+        return torch.tanh(self.mlp(adapt_obs))*2
 
 class AdaptorOracle(nn.Module):
     def __init__(self, state_dim, action_dim, horizon, output_dim):
         super().__init__()
 
     def forward(self, info):
+        if hasattr(self, 'device') is False:
+            self.device = info['acc_his'].device
         da2, da3 = info['d_acc_his'][-2], info['d_acc_his'][-1]
         du2, du3 = info['d_u_force_his'][-2], info['d_u_force_his'][-1]
         a1, a2, a3 = info['acc_his'][-3], info['acc_his'][-2], info['acc_his'][-1]
@@ -61,14 +63,14 @@ class AdaptorOracle(nn.Module):
         v2, v3 = info['v_his'][-2], info['v_his'][-1]
 
         k = (da2*du3 - da3*du2) / (a2*da2 - a1*da3) * 30
-        k = torch.where(torch.isnan(k), torch.ones_like(k, device=self.device)*0.15, k)
+        k = torch.where(torch.isnan(k)|torch.isinf(k), torch.ones_like(k, device=self.device)*0.15, k)
         m = (du3-k*a2*1/30) / da3
-        m = torch.where(torch.isnan(m), torch.ones_like(m, device=self.device)*0.03, m)
-        F = m * a3 - u3 + k * v2 + m * torch.Tensor([0,9.8,0], device=self.device)
-        F = torch.where(torch.isnan(F), torch.ones_like(F, device=self.device)*0.0, F)
+        m = torch.where(torch.isnan(m)|torch.isinf(m), torch.ones_like(m, device=self.device)*0.03, m)
+        F = m * a3 - u3 + k * v2 + m * torch.tensor([0,9.8,0], device=self.device)
+        F = torch.where(torch.isnan(F)|torch.isinf(F), torch.ones_like(F, device=self.device)*0.0, F)
 
         mass_normed = (m - 0.03)/0.02
         disturb_normed = F / 0.3
-        delay_normed = torch.zeros_like(info['delay'], device=info['delay'].device)
+        delay_normed = torch.zeros_like(info['delay'], device=self.device)
         decay_normed = (k-0.15)/0.15
         return torch.concat([mass_normed, disturb_normed, delay_normed, decay_normed], dim=-1)
