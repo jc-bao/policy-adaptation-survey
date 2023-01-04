@@ -43,8 +43,8 @@ def train(args:Args)->None:
         env_num=env_num, gpu_id=args.gpu_id)
 
     loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
-    # agent.act = loaded_agent['actor']
-    agent.adaptor = loaded_agent['adaptor']
+    agent.act = loaded_agent['actor']
+    # agent.adaptor = loaded_agent['adaptor']
     # agent.compressor = loaded_agent['compressor']
 
     if args.use_wandb:
@@ -104,17 +104,18 @@ def train(args:Args)->None:
             total_steps+=(env.max_steps*env_num)
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps)
             torch.set_grad_enabled(True)
-            adaptor_loss = agent.update_adaptor(infos['e'], infos['adapt_obs'])
+            adaptor_loss, adaptor_err = agent.update_adaptor(infos['e'], infos['adapt_obs'])
             torch.set_grad_enabled(False)
 
             # log
             if args.use_wandb:
                 wandb.log({
                     'adapt/adaptor_loss': adaptor_loss, 
+                    'adapt/adaptor_err': adaptor_err,
                 }, step=total_steps)
             else:
                 ic(adaptor_loss)
-            t.set_postfix(adaptor_loss = adaptor_loss, steps = total_steps)
+            t.set_postfix(err=adaptor_err, adaptor_loss = adaptor_loss, steps = total_steps)
 
             # evaluate
             log_dict = eval_env(env, agent, use_adaptor=True)

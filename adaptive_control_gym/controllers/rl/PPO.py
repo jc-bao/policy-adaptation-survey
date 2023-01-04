@@ -165,6 +165,7 @@ class PPO:
         update_times = int(buffer_size * buffer_num * self.repeat_times / self.batch_size)
         sample_len = buffer_size - 1
         assert update_times >= 1
+        err_pred_sum = 0
         for _ in range(update_times):
             ids = torch.randint(sample_len * buffer_num, size=(self.batch_size,), requires_grad=False)
             ids0 = torch.fmod(ids, sample_len)  # ids % sample_len
@@ -177,13 +178,14 @@ class PPO:
             e_pred = self.adaptor(obs_his)
             e_compresed = self.compressor(e)
             # ic(obs_his[0])
-            ic(e_pred[0], e_compresed[0])
+            # ic(e_pred[0]-e_compresed[0])
             # calculate loss and update adaptor
             obj_adaptor = self.criterion(e_pred, e_compresed)
+            err_pred_sum += torch.norm(e_pred - e_compresed, dim=-1).mean().item()
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
 
             adaptor_loss += obj_adaptor.item()
-        return adaptor_loss / update_times
+        return adaptor_loss / update_times, err_pred_sum / update_times
 
 
     def get_advantages(self, rewards: torch.Tensor, undones: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
