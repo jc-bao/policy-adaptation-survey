@@ -24,7 +24,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 0e6
+    total_steps = 4e6
     adapt_steps = 4e6
     eval_freq = 4
     curri_thereshold = 0.0
@@ -42,10 +42,10 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
-    agent.act = loaded_agent['actor']
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
+    # agent.act = loaded_agent['actor']
     # agent.adaptor = loaded_agent['adaptor']
-    agent.compressor = loaded_agent['compressor']
+    # agent.compressor = loaded_agent['compressor']
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)

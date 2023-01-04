@@ -66,6 +66,23 @@ class Adaptor3D(nn.Module):
         x = torch.tanh(self.mlp(adapt_obs))*2
         return x.reshape(x.shape[0], -1)
 
+# Define a RNN network
+class AdaptorRNN(nn.Module):
+    def __init__(self, adapt_dim, horizon, output_dim):
+        super().__init__()
+        self.rnn = nn.LSTM(adapt_dim, 128, 2, batch_first=True)
+        self.mlp = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, output_dim),
+        )
+    
+    def forward(self, adapt_obs):
+        x, _ = self.rnn(adapt_obs)
+        # mean pooling
+        x = x.mean(dim=1)
+        return torch.tanh(self.mlp(x[:, -1]))*2
+
 class AdaptorOracle(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()

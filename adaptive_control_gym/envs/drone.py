@@ -35,7 +35,7 @@ class DroneEnv(gym.Env):
 
         self.mass_min, self.mass_max = 0.01, 0.05 #0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.00, 0.00 #0.0, 0.3
+        self.decay_min, self.decay_max = 0.15, 0.15 #0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = 0.0, 0.0 #-0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
@@ -91,7 +91,7 @@ class DroneEnv(gym.Env):
         if self.delay_min != self.delay_max:
             self.expert_dim += 1
         self.action_dim = dim - 1
-        self.adapt_dim = 9 #(3+3+3+3+3)*self.adapt_horizon
+        self.adapt_dim = (3+3+3+3+3)*self.adapt_horizon
         # [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']]
 
         self.reset()
@@ -176,15 +176,19 @@ class DroneEnv(gym.Env):
         u_force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
         self.u_his.append(u)
         self.u_his.pop(0)
-        self.d_u_his.append((self.u_his[-1]-self.u_his[-2]))
-        self.d_u_his.pop(0)
         self.u_force_his.append(u_force)
         self.u_force_his.pop(0)
-        self.d_u_force_his.append((self.u_force_his[-1]-self.u_force_his[-2]))
-        self.d_u_force_his.pop(0)
+        if self.adapt_horizon > 1:
+            self.d_u_his.append((self.u_his[-1]-self.u_his[-2]))
+            self.d_u_his.pop(0)
+            self.d_u_force_his.append((self.u_force_his[-1]-self.u_force_his[-2]))
+            self.d_u_force_his.pop(0)
 
         # calculate u_delay
-        u_delay = u*self.model_delay_alpha + self.u_his[-2]*(1-self.model_delay_alpha)
+        if self.adapt_horizon > 1:
+            u_delay = u*self.model_delay_alpha + self.u_his[-2]*(1-self.model_delay_alpha)
+        else:
+            u_delay = u
 
         # add noise
         u_delay_noise = torch.randn_like(action, device=self.device) * self.action_noise_std + u_delay
@@ -211,8 +215,9 @@ class DroneEnv(gym.Env):
         self.v_his.pop(0)
         self.acc_his.append(self.acc)
         self.acc_his.pop(0)
-        self.d_acc_his.append((self.acc_his[-1]-self.acc_his[-2]))
-        self.d_acc_his.pop(0)
+        if self.adapt_horizon > 1:
+            self.d_acc_his.append((self.acc_his[-1]-self.acc_his[-2]))
+            self.d_acc_his.pop(0)
 
         # calculate reward
         err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
@@ -313,12 +318,14 @@ class DroneEnv(gym.Env):
             'delay': self.delay,
         }
 
-        # info['adapt_obs'] = torch.cat(
-        #     [info['u_force_his'], info['d_u_force_his'], (info['v_his']-self.v_mean)/self.v_std, 
-        #     (info['acc_his']-self.acc_mean)/self.acc_std, (info['d_acc_his']-self.d_acc_mean)/self.d_acc_std], 
-        #     dim=-1
-        # ).reshape(self.env_num, -1)
-        info['adapt_obs'] = torch.concat([(info['acc_his'][-1]-self.acc_mean)/self.acc_std, info['u_force_his'][-1], self.gravity/9.8], dim=-1) # Tensor(env_num, 3[dim], 3[param])
+        info['adapt_obs'] = torch.concat(
+            [info['u_force_his'], info['d_u_force_his'], (info['v_his']-self.v_mean)/self.v_std, 
+            (info['acc_his']-self.acc_mean)/self.acc_std, (info['d_acc_his']-self.d_acc_mean)/self.d_acc_std], 
+            dim=-1
+        ) # Tensor(adapt_horizon, env_num, param)]
+        info['adapt_obs'] = info['adapt_obs'].permute(1,0,2)
+        info['adapt_obs'] = info['adapt_obs'].reshape(self.env_num, -1)
+        # info['adapt_obs'] = torch.concat([(info['acc_his'][-1]-self.acc_mean)/self.acc_std, info['u_force_his'][-1], self.gravity/9.8], dim=-1) # Tensor(env_num, 3[dim], 3[param])
 
         if self.delay_max > 0:
             info['action_history'] = torch.stack(self.action_history, dim=1)
