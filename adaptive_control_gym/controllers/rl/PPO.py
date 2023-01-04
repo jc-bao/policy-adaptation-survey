@@ -4,7 +4,7 @@ import math
 
 from adaptive_control_gym.controllers.rl.net import ActorPPO, CriticPPO, Compressor
 from adaptive_control_gym.controllers.rl.buffer import ReplayBufferList
-from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP, AdaptorTConv, AdaptorOracle
+from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP, AdaptorTConv, AdaptorOracle, Adaptor3D
 
 class PPO:
     def __init__(self, 
@@ -28,7 +28,7 @@ class PPO:
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
         # update adaptor
-        self.adapt_batch_size = 64
+        self.adapt_batch_size = 128
         self.adapt_repeat_times = 1
         self.adapt_lr = 1e-3
         # network
@@ -43,8 +43,9 @@ class PPO:
             self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
         self.criterion = torch.nn.SmoothL1Loss(reduction="mean")
+        self.adapt_criterion = torch.nn.MSELoss(reduction="mean")
         # ppo
-        self.ratio_clip = 0.25  # `ratio.clamp(1 - clip, 1 + clip)`
+        self.ratio_clip = 0.25  # ratio.clamp(1 - clip, 1 + clip)
         self.lambda_gae_adv = 0.95  # could be 0.50~0.99 # GAE for sparse reward
         self.lambda_entropy = 0.005  # could be 0.00~0.20
         self.lambda_entropy = torch.tensor(self.lambda_entropy, dtype=torch.float32, device=self.device)
@@ -181,10 +182,8 @@ class PPO:
             # predict e with obs_his and adaptor
             e_pred = self.adaptor(obs_his)
             e_compresed = self.compressor(e)
-            # ic(obs_his[0])
-            # ic(e_pred[0]-e_compresed[0])
-            # calculate loss and update adaptor
-            obj_adaptor = self.criterion(e_pred, e_compresed)
+
+            obj_adaptor = self.adapt_criterion(e_pred, e_compresed)
             err_pred_sum += torch.norm(e_pred - e_compresed, dim=-1).mean().item()
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
 

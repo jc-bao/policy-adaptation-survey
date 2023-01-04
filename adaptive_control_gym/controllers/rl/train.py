@@ -45,7 +45,7 @@ def train(args:Args)->None:
     loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
     agent.act = loaded_agent['actor']
     # agent.adaptor = loaded_agent['adaptor']
-    # agent.compressor = loaded_agent['compressor']
+    agent.compressor = loaded_agent['compressor']
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)

@@ -35,7 +35,7 @@ class DroneEnv(gym.Env):
 
         self.mass_min, self.mass_max = 0.01, 0.05 #0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.15, 0.15 #0.0, 0.3
+        self.decay_min, self.decay_max = 0.00, 0.00 #0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = 0.0, 0.0 #-0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
@@ -61,7 +61,8 @@ class DroneEnv(gym.Env):
         self.tau = 1.0/30.0  # seconds between state updates
         self.force_scale = 1.0
         self.max_force = 1.0
-        self.gravity = torch.Tensor([0, -9.8, 0]).to(self.device)
+        self.gravity = torch.zeros((env_num, 3), device=self.device)
+        self.gravity[:, 1] = -9.8
 
         # generate a sin trajectory with torch
         self.obs_traj_len = 1
@@ -90,7 +91,7 @@ class DroneEnv(gym.Env):
         if self.delay_min != self.delay_max:
             self.expert_dim += 1
         self.action_dim = dim - 1
-        self.adapt_dim = (3+3+3+3+3)*self.adapt_horizon
+        self.adapt_dim = 9 #(3+3+3+3+3)*self.adapt_horizon
         # [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']]
 
         self.reset()
@@ -303,7 +304,8 @@ class DroneEnv(gym.Env):
             'obs_his': torch.stack(self.obs_his, dim=0),
             'u_his': torch.stack(self.u_his, dim=0),
             'd_u_his': torch.stack(self.d_u_his, dim=0),
-            'u_force_his': torch.stack(self.u_force_his, dim=0),
+            # 'u_force_his': torch.ones_like(torch.stack(self.u_force_his, dim=0), device=self.device)*1000,
+            'u_force_his': torch.stack(self.u_force_his, dim=0), 
             'd_u_force_his': torch.stack(self.d_u_force_his, dim=0),
             'v_his': torch.stack(self.v_his, dim=0),
             'acc_his': torch.stack(self.acc_his, dim=0),
@@ -311,10 +313,12 @@ class DroneEnv(gym.Env):
             'delay': self.delay,
         }
 
-        info['adapt_obs'] = torch.cat(
-            [info['u_force_his'], info['d_u_force_his'], (info['v_his']-self.v_mean)/self.v_std, (info['acc_his']-self.acc_mean)/self.acc_std, (info['d_acc_his']-self.d_acc_mean)/self.d_acc_std], dim=-1
-        ).reshape(self.env_num, -1)
-        # info['adapt_obs'] = torch.cat([(info['acc_his'][-1]-self.acc_mean)/self.acc_std, info['u_force_his'][-1]], dim=-1)
+        # info['adapt_obs'] = torch.cat(
+        #     [info['u_force_his'], info['d_u_force_his'], (info['v_his']-self.v_mean)/self.v_std, 
+        #     (info['acc_his']-self.acc_mean)/self.acc_std, (info['d_acc_his']-self.d_acc_mean)/self.d_acc_std], 
+        #     dim=-1
+        # ).reshape(self.env_num, -1)
+        info['adapt_obs'] = torch.concat([(info['acc_his'][-1]-self.acc_mean)/self.acc_std, info['u_force_his'][-1], self.gravity/9.8], dim=-1) # Tensor(env_num, 3[dim], 3[param])
 
         if self.delay_max > 0:
             info['action_history'] = torch.stack(self.action_history, dim=1)

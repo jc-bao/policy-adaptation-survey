@@ -49,8 +49,25 @@ class AdaptorMLP(nn.Module):
     def forward(self, adapt_obs):
         return torch.tanh(self.mlp(adapt_obs))*2
 
+class Adaptor3D(nn.Module):
+    def __init__(self, adapt_dim, horizon, output_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(adapt_dim//3, 256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, output_dim//3),
+        )
+
+    def forward(self, adapt_obs):
+        x = torch.tanh(self.mlp(adapt_obs))*2
+        return x.reshape(x.shape[0], -1)
+
 class AdaptorOracle(nn.Module):
-    def __init__(self, state_dim, action_dim, horizon, output_dim):
+    def __init__(self, *args, **kwargs):
         super().__init__()
 
     def forward(self, info):
