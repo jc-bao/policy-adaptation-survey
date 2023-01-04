@@ -177,7 +177,7 @@ class PPO:
             e_pred = self.adaptor(obs_his)
             e_compresed = self.compressor(e)
             # ic(obs_his[0])
-            # ic(e_pred[0], e_compresed[0])
+            ic(e_pred[0], e_compresed[0])
             # calculate loss and update adaptor
             obj_adaptor = self.criterion(e_pred, e_compresed)
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
