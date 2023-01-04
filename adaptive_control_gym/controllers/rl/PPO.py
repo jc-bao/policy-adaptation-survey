@@ -27,6 +27,10 @@ class PPO:
         self.learning_rate = 1e-4
         self.clip_grad_norm = 3.0
         self.device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+        # update adaptor
+        self.adapt_batch_size = 64
+        self.adapt_repeat_times = 1
+        self.adapt_lr = 1e-3
         # network
         self.cri = CriticPPO(state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
         # compressor
@@ -162,7 +166,7 @@ class PPO:
         adaptor_loss = 0.0
         buffer_size = es.shape[0]
         buffer_num = es.shape[1]
-        update_times = int(buffer_size * buffer_num * self.repeat_times / self.batch_size)
+        update_times = int(buffer_size * buffer_num * self.adapt_repeat_times / self.adapt_batch_size)
         sample_len = buffer_size - 1
         assert update_times >= 1
         err_pred_sum = 0
