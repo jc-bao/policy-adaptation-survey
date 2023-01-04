@@ -35,7 +35,7 @@ class DroneEnv(gym.Env):
 
         self.mass_min, self.mass_max = 0.01, 0.05 #0.01, 0.05
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.15, 0.15 #0.0, 0.3
+        self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = 0.0, 0.0 #-0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
@@ -352,7 +352,7 @@ class DroneEnv(gym.Env):
 
     def _set_disturb(self):
         self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * (self.disturb_max-self.disturb_min) * 0.5 * self.curri_param + (self.disturb_min+self.disturb_max)*0.5
-        self.disturb *= (self.mass*self.gravity[1])
+        self.disturb *= self.mass*self.gravity
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
