@@ -42,16 +42,15 @@ class DroneEnv(gym.Env):
 
         # generated parameters
         self.rotate_mass_scale = 1
-        self.mass_mean, self.mass_std = (self.mass_min+self.mass_max)/2, (self.mass_max-self.mass_min)/2
-        if self.mass_std == 0:
-            self.mass_std = 1.0
+        # self.mass_mean, self.mass_std = (self.mass_min+self.mass_max)/2, (self.mass_max-self.mass_min)/2
+        self.mass_mean, self.mass_std = 0.03, 0.02
         self.delay_mean, self.delay_std = 0, 1
-        self.decay_mean, self.decay_std = (self.decay_max+self.decay_min)/2, (self.decay_max-self.decay_min)/2
-        if self.decay_std == 0:
-            self.decay_std = 1.0
-        self.disturb_mean, self.disturb_std = 0, self.mass_mean*10
-        if self.disturb_std == 0:
-            self.disturb_std = 1.0
+        # self.decay_mean, self.decay_std = (self.decay_max+self.decay_min)/2, (self.decay_max-self.decay_min)/2
+        self.decay_mean, self.decay_std = 0.15, 0.15
+        self.disturb_mean, self.disturb_std = 0, 0.3
+        self.v_mean, self.v_std = 0, 1.0 / 0.3
+        self.acc_mean, self.acc_std = 0, 1.0 / 0.03
+        self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
 
         self.res_dyn_mlp = ResDynMLP(input_dim=dim*3+self.res_dyn_param_dim, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = (self.res_dyn_param_min+self.res_dyn_param_max)/2, (self.res_dyn_param_max-self.res_dyn_param_min)/2
@@ -81,7 +80,15 @@ class DroneEnv(gym.Env):
         self.dim = dim
         self.env_num = env_num
         self.state_dim = 4*dim+2*dim*self.obs_traj_len
-        self.expert_dim = (self.res_dyn_param_dim+dim*3+1)
+        self.expert_dim = self.res_dyn_param_dim
+        if self.mass_min != self.mass_max:
+            self.expert_dim += self.dim
+        if self.decay_min != self.decay_max:
+            self.expert_dim += self.dim
+        if self.disturb_min != self.disturb_max:
+            self.expert_dim += self.dim
+        if self.delay_min != self.delay_max:
+            self.expert_dim += 1
         self.action_dim = dim - 1
         self.adapt_dim = (3+3+3+3+3)*self.adapt_horizon
         # [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']]
@@ -146,8 +153,6 @@ class DroneEnv(gym.Env):
         x[:, 2] = torch.rand((size), device=self.device) * 2 * np.pi - np.pi
         v = (torch.rand((size, self.dim), device=self.device)*2-1)* self.init_v_std + self.init_v_mean
         x = torch.clip(x, self.x_min, self.x_max)
-        mass = torch.ones_like(mass, device=self.device)*self.mass_mean
-        decay = torch.ones_like(decay, device=self.device)*self.decay_mean
         return x, v, mass, delay, decay, res_dyn_param
     
     def step(self, action):
@@ -164,7 +169,7 @@ class DroneEnv(gym.Env):
 
         # calculate u
         u = action_delay
-        # u[:,0] = (u[:,0]+1)/2 # make sure thrust 0 is always positive
+        u[:,0] = (u[:,0]+1)/2 # make sure thrust 0 is always positive
         theta = self.x[:,[2]]
         F, M = u[:,[0]], u[:,[1]]
         u_force = torch.cat([F*torch.sin(theta), F*torch.cos(theta), M], dim=-1)
@@ -307,20 +312,32 @@ class DroneEnv(gym.Env):
         }
 
         info['adapt_obs'] = torch.cat(
-            [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']], dim=-1
+            [info['u_force_his'], info['d_u_force_his'], (info['v_his']-self.v_mean)/self.v_std, (info['acc_his']-self.acc_mean)/self.acc_std, (info['d_acc_his']-self.d_acc_mean)/self.d_acc_std], dim=-1
         ).reshape(self.env_num, -1)
+        # info['adapt_obs'] = torch.cat([(info['acc_his'][-1]-self.acc_mean)/self.acc_std, info['u_force_his'][-1]], dim=-1)
 
         if self.delay_max > 0:
             info['action_history'] = torch.stack(self.action_history, dim=1)
         return info
 
-
     def _get_e(self):
-        mass_normed = (self.mass-self.mass_mean)/self.mass_std #* 0.0
-        disturb_normed = (self.disturb-self.disturb_mean)/self.disturb_std # * 0.0
-        delay_normed = self.delay/10.0 # * 0.0
-        decay_normed = (self.decay-self.decay_mean)/self.decay_std # * 0.0
-        return torch.concat([mass_normed, disturb_normed, delay_normed, decay_normed, self.res_dyn_param], dim=-1)
+        es = []
+        if self.mass_min != self.mass_max:
+            mass_normed = (self.mass-self.mass_mean)/self.mass_std
+            es.append(mass_normed)
+        if self.disturb_min != self.disturb_max:
+            disturb_normed = (self.disturb-self.disturb_mean)/self.disturb_std # * 0.0
+            es.append(disturb_normed)
+        if self.delay_min != self.delay_max:
+            delay_normed = self.delay/10.0 # * 0.0
+            es.append(delay_normed)
+        if self.decay_min != self.decay_max:
+            decay_normed = (self.decay-self.decay_mean)/self.decay_std # * 0.0
+            es.append(decay_normed)
+        if self.res_dyn_param_dim > 0:
+            res_dyn_param_normed = (self.res_dyn_param-self.res_dyn_param_mean)/self.res_dyn_param_std
+            es.append(res_dyn_param_normed)
+        return torch.concat(es, dim=-1)
 
     def _set_disturb(self):
         self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * (self.disturb_max-self.disturb_min) * 0.5 * self.curri_param + (self.disturb_min+self.disturb_max)*0.5

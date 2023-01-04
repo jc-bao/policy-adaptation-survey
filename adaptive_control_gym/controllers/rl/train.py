@@ -14,7 +14,6 @@ from adaptive_control_gym.controllers import PPO
 @dataclass
 class Args:
     use_wandb:bool=False
-    use_adaptor: bool=False
     program:str='tmp'
     seed:int=0
     gpu_id:int=0
@@ -25,8 +24,8 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 1e7
-    adapt_steps = 1e7
+    total_steps = 8e6
+    adapt_steps = 0e6
     eval_freq = 4
     curri_thereshold = 0.0
     
@@ -43,8 +42,10 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # agent.act = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/actor_ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
-    # agent.adaptor = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/adaptor_ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
+    # agent.act = loaded_agent['actor']
+    # agent.adaptor = loaded_agent['adaptor']
+    # agent.compressor = loaded_agent['compressor']
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
@@ -58,7 +59,7 @@ def train(args:Args)->None:
             # train
             explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.1, 1))
             total_steps += explore_steps * env_num
-            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=args.use_adaptor)
+            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=False)
             torch.set_grad_enabled(True)
             critic_loss, actor_loss, action_std = agent.update_net(states, infos['e'], actions, logprobs, rewards, undones)
             torch.set_grad_enabled(False)
@@ -88,7 +89,7 @@ def train(args:Args)->None:
 
             # evaluate
             if i_ep % eval_freq == 0:
-                log_dict = eval_env(env, agent, use_adaptor=args.use_adaptor)
+                log_dict = eval_env(env, agent, use_adaptor=False)
                 if args.use_wandb:
                     wandb.log(log_dict, step=total_steps)
                 else:

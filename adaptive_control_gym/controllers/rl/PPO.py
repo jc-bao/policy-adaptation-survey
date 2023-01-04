@@ -49,7 +49,7 @@ class PPO:
         # adaptor
         self.adapt_horizon = adapt_horizon
         if compressor_dim > 0:
-            self.adaptor = AdaptorTConv(state_dim, action_dim, adapt_horizon, compressor_dim).to(self.device)
+            self.adaptor = AdaptorMLP(self.adapt_dim, adapt_horizon, compressor_dim).to(self.device)
         else:
             self.adaptor = AdaptorMLP(self.adapt_dim, adapt_horizon, expert_dim).to(self.device)
         self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
@@ -176,6 +176,8 @@ class PPO:
             # predict e with obs_his and adaptor
             e_pred = self.adaptor(obs_his)
             e_compresed = self.compressor(e)
+            # ic(obs_his[0])
+            # ic(e_pred[0], e_compresed[0])
             # calculate loss and update adaptor
             obj_adaptor = self.criterion(e_pred, e_compresed)
             self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
