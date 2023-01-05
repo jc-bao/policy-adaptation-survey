@@ -145,8 +145,11 @@ def train(args:Args)->None:
 
 
 def eval_env(env, agent, deterministic=True, use_adaptor=False):
+    origin_curri_param = env.curri_param
+    env.curri_param = 1.0
     agent.last_state, agent.last_info = env.reset()
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
+    env.curri_param = origin_curri_param
     rew_mean = rewards.mean().item()
     err_x, err_v = infos['err_x'][:-1], infos['err_v'][:-1]
     err_x_mean = err_x.mean().item()

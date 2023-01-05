@@ -13,6 +13,7 @@ from tqdm import trange
 
 import adaptive_control_gym
 from adaptive_control_gym import controllers as ctrl
+from adaptive_control_gym.utils import sample_inv_norm
 
 install()
 
@@ -139,10 +140,13 @@ class DroneEnv(gym.Env):
     def _get_initial_state(self, size = None):
         if size is None:
             size = self.env_num
-        mass = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.mass_max-self.mass_min) * 0.5 *self.curri_param + (self.mass_min+self.mass_max)*0.5
-        delay = (torch.rand((size, 1), device=self.device)*2-1) * (self.delay_max-self.delay_min) * 0.5 *self.curri_param + (self.delay_min+self.delay_max)*0.5
-        decay = (torch.rand((size, self.dim), device=self.device)*2-1)* (self.decay_max-self.decay_min) * 0.5 *self.curri_param + (self.decay_min+self.decay_max)*0.5
-        res_dyn_param = (torch.rand((size, self.res_dyn_param_dim), device=self.device)*2-1) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 *self.curri_param + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
+        std = 0.4 - 0.2 * self.curri_param
+        
+        mass = sample_inv_norm(std, [size, self.dim], device=self.device) * (self.mass_max-self.mass_min)*0.5 + (self.mass_min+self.mass_max)*0.5
+        delay = sample_inv_norm(std, [size, 1], device=self.device) * (self.delay_max-self.delay_min) * 0.5 + (self.delay_min+self.delay_max)*0.5
+        decay = sample_inv_norm(std, [size, self.dim], device=self.device)* (self.decay_max-self.decay_min) * 0.5 + (self.decay_min+self.decay_max)*0.5
+        res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
+
         mass = torch.clip(mass, self.mass_min, self.mass_max)
         mass[:, 1] = mass[:, 0]
         mass[:, 2] *= self.rotate_mass_scale
