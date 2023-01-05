@@ -25,7 +25,7 @@ class Args:
 def train(args:Args)->None:
     env_num = 1024
     total_steps = 8e6
-    adapt_steps = 0e6
+    adapt_steps = 8e6
     eval_freq = 4
     curri_thereshold = 0.0
     
