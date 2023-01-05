@@ -33,11 +33,11 @@ class DroneEnv(gym.Env):
         self.curri_param = 1.0
         self.adapt_horizon = 3
 
-        self.mass_min, self.mass_max = 0.005, 0.0300
+        self.mass_min, self.mass_max = 0.005, 0.005001#0.005, 0.0300
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.3
+        self.decay_min, self.decay_max = 0.0, 0.0001#0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = -0.8, 0.8
+        self.disturb_min, self.disturb_max = -0.8, -0.799#-0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -484,7 +484,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state, adaptor(info['adapt_obs']))
+        act = policy(state, info['e'])#adaptor(info['adapt_obs']))
         # act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
