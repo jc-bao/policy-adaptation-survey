@@ -24,8 +24,8 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 4e6
-    adapt_steps = 8e6
+    total_steps = 8e6
+    adapt_steps = 0e6
     eval_freq = 4
     curri_thereshold = 0.0
     
@@ -102,7 +102,7 @@ def train(args:Args)->None:
         agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
             total_steps+=(env.max_steps*env_num)
-            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps)
+            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, use_adaptor=True)
             torch.set_grad_enabled(True)
             adaptor_loss, adaptor_err = agent.update_adaptor(infos['e'], infos['adapt_obs'])
             torch.set_grad_enabled(False)
