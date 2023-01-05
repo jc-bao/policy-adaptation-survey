@@ -103,7 +103,7 @@ class AdaptorOracle(nn.Module):
         F = m * a3 - u3 + k * v2 + m * torch.tensor([0,9.8,0], device=self.device)
         F = torch.where(torch.isnan(F)|torch.isinf(F), torch.ones_like(F, device=self.device)*0.0, F)
 
-        mass_normed = (m - 0.03)/0.02
+        mass_normed = (m - 0.018)/0.012
         disturb_normed = F / 0.3
         delay_normed = torch.zeros_like(info['delay'], device=self.device)
         decay_normed = (k-0.15)/0.15

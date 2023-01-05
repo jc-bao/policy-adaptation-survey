@@ -33,7 +33,7 @@ class DroneEnv(gym.Env):
         self.curri_param = 1.0
         self.adapt_horizon = 3
 
-        self.mass_min, self.mass_max = 0.01, 0.05
+        self.mass_min, self.mass_max = 0.005, 0.0300
         self.delay_min, self.delay_max = 0, 0
         self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
@@ -43,7 +43,7 @@ class DroneEnv(gym.Env):
         # generated parameters
         self.rotate_mass_scale = 1
         # self.mass_mean, self.mass_std = (self.mass_min+self.mass_max)/2, (self.mass_max-self.mass_min)/2
-        self.mass_mean, self.mass_std = 0.03, 0.02
+        self.mass_mean, self.mass_std = 0.018, 0.012
         self.delay_mean, self.delay_std = 0, 1
         # self.decay_mean, self.decay_std = (self.decay_max+self.decay_min)/2, (self.decay_max-self.decay_min)/2
         self.decay_mean, self.decay_std = 0.15, 0.15
