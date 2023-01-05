@@ -24,10 +24,10 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 8e5
+    total_steps = 8e6
     adapt_steps = 0e6
     eval_freq = 4
-    curri_thereshold = 0.0
+    curri_thereshold = 0.3
     
 
     if len(args.exp_name) == 0:
@@ -42,17 +42,17 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_extreme.pt', map_location=f'cuda:{args.gpu_id}')
-    agent.act = loaded_agent['actor']
-    agent.adaptor = loaded_agent['adaptor']
-    agent.compressor = loaded_agent['compressor']
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_extreme.pt', map_location=f'cuda:{args.gpu_id}')
+    # agent.act = loaded_agent['actor']
+    # agent.adaptor = loaded_agent['adaptor']
+    # agent.compressor = loaded_agent['compressor']
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
     total_steps = 0
-    env.curri_param = 1.0
+    env.curri_param = 0.0
     with trange(n_ep) as t:
         agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
@@ -146,7 +146,7 @@ def train(args:Args)->None:
 
 def eval_env(env, agent, deterministic=True, use_adaptor=False):
     origin_curri_param = env.curri_param
-    env.curri_param = 1.0
+    env.curri_param = 0.0
     agent.last_state, agent.last_info = env.reset()
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
     env.curri_param = origin_curri_param
