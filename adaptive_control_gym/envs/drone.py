@@ -27,16 +27,16 @@ class DroneEnv(gym.Env):
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
         # parameters
         self.dim=dim=3
-        self.disturb_period = 15
+        self.disturb_period = 120
         self.model_delay_alpha = 1.0
         self.res_dyn_scale = 0.0  / (2**dim)
         self.res_dyn_param_dim = 0
-        self.curri_param = 1.0
+        self.curri_param = 0.0
         self.adapt_horizon = 3
 
-        self.mass_min, self.mass_max = 0.005, 0.03
+        self.mass_min, self.mass_max = 0.006, 0.03
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.1
+        self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
@@ -47,7 +47,7 @@ class DroneEnv(gym.Env):
         self.mass_mean, self.mass_std = 0.018, 0.012
         self.delay_mean, self.delay_std = 0, 1
         # self.decay_mean, self.decay_std = (self.decay_max+self.decay_min)/2, (self.decay_max-self.decay_min)/2
-        self.decay_mean, self.decay_std = 0.0, 0.3
+        self.decay_mean, self.decay_std = 0.15, 0.3
         self.disturb_mean, self.disturb_std = 0, 0.3
         self.v_mean, self.v_std = 0, 1.0 / 0.3
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
@@ -428,7 +428,6 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             jacobian = torch.autograd.grad(act, state, grad_outputs=torch.ones_like(act), create_graph=True)[0][0, -env.expert_dim:]
         with torch.no_grad():
             state, rew, done, info = env.step(act)  # take a random action
-        e = info['e']
         x_list.append(state[0,:env.dim].numpy())
         v_list.append(state[0,env.dim:env.dim*2].numpy())
         traj_x_list.append(env.traj_x[0,:,t%env.max_steps].numpy())

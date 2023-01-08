@@ -27,7 +27,7 @@ def train(args:Args)->None:
     total_steps = 8e6
     adapt_steps = 0e6
     eval_freq = 4
-    curri_thereshold = 0.0
+    curri_thereshold = 10.0
     
 
     if len(args.exp_name) == 0:
@@ -144,7 +144,7 @@ def train(args:Args)->None:
 
 
 
-def eval_env(env, agent, deterministic=True, use_adaptor=False):
+def eval_env(env, agent:PPO, deterministic=True, use_adaptor=False):
     origin_curri_param = env.curri_param
     env.curri_param = 0.0
     agent.last_state, agent.last_info = env.reset()
