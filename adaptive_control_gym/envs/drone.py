@@ -34,9 +34,9 @@ class DroneEnv(gym.Env):
         self.curri_param = 1.0
         self.adapt_horizon = 3
 
-        self.mass_min, self.mass_max = 0.005, 0.0300 
+        self.mass_min, self.mass_max = 0.005, 0.03
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.3
+        self.decay_min, self.decay_max = -0.0, 0.0
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
@@ -47,7 +47,7 @@ class DroneEnv(gym.Env):
         self.mass_mean, self.mass_std = 0.018, 0.012
         self.delay_mean, self.delay_std = 0, 1
         # self.decay_mean, self.decay_std = (self.decay_max+self.decay_min)/2, (self.decay_max-self.decay_min)/2
-        self.decay_mean, self.decay_std = 0.15, 0.15
+        self.decay_mean, self.decay_std = 0.0, 0.3
         self.disturb_mean, self.disturb_std = 0, 0.3
         self.v_mean, self.v_std = 0, 1.0 / 0.3
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
@@ -145,10 +145,13 @@ class DroneEnv(gym.Env):
         mass = sample_inv_norm(std, [size, self.dim], device=self.device) * (self.mass_max-self.mass_min)*0.5 + (self.mass_min+self.mass_max)*0.5
         delay = sample_inv_norm(std, [size, 1], device=self.device) * (self.delay_max-self.delay_min) * 0.5 + (self.delay_min+self.delay_max)*0.5
         decay = sample_inv_norm(std, [size, self.dim], device=self.device)* (self.decay_max-self.decay_min) * 0.5 + (self.decay_min+self.decay_max)*0.5
+        decay[:, 1] = decay[:, 0]
+        decay[:, 2] = decay[:, 0]
         res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
 
         mass = torch.clip(mass, self.mass_min, self.mass_max)
         mass[:, 1] = mass[:, 0]
+        mass[:, 2] = mass[:, 0]
         mass[:, 2] *= self.rotate_mass_scale
         delay = torch.clip(delay, self.delay_min, self.delay_max).type(torch.int)
         decay = torch.clip(decay, self.decay_min, self.decay_max)
