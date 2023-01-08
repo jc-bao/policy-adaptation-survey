@@ -36,7 +36,7 @@ class DroneEnv(gym.Env):
 
         self.mass_min, self.mass_max = 0.006, 0.03
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.3
+        self.decay_min, self.decay_max = 0.0, 0.1
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
@@ -358,7 +358,8 @@ class DroneEnv(gym.Env):
         return torch.concat(es, dim=-1)
 
     def _set_disturb(self):
-        self.disturb = (torch.rand((self.env_num,self.dim), device=self.device)*2-1) * (self.disturb_max-self.disturb_min) * 0.5 * self.curri_param + (self.disturb_min+self.disturb_max)*0.5
+        std = 0.4 - 0.2 * self.curri_param
+        self.disturb = sample_inv_norm(std, [self.env_num, self.dim], device=self.device) * (self.disturb_max-self.disturb_min)*0.5 + (self.disturb_max+self.disturb_min)*0.5
         self.disturb *= (self.mass*self.gravity[0,1])
 
 
