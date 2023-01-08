@@ -27,30 +27,32 @@ class ActorPPO(ActorBase):
         super().__init__(state_dim=state_dim, action_dim=action_dim)
         self.expert_dim = expert_dim
         self.expert_mode = expert_mode
+        embedding_dim = 256
+        n_layers = 2
         if expert_mode == 0:
-            fc1 = nn.Linear(state_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256, action_dim)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim, action_dim))
+            self.fc = nn.Sequential(*fc_list)
         elif expert_mode == 1:
-            fc1 = nn.Linear(state_dim + expert_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256, action_dim)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim + expert_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim, action_dim))
+            self.fc = nn.Sequential(*fc_list)
         elif expert_mode == 2:
-            fc1 = nn.Linear(state_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256+expert_dim, action_dim)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim+expert_dim, action_dim))
+            self.fc = nn.Sequential(*fc_list)
         elif expert_mode == 3:
-            fc1 = nn.Linear(state_dim + expert_dim, 256)
-            fc2 = nn.Linear(256 + expert_dim, 256)
-            fc3 = nn.Linear(256 + expert_dim, 256)
-            fc4 = nn.Linear(256 + expert_dim, action_dim)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim+expert_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim+expert_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim+expert_dim, action_dim))
+            self.fc = nn.Sequential(*fc_list)
         else:
             raise NotImplementedError
         layer_init_with_orthogonal(self.fc[-1], std=0.1)
@@ -130,41 +132,43 @@ class CriticPPO(CriticBase):
     def __init__(self, state_dim: int, expert_dim: int, action_dim: int, expert_mode: int):
         super().__init__(state_dim=state_dim, action_dim=action_dim)
         self.expert_dim, self.expert_mode = expert_dim, expert_mode
+        embedding_dim = 256
+        n_layers = 2
         if expert_mode == 0:
-            fc1 = nn.Linear(state_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256, 1)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim, 1))
+            self.fc = nn.Sequential(*fc_list)
         elif expert_mode == 1:
-            fc1 = nn.Linear(state_dim + expert_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256, 1)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim + expert_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim, 1))
+            self.fc = nn.Sequential(*fc_list)
         elif expert_mode == 2:
-            fc1 = nn.Linear(state_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256+expert_dim, 1)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim+expert_dim, 1))
+            self.fc = nn.Sequential(*fc_list)
         elif expert_mode == 3:
-            fc1 = nn.Linear(state_dim + expert_dim, 256)
-            fc2 = nn.Linear(256 + expert_dim, 256)
-            fc3 = nn.Linear(256 + expert_dim, 256)
-            fc4 = nn.Linear(256 + expert_dim, 1)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim+expert_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim+expert_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim+expert_dim, 1))
+            self.fc = nn.Sequential(*fc_list)
         elif expert_mode == 4:
-            fc1 = nn.Linear(state_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256, 8)
-            self.fc = nn.Sequential(fc1, fc2, fc3, fc4)
-            fc1 = nn.Linear(expert_dim, 256)
-            fc2 = nn.Linear(256, 256)
-            fc3 = nn.Linear(256, 256)
-            fc4 = nn.Linear(256, 8)
-            self.fc_expert = nn.Sequential(fc1, fc2, fc3, fc4)
+            fc_list = [nn.Linear(state_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim, 8))
+            self.fc = nn.Sequential(*fc_list)
+            fc_list = [nn.Linear(expert_dim, embedding_dim)]
+            for _ in range(n_layers):
+                fc_list.append(nn.Linear(embedding_dim, embedding_dim))
+            fc_list.append(nn.Linear(embedding_dim, 8))
+            self.fc_expert = nn.Sequential(*fc_list)
             layer_init_with_orthogonal(self.fc_expert[-1], std=0.5)
         else:
             raise NotImplementedError

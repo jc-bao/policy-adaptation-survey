@@ -34,7 +34,7 @@ class DroneEnv(gym.Env):
         self.curri_param = 1.0
         self.adapt_horizon = 3
 
-        self.mass_min, self.mass_max = 0.005, 0.0300
+        self.mass_min, self.mass_max = 0.005, 0.0300 
         self.delay_min, self.delay_max = 0, 0
         self.decay_min, self.decay_max = 0.0, 0.3
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
@@ -400,77 +400,6 @@ def get_drone_policy(env, policy_name = "ppo"):
     else: 
         raise NotImplementedError
     return policy
-
-def eval_drone(policy, env_args, gpu_id):
-    # freeze policy
-    for p in policy.parameters():
-        p.requires_grad = False
-    device = torch.device("cuda:{}".format(gpu_id) if torch.cuda.is_available() else "cpu")
-    n_mass = 6 #4
-    n_decay = 6 #4
-    n_param = 1 # 4
-    env_num = (n_mass ** 3) * (n_decay**3) * (n_param**4)
-    eval_times = 100
-    ic(env_num)
-    env = DroneEnv(env_num = env_num, gpu_id=gpu_id, **env_args)
-    # mass_x, mass_y, mass_z, decay_x, decay_y, decay_z, param_0, param_1, param_2, param_3
-    mm_x = torch.linspace(env.mass_min, env.mass_max, n_mass, device=device)
-    mm_y = torch.linspace(env.mass_min, env.mass_max, n_mass, device=device)
-    mm_z = torch.linspace(env.mass_min, env.mass_max, n_mass, device=device)
-    dd_x = torch.linspace(env.decay_min, env.decay_max, n_decay, device=device)
-    dd_y = torch.linspace(env.decay_min, env.decay_max, n_decay, device=device)
-    dd_z = torch.linspace(env.decay_min, env.decay_max, n_decay, device=device)
-    pp_0 = torch.linspace(env.res_dyn_param_min, env.res_dyn_param_max, n_param, device=device)
-    pp_1 = torch.linspace(env.res_dyn_param_min, env.res_dyn_param_max, n_param, device=device)
-    pp_2 = torch.linspace(env.res_dyn_param_min, env.res_dyn_param_max, n_param, device=device)
-    pp_3 = torch.linspace(env.res_dyn_param_min, env.res_dyn_param_max, n_param, device=device)
-    # create meshgrid
-    mm_x, mm_y, mm_z, dd_x, dd_y, dd_z, pp_0, pp_1, pp_2, pp_3 = torch.meshgrid(mm_x, mm_y, mm_z, dd_x, dd_y, dd_z, pp_0, pp_1, pp_2, pp_3)
-    # flatten
-    mm_x, mm_y, mm_z, dd_x, dd_y, dd_z, pp_0, pp_1, pp_2, pp_3 = mm_x.reshape(-1), mm_y.reshape(-1), mm_z.reshape(-1), dd_x.reshape(-1), dd_y.reshape(-1), dd_z.reshape(-1), pp_0.reshape(-1), pp_1.reshape(-1), pp_2.reshape(-1), pp_3.reshape(-1)
-    # concat
-    mass = torch.stack([mm_x, mm_y, mm_z], dim=-1)
-    decay = torch.stack([dd_x, dd_y, dd_z], dim=-1)
-    res_dyn_param = torch.stack([pp_0, pp_1, pp_2, pp_3], dim=-1)
-    all_params = torch.cat([mass, decay, res_dyn_param], dim=-1)
-    # evaluate env
-    rews = torch.zeros(env_num, device=device)
-    for i in trange(eval_times):
-        state = env.reset()
-        # env.mass, env.decay, env.res_dyn_param = mass, decay, res_dyn_param
-        env.mass, env.decay = mass, decay
-        for t in range(env.max_steps-1):
-            act = policy(state)
-            state, reward, done, _ = env.step(act)
-            rews += reward
-    rews /= (eval_times*env.max_steps)
-    # concat all params and rews
-    all_params = torch.cat([all_params, rews.unsqueeze(-1)], dim=-1)
-    header_list = ['mass_x', 'mass_y', 'mass_z', 'decay_x', 'decay_y', 'decay_z', 'param_0', 'param_1', 'param_2', 'param_3', 'rew']
-    df = pd.DataFrame(all_params.cpu().numpy(), columns=header_list)
-    df.to_csv('../../results/rl/eval.csv', index=False)
-
-def plot_drone():
-    # read the file
-    df = pd.read_csv('../../results/rl/eval.csv')
-    # use seaborn to plot
-    sns.set()
-    sns.set_style("whitegrid")
-    sns.set_context("paper", font_scale=1.5, rc={"lines.linewidth": 2.5})
-    # plot
-    fig, axs = plt.subplots(3, 4, figsize=(40, 20))
-    sns.lineplot(x='mass_x', y='rew', data=df, ax=axs[0,0])
-    sns.lineplot(x='mass_y', y='rew', data=df, ax=axs[0,1])
-    sns.lineplot(x='mass_z', y='rew', data=df, ax=axs[0,2])
-    sns.lineplot(x='decay_x', y='rew', data=df, ax=axs[1,0])
-    sns.lineplot(x='decay_y', y='rew', data=df, ax=axs[1,1])
-    sns.lineplot(x='decay_z', y='rew', data=df, ax=axs[1,2])
-    sns.lineplot(x='param_0', y='rew', data=df, ax=axs[2,0])
-    sns.lineplot(x='param_1', y='rew', data=df, ax=axs[2,1])
-    sns.lineplot(x='param_2', y='rew', data=df, ax=axs[2,2])
-    sns.lineplot(x='param_3', y='rew', data=df, ax=axs[2,3])
-    # save the plot
-    plt.savefig('../../results/rl/sensitivity.png')
 
 
 def test_drone(env:DroneEnv, policy, adaptor, save_path = None):

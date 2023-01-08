@@ -27,7 +27,7 @@ def train(args:Args)->None:
     total_steps = 8e6
     adapt_steps = 0e6
     eval_freq = 4
-    curri_thereshold = 0.3
+    curri_thereshold = 0.0
     
 
     if len(args.exp_name) == 0:
@@ -42,7 +42,7 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_extreme.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act = loaded_agent['actor']
     # agent.adaptor = loaded_agent['adaptor']
     # agent.compressor = loaded_agent['compressor']
@@ -95,7 +95,7 @@ def train(args:Args)->None:
                 else:
                     ic(log_dict['eval/err_x_last10'])
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
-                    env.curri_param+=0.1
+                    env.curri_param+=0.5
 
     n_ep = int(adapt_steps//steps_per_ep)
     with trange(n_ep) as t:
