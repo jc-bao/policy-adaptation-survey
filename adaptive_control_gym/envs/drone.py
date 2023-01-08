@@ -27,7 +27,7 @@ class DroneEnv(gym.Env):
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
         # parameters
         self.dim=dim=3
-        self.disturb_period = 120
+        self.disturb_period = 15
         self.model_delay_alpha = 1.0
         self.res_dyn_scale = 0.0  / (2**dim)
         self.res_dyn_param_dim = 0
