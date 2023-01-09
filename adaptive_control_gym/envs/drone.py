@@ -28,7 +28,7 @@ class DroneEnv(gym.Env):
         # parameters
         self.dim=dim=3
         self.disturb_period = 120
-        self.model_delay_alpha = 1.0
+        self.model_delay_alpha = 0.9
         self.res_dyn_scale = 0.0  / (2**dim)
         self.res_dyn_param_dim = 0
         self.curri_param = 0.0
@@ -39,7 +39,7 @@ class DroneEnv(gym.Env):
         self.decay_min, self.decay_max = 0.0, 0.1
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8
-        self.action_noise_std, self.obs_noise_std = 0.00, 0.00
+        self.action_noise_std, self.obs_noise_std = 0.05, 0.05
 
         # generated parameters
         self.rotate_mass_scale = 1
