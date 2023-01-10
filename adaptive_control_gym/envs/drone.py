@@ -23,7 +23,7 @@ class DroneEnv(gym.Env):
         ):
         torch.random.set_rng_state(torch.manual_seed(1024).get_state())
         torch.manual_seed(seed)
-        
+
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
         # parameters
         self.dim=dim=3
@@ -57,7 +57,7 @@ class DroneEnv(gym.Env):
         self.res_dyn_param_mean, self.res_dyn_param_std = (self.res_dyn_param_min+self.res_dyn_param_max)/2, (self.res_dyn_param_max-self.res_dyn_param_min)/2
         if self.res_dyn_param_std == 0:
             self.res_dyn_param_std = 1.0
-        
+
 
         self.tau = 1.0/30.0  # seconds between state updates
         self.force_scale = 1.0
@@ -69,11 +69,7 @@ class DroneEnv(gym.Env):
         self.obs_traj_len = 1
         self.traj_scale = 0.0
         self.traj_T = 360
-        if self.traj_scale == 0:
-            self.max_steps = 120
-        else:
-            self.max_steps = 360
-
+        self.max_steps = 120 if self.traj_scale == 0 else 360
         self.init_x_mean, self.init_x_std = 0.0, 0.8 # self.traj_A, 0.0
         self.init_v_mean, self.init_v_std = 0.0, 1.0 # 0.0, 0.0
         self.x_min, self.x_max = -2.0, 2.0
