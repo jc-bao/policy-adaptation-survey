@@ -26,6 +26,7 @@ class DroneEnv(gym.Env):
 
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
         # parameters
+        self.mode = 0 # evaluation mode
         self.dim=dim=3
         self.disturb_period = 120
         self.model_delay_alpha = 0.9
@@ -255,7 +256,9 @@ class DroneEnv(gym.Env):
         next_obs += torch.randn_like(next_obs, device=self.device) * self.obs_noise_std
         return next_obs, reward, done, next_info
 
-    def reset(self):
+    def reset(self, mode = None):
+        if mode is None: 
+            mode = self.mode
         self.step_cnt = 0
         self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param = self._get_initial_state()
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
@@ -358,6 +361,9 @@ class DroneEnv(gym.Env):
         self.disturb = sample_inv_norm(std, [self.env_num, self.dim], device=self.device) * (self.disturb_max-self.disturb_min)*0.5 + (self.disturb_max+self.disturb_min)*0.5
         self.disturb *= (self.mass*self.gravity[0,1])
 
+class ResDynPolynomial:
+    def __init__(self) -> None:
+        pass
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):

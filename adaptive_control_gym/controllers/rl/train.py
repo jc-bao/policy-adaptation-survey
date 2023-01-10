@@ -29,7 +29,6 @@ def train(args:Args)->None:
     eval_freq = 4
     curri_thereshold = 10.0
     
-
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
     env = DroneEnv(
@@ -141,7 +140,6 @@ def train(args:Args)->None:
             "eval/plot": wandb.Image(plt_path+'/plot.png', caption="plot"), 
             "eval/vis": wandb.Image(plt_path+'/vis.png', caption="vis")
         })
-
 
 
 def eval_env(env, agent:PPO, deterministic=True, use_adaptor=False):
