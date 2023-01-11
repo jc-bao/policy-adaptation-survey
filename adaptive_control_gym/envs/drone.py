@@ -54,7 +54,7 @@ class DroneEnv(gym.Env):
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
 
-        self.res_dyn = ResDynPolynomial(input_dim=dim+self.res_dyn_param_dim, output_dim=dim).to(self.device)
+        self.res_dyn = ResDynMLP(input_dim=dim+self.res_dyn_param_dim, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
 
 
@@ -400,7 +400,10 @@ class ResDynMLP(nn.Module):
             p.requires_grad = False
 
     def forward(self, x):
-        return self.mlp(x) # empirical value for output range
+        raw = self.mlp(x) # empirical value for output range
+        raw[..., -1] -= 0.2
+        y = raw * 5.0
+        return y
 
 def get_drone_policy(env, policy_name = "ppo"):
     if policy_name == "lqr":

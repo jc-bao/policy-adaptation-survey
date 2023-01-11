@@ -24,8 +24,8 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 8e6
-    adapt_steps = 0e6 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
+    total_steps = 1e7
+    adapt_steps = 4e6 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
     
@@ -41,7 +41,7 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S1.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act = loaded_agent['actor']
     # agent.adaptor = loaded_agent['adaptor']
     # agent.compressor = loaded_agent['compressor']
