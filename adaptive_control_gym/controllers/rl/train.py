@@ -21,6 +21,7 @@ class Args:
     cri_expert_mode:int=1
     exp_name:str= ''
     compressor_dim: int = 0
+    res_dyn_param_dim: int=1
 
 def train(args:Args)->None:
     env_num = 1024
@@ -32,7 +33,9 @@ def train(args:Args)->None:
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
     env = DroneEnv(
-        env_num=env_num, gpu_id=args.gpu_id, seed = args.seed) 
+        env_num=env_num, gpu_id=args.gpu_id, seed = args.seed, 
+        res_dyn_param_dim=args.res_dyn_param_dim
+    ) 
     agent = PPO(
         state_dim=env.state_dim, expert_dim=env.expert_dim, 
         adapt_dim=env.adapt_dim, action_dim=env.action_dim, 
@@ -95,6 +98,7 @@ def train(args:Args)->None:
                     ic(log_dict['eval/err_x_last10'])
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
                     env.curri_param+=0.5
+        expert_err_x_final = log_dict['eval/err_x_last10'] 
 
     n_ep = int(adapt_steps//steps_per_ep)
     with trange(n_ep) as t:
@@ -122,23 +126,31 @@ def train(args:Args)->None:
                 wandb.log(log_dict, step=total_steps)
             else:
                 ic(log_dict['eval/err_x_last10'])
+            
+            if i_ep == 0:
+                adapt_err_x_initial = log_dict['eval/err_x_last10'] 
+            if i_ep == (n_ep-1):
+                adapt_err_x_end = log_dict['eval/err_x_last10']
     
     path = f'../../../results/rl/ppo_{args.exp_name}.pt'
-    plt_path = f'../../../results/rl/'
+    plt_path = f'../../../results/rl/ppo_{args.exp_name}'
     # save agent.act, agent.adaptor, agent.compressor
     torch.save({
             'actor': agent.act, 
             'adaptor': agent.adaptor,
             'compressor': agent.compressor,
+            'expert_err_x_final': expert_err_x_final,
+            'adapt_err_x_initial': adapt_err_x_initial,
+            'adapt_err_x_end': adapt_err_x_end,
         }, path)
-    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=0), agent.act.cpu(), agent.adaptor.cpu(), save_path=plt_path)
+    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim), agent.act.cpu(), agent.adaptor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(path, base_path="../../../results/rl", policy="now")
         # save the plot
         wandb.log({
-            "eval/plot": wandb.Image(plt_path+'/plot.png', caption="plot"), 
-            "eval/vis": wandb.Image(plt_path+'/vis.png', caption="vis")
+            "eval/plot": wandb.Image(f'{plt_path}_plot.png', caption="plot"), 
+            "eval/vis": wandb.Image(f'{plt_path}_vis.png', caption="vis")
         })
 
 

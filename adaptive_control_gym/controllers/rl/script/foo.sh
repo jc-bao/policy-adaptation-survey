@@ -1,4 +1,5 @@
-seed=0
-
-python train.py --act-expert-mode 3 --cri-expert-mode 1 --use-wandb --seed $seed --gpu-id 0 --exp-name "act3_cri1" &
-python train.py --act-expert-mode 0 --cri-expert-mode 0 --use-wandb --seed $seed --gpu-id 1 --exp-name "act0_cri0" &
+python train.py --exp-name mlp_expert_Dw0 --res-dyn-param-dim 0
+python train.py --exp-name mlp_expert_Dw1 --res-dyn-param-dim 1
+python train.py --exp-name mlp_expert_Dw2 --res-dyn-param-dim 2
+python train.py --exp-name mlp_expert_Dw1_C4  --res-dyn-param-dim 1 --compressor-dim 4
+python train.py --exp-name mlp_vanilla_Dw1 --act-expert-mode 0 --cri-expert-mode 0 --res-dyn-param-dim 1

@@ -19,7 +19,8 @@ install()
 
 class DroneEnv(gym.Env):
     def __init__(self, 
-        env_num: int = 1, gpu_id: int = 0, seed:int = 1
+        env_num: int = 1, gpu_id: int = 0, seed:int = 1, 
+        res_dyn_param_dim: int = 0
         ):
         torch.random.set_rng_state(torch.manual_seed(1024).get_state())
         torch.manual_seed(seed)
@@ -31,7 +32,7 @@ class DroneEnv(gym.Env):
         self.disturb_period = 30
         self.model_delay_alpha = 0.9
         self.res_dyn_scale = 1.0
-        self.res_dyn_param_dim = 1
+        self.res_dyn_param_dim = res_dyn_param_dim 
         self.curri_param = 0.0
         self.adapt_horizon = 3
 
@@ -400,8 +401,8 @@ class ResDynMLP(nn.Module):
             p.requires_grad = False
 
     def forward(self, x):
-        raw = self.mlp(x) # empirical value for output range
-        raw[..., -1] -= 0.2
+        raw = self.mlp(x)
+        raw[..., 1] += 0.2 # empirical value for output range
         return raw * 5.0
 
 def get_drone_policy(env, policy_name = "ppo"):
@@ -439,7 +440,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state, info['e'])#adaptor(info['adapt_obs']))
+        act = policy(state, adaptor(info['adapt_obs']))
         # act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
@@ -518,8 +519,8 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     # save the plot as image
     if save_path == None:
         package_path = os.path.dirname(adaptive_control_gym.__file__)
-        save_path = f"{package_path}/../results"
-    plt.savefig(save_path+'/plot.png')
+        save_path = f"{package_path}/../results/test"
+    plt.savefig(f'{save_path}_plot.png')
 
     # plot the movement of the drone over different timesteps
     fig, axs = plt.subplots(n_ep, 1, figsize=(5, 5*n_ep))
@@ -545,13 +546,15 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
         axs[i].text(0.3, 0.4, f"decay: {decay_param_array[i*env.max_steps,0]:.3f}, {decay_param_array[i*env.max_steps,1]:.3f}, {decay_param_array[i*env.max_steps,2]:.3f}")
         # disturb
         axs[i].text(0.3, 0.3, f"disturb: {disturb_array[i*env.max_steps,0]:.3f}, {disturb_array[i*env.max_steps,1]:.3f}, {disturb_array[i*env.max_steps,2]:.3f}")
-    plt.savefig(save_path+'/vis.png')
+    plt.savefig(f'{save_path}_vis.png')
     
     env.close()
 
 if __name__ == "__main__":
-    env = DroneEnv(env_num=1, gpu_id = -1, seed=0)
-    policy = get_drone_policy(env, policy_name = "ppo")
-    test_drone(env, policy, None)
+    env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
+    # policy = get_drone_policy(env, policy_name = "ppo")
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_mlp_expert_Dw1_C4.pt', map_location='cpu')
+    policy, adaptor = loaded_agent['actor'], loaded_agent['adaptor']
+    test_drone(env, policy, adaptor)
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
