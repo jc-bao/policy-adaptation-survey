@@ -402,8 +402,7 @@ class ResDynMLP(nn.Module):
     def forward(self, x):
         raw = self.mlp(x) # empirical value for output range
         raw[..., -1] -= 0.2
-        y = raw * 5.0
-        return y
+        return raw * 5.0
 
 def get_drone_policy(env, policy_name = "ppo"):
     if policy_name == "lqr":
