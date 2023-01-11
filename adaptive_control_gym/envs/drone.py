@@ -30,8 +30,8 @@ class DroneEnv(gym.Env):
         self.dim=dim=3
         self.disturb_period = 30
         self.model_delay_alpha = 0.9
-        self.res_dyn_scale = 0.0  / (2**dim)
-        self.res_dyn_param_dim = 0
+        self.res_dyn_scale = 16.0  / (2**dim)
+        self.res_dyn_param_dim = 1
         self.curri_param = 0.0
         self.adapt_horizon = 3
 
@@ -54,10 +54,8 @@ class DroneEnv(gym.Env):
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
 
-        self.res_dyn_mlp = ResDynMLP(input_dim=dim*3+self.res_dyn_param_dim, output_dim=dim).to(self.device)
-        self.res_dyn_param_mean, self.res_dyn_param_std = (self.res_dyn_param_min+self.res_dyn_param_max)/2, (self.res_dyn_param_max-self.res_dyn_param_min)/2
-        if self.res_dyn_param_std == 0:
-            self.res_dyn_param_std = 1.0
+        self.res_dyn = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
+        self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
 
 
         self.tau = 1.0/30.0  # seconds between state updates
@@ -205,7 +203,8 @@ class DroneEnv(gym.Env):
         self.decay_force = self.decay * self.v
         self.force = self.action_force + self.disturb - self.decay_force + self.gravity * self.mass
         if self.res_dyn_scale > 0:
-            self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, self.force, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
+            self.res_dyn_force = self.res_dyn(torch.cat([self.v*0.3, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
+            self.res_dyn_force = torch.clip(self.res_dyn_force, -self.max_force/4, self.max_force/4)
         else:
             self.res_dyn_force = torch.zeros_like(self.force)
         self.force += self.res_dyn_force
@@ -362,8 +361,21 @@ class DroneEnv(gym.Env):
         self.disturb *= (self.mass*self.gravity[0,1])
 
 class ResDynPolynomial:
-    def __init__(self) -> None:
-        pass
+    def __init__(self, input_dim:int, output_dim:int) -> None:
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.matrix = torch.rand((3, input_dim, output_dim))*2-1
+        self.vector = torch.rand((output_dim))*2-1
+
+    def to(self, device:torch.device):
+        self.matrix = self.matrix.to(device)
+        self.vector = self.vector.to(device)
+        return self
+
+    def __call__(self, x:torch.Tensor)-> torch.Tensor: 
+        y = torch.matmul(x, self.matrix[0]) + torch.matmul(x**2, self.matrix[1]) + torch.matmul(x**3, self.matrix[2]) + self.vector
+        return y/self.input_dim
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -399,7 +411,8 @@ def get_drone_policy(env, policy_name = "ppo"):
     elif policy_name == "random":
         policy = ctrl.Random(env.action_dim)
     elif policy_name == "ppo":
-        policy = torch.load('../../results/rl/actor_ppo_EXPTrue_OODFalse_S0.pt').to('cpu')
+        loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location='cpu')
+        policy = loaded_agent['actor']
         # freeze the policy
         # for p in policy.parameters():
         #     p.requires_grad = False
@@ -535,7 +548,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
 
 if __name__ == "__main__":
     env = DroneEnv(env_num=1, gpu_id = -1, seed=0)
-    policy = get_drone_policy(env, policy_name = "pid")
+    policy = get_drone_policy(env, policy_name = "ppo")
     test_drone(env, policy, None)
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
