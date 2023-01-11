@@ -54,7 +54,7 @@ class DroneEnv(gym.Env):
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
 
-        self.res_dyn = ResDynMLP(input_dim=dim+self.res_dyn_param_dim, output_dim=dim).to(self.device)
+        self.res_dyn = ResDynPolynomial(input_dim=dim+self.res_dyn_param_dim, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
 
 
@@ -204,7 +204,7 @@ class DroneEnv(gym.Env):
         self.force = self.action_force + self.disturb - self.decay_force + self.gravity * self.mass
         if self.res_dyn_scale > 0:
             self.res_dyn_force = self.res_dyn(torch.cat([self.v*0.3, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
-            self.res_dyn_force[..., 2] -= 0.5 # emperimentally found
+            # self.res_dyn_force[..., 2] -= 0.5 # emperimentally found
             self.res_dyn_force = torch.clip(self.res_dyn_force, -self.max_force/2, self.max_force/2)
         else:
             self.res_dyn_force = torch.zeros_like(self.force)
@@ -366,7 +366,7 @@ class ResDynPolynomial:
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.matrix = torch.rand((3, input_dim, output_dim))*2-1
+        self.matrix = torch.rand((output_dim, input_dim, input_dim))*2-1
         self.vector = torch.rand((output_dim))*2-1
 
     def to(self, device:torch.device):
@@ -375,7 +375,7 @@ class ResDynPolynomial:
         return self
 
     def __call__(self, x:torch.Tensor)-> torch.Tensor: 
-        y = torch.matmul(x, self.matrix[0]) + torch.matmul(x**2, self.matrix[1]) + torch.matmul(x**3, self.matrix[2]) + self.vector
+        y = self.vector + torch.einsum('bi,oij,bj->bo', x, self.matrix, x)
         return y/self.input_dim
 
 class ResDynMLP(nn.Module):
