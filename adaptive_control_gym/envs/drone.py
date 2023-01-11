@@ -19,7 +19,7 @@ install()
 
 class DroneEnv(gym.Env):
     def __init__(self, 
-        env_num: int = 1, gpu_id: int = 0, seed:int = 0
+        env_num: int = 1, gpu_id: int = 0, seed:int = 1
         ):
         torch.random.set_rng_state(torch.manual_seed(1024).get_state())
         torch.manual_seed(seed)
@@ -30,7 +30,7 @@ class DroneEnv(gym.Env):
         self.dim=dim=3
         self.disturb_period = 30
         self.model_delay_alpha = 0.9
-        self.res_dyn_scale = 16.0  / (2**dim)
+        self.res_dyn_scale = 3.0
         self.res_dyn_param_dim = 1
         self.curri_param = 0.0
         self.adapt_horizon = 3
@@ -54,7 +54,7 @@ class DroneEnv(gym.Env):
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
 
-        self.res_dyn = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
+        self.res_dyn = ResDynMLP(input_dim=dim+self.res_dyn_param_dim, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
 
 
@@ -203,8 +203,9 @@ class DroneEnv(gym.Env):
         self.decay_force = self.decay * self.v
         self.force = self.action_force + self.disturb - self.decay_force + self.gravity * self.mass
         if self.res_dyn_scale > 0:
-            self.res_dyn_force = self.res_dyn(torch.cat([self.v*0.3, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
-            self.res_dyn_force = torch.clip(self.res_dyn_force, -self.max_force/4, self.max_force/4)
+            self.res_dyn_force = self.res_dyn(torch.cat([self.v*0.3, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
+            self.res_dyn_force[..., 2] -= 0.5 # emperimentally found
+            self.res_dyn_force = torch.clip(self.res_dyn_force, -self.max_force/2, self.max_force/2)
         else:
             self.res_dyn_force = torch.zeros_like(self.force)
         self.force += self.res_dyn_force
@@ -393,7 +394,7 @@ class ResDynMLP(nn.Module):
         for m in self.mlp.modules():
             if isinstance(m, nn.Linear):
                 nn.init.orthogonal_(m.weight, gain=1)
-                nn.init.uniform_(m.bias, -0.2, 0.21)
+                nn.init.uniform_(m.bias, -0.2, 0.2)
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
@@ -411,7 +412,7 @@ def get_drone_policy(env, policy_name = "ppo"):
     elif policy_name == "random":
         policy = ctrl.Random(env.action_dim)
     elif policy_name == "ppo":
-        loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S0.pt', map_location='cpu')
+        loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx0_CriEx0_S1.pt', map_location='cpu')
         policy = loaded_agent['actor']
         # freeze the policy
         # for p in policy.parameters():

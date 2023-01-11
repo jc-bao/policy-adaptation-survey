@@ -15,7 +15,7 @@ from adaptive_control_gym.controllers import PPO
 class Args:
     use_wandb:bool=False
     program:str='tmp'
-    seed:int=0
+    seed:int=1
     gpu_id:int=0
     act_expert_mode:int=1
     cri_expert_mode:int=1
