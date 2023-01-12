@@ -55,6 +55,7 @@ def train(args:Args)->None:
     n_ep = int(total_steps//steps_per_ep)
     total_steps = 0
     env.curri_param = 0.0
+    expert_err_x_final = torch.nan
     with trange(n_ep) as t:
         agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
@@ -100,6 +101,8 @@ def train(args:Args)->None:
                     env.curri_param+=0.5
         expert_err_x_final = log_dict['eval/err_x_last10'] 
 
+    adapt_err_x_initial = torch.nan
+    adapt_err_x_end = torch.nan
     n_ep = int(adapt_steps//steps_per_ep)
     with trange(n_ep) as t:
         agent.last_state, agent.last_info = env.reset()

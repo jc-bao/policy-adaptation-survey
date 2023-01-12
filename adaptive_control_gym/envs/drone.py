@@ -394,7 +394,7 @@ class ResDynMLP(nn.Module):
         for m in self.mlp.modules():
             if isinstance(m, nn.Linear):
                 nn.init.orthogonal_(m.weight, gain=1)
-                nn.init.uniform_(m.bias, -0.2, 0.2)
+                nn.init.uniform_(m.bias, -0.2, 0.21)
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
@@ -406,9 +406,18 @@ class ResDynMLP(nn.Module):
         raw[..., 1] += 0.2 
         return raw * 5.0
         '''
+        '''
         # for f(v, u, w_1)
-        raw[..., 1] += 0.3
-        return raw * 1.5
+        raw[..., 0] += 0.1
+        raw[..., 1] += 0.25
+        raw[..., 2] -= 0.1
+        return raw*3.0
+        '''
+        # for f(v, u, w_0)
+        raw[..., 0] -= 0.1
+        raw[..., 1] -= 0.3
+        raw[..., 2] += 0.05
+        return raw*3.0
 
 def get_drone_policy(env, policy_name = "ppo"):
     if policy_name == "lqr":
@@ -556,7 +565,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     env.close()
 
 if __name__ == "__main__":
-    env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
+    env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=0, seed=1)
     # policy = get_drone_policy(env, policy_name = "ppo")
     loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_mlp_expert_Dw1_C4.pt', map_location='cpu')
     policy, adaptor = loaded_agent['actor'], loaded_agent['adaptor']
