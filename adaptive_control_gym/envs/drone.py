@@ -31,7 +31,7 @@ class DroneEnv(gym.Env):
         self.dim=dim=3
         self.disturb_period = 30
         self.model_delay_alpha = 0.9
-        self.res_dyn_scale = 1.0
+        self.res_dyn_scale = 2.0
         self.res_dyn_param_dim = res_dyn_param_dim 
         self.curri_param = 0.0
         self.adapt_horizon = 3
