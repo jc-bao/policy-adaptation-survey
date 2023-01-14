@@ -31,7 +31,7 @@ class DroneEnv(gym.Env):
         self.dim=dim=3
         self.disturb_period = 30
         self.model_delay_alpha = 0.9
-        self.res_dyn_scale = 2.0
+        self.res_dyn_scale = 1.0
         self.res_dyn_param_dim = res_dyn_param_dim 
         self.curri_param = 0.0
         self.adapt_horizon = 3
@@ -401,18 +401,14 @@ class ResDynMLP(nn.Module):
 
     def forward(self, x):
         raw = self.mlp(x)
-        ''''
         # for f(v, w_1)
-        raw[..., 1] += 0.2 
-        return raw * 5.0
-        '''
-        '''
+        # raw[..., 1] += 0.2 
+        # return raw * 5.0
         # for f(v, u, w_0)
-        raw[..., 0] -= 0.1
-        raw[..., 1] -= 0.3
-        raw[..., 2] += 0.05
-        return raw*3.0
-        '''
+        # raw[..., 0] -= 0.1
+        # raw[..., 1] -= 0.3
+        # raw[..., 2] += 0.05
+        # return raw*3.0
         # for f(v, u, w_1)
         raw[..., 0] += 0.1
         raw[..., 1] += 0.25
@@ -443,6 +439,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     state, info = env.reset()
     obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
+    e_diff_list = []
     js = []
     # check if the policy is torch neural network
     if_policy_grad =  False
@@ -454,7 +451,9 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # set state as required grad
             state.requires_grad=True
             policy.zero_grad()
-        act = policy(state, adaptor(info['adapt_obs']))
+        e_pred = adaptor(info['adapt_obs'])
+        e_diff_list.append((e_pred - info['e']).detach().numpy())
+        act = policy(state, e_pred)
         # act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
@@ -483,7 +482,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     # set matplotlib style
     plt.style.use('seaborn')
     # plot x_list, v_list, action_list in three subplots
-    plot_num = 2*env.dim+1+if_policy_grad
+    plot_num = 2*env.dim+2+if_policy_grad
     fig, axs = plt.subplots(plot_num, 1, figsize=(10, 3*plot_num))
     x_numpy, v_array = np.array(x_list), np.array(v_list)
     traj_x_array, traj_v_array = np.array(traj_x_list), np.array(traj_v_list)
@@ -522,12 +521,17 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     axs[env.dim*2].plot(r_list, 'y', label="reward")
     # add mean reward to axs 2 as text
     axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
+    # plot e_diff_list respect to different parameters
+    e_diff_array = np.array(e_diff_list)
+    axs[env.dim*2+1].set_title(f"e_diff respect to extra parameters")
+    for i in range(e_diff_array.shape[1]):
+        axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"e_diff-{i}")
     # plot jacobian respect to different parameters
     if if_policy_grad:
         js_array = np.array(js)
-        axs[env.dim*2+1].set_title(f"jacobian respect to extra parameters")
+        axs[env.dim*2+2].set_title(f"jacobian respect to extra parameters")
         for j in range(env.expert_dim):
-            axs[env.dim*2+1].plot(js_array[j], label=f"jacobian-{j}")
+            axs[env.dim*2+2].plot(js_array[j], label=f"jacobian-{j}")
     for i in range(plot_num):
         axs[i].legend()
     # save the plot as image
@@ -567,7 +571,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
 if __name__ == "__main__":
     env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
     # policy = get_drone_policy(env, policy_name = "ppo")
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_mlp_expert_Dw1_C4.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_mlp_expert_Dw1.pt', map_location='cpu')
     policy, adaptor = loaded_agent['actor'], loaded_agent['adaptor']
     test_drone(env, policy, adaptor)
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
