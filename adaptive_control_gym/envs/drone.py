@@ -398,7 +398,7 @@ class ResDynMLP(nn.Module):
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
-        self.offset = torch.tensor([0.1, 0.25, -0.1])
+        self.offset = torch.tensor([0.1, 0.25, -0.01])
         self.scale = 3.0
 
     def forward(self, x):
@@ -415,7 +415,7 @@ class ResDynMLP(nn.Module):
         # raw[..., 0] += 0.1
         # raw[..., 1] += 0.25
         # raw[..., 2] -= 0.01
-        return raw*self.scale + self.offset
+        return (raw+self.offset)*self.scale
     
     def to(self, device:torch.device):
         self.offset = self.offset.to(device)
@@ -587,7 +587,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
 if __name__ == "__main__":
     env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
     # policy = get_drone_policy(env, policy_name = "ppo")
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_mlp_expert_Dw1.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_res_dyn.pt', map_location='cpu')
     policy, adaptor = loaded_agent['actor'], loaded_agent['adaptor']
     test_drone(env, policy, adaptor)
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
