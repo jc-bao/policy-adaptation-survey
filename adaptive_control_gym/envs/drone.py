@@ -402,8 +402,8 @@ class ResDynMLP(nn.Module):
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
-        self.offset = torch.tensor([0.1, 0.25, -0.01])
-        self.scale = 3.0
+        self.offset = nn.Parameter(torch.tensor([0.1, 0.25, -0.1]), requires_grad=False)
+        self.scale = nn.Parameter(torch.tensor([1.5, 3.0, 1.5]), requires_grad=False)
 
     def forward(self, x):
         raw = self.mlp(x)
@@ -420,10 +420,6 @@ class ResDynMLP(nn.Module):
         # raw[..., 1] += 0.25
         # raw[..., 2] -= 0.01
         return (raw+self.offset)*self.scale
-    
-    def to(self, device:torch.device):
-        self.offset = self.offset.to(device)
-        return super().to(device)
 
 def get_drone_policy(env, policy_name = "ppo"):
     if policy_name == "lqr":
