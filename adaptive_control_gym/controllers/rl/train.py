@@ -44,8 +44,9 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S1.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_res_dyn_fit_512.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act = loaded_agent['actor']
+    # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
     # agent.adaptor = loaded_agent['adaptor']
     # agent.compressor = loaded_agent['compressor']
 
@@ -167,7 +168,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     # env.res_dyn_param_max = -1+2.0*1.0
     # env.disturb_max = -0.8+0.8*1.0
     # if not hasattr(env, 'res_dyn_fit'):
-    #     env.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_32_0.29.pt').to(env.device)
+    #     env.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_512_0.01.pt').to(env.device)
     # if not hasattr(env, 'res_dyn_origin'):
     #     env.res_dyn_origin = env.res_dyn
     # env.res_dyn = env.res_dyn_origin

@@ -55,7 +55,10 @@ class DroneEnv(gym.Env):
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
 
-        self.res_dyn = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
+        self.res_dyn_origin = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
+        # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_32_0.29.pt').to(self.device)
+        self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
+        self.res_dyn = self.res_dyn_origin
         self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
 
 
@@ -206,6 +209,7 @@ class DroneEnv(gym.Env):
         if self.res_dyn_scale > 0:
             self.res_dyn_force = self.res_dyn(torch.cat([self.v*0.3, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
             # self.res_dyn_force = torch.clip(self.res_dyn_force, -self.max_force/2, self.max_force/2)
+            self.res_dyn_fit_force = self.res_dyn_fit(torch.cat([self.v*0.3, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
         else:
             self.res_dyn_force = torch.zeros_like(self.force)
         self.force += self.res_dyn_force
@@ -444,7 +448,7 @@ def get_drone_policy(env, policy_name = "ppo"):
 def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     state, info = env.reset()
     obs_his = info['obs_his']
-    x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
+    x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, res_dyn_fit_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
     e_diff_list = []
     js = []
     # check if the policy is torch neural network
@@ -478,6 +482,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
         decay_list.append(env.decay_force[0].numpy())
         decay_param_list.append(env.decay[0,:].numpy())
         res_dyn_list.append(env.res_dyn_force[0].numpy())
+        res_dyn_fit_list.append(env.res_dyn_fit_force[0].numpy())
         mass_list.append(env.mass[0,:].numpy()*10)
         delay_list.append(env.delay[0,0].item()*0.2)
         if if_policy_grad:
@@ -505,10 +510,12 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             # plot horizontal line for the ground
             axs[i].axhline(0, color="black", linestyle="--", label='ground')
     res_dyn_numpy, a_numpy, force_array = np.array(res_dyn_list), np.array(a_list), np.array(force_list)
+    res_dyn_fit_numpy = np.array(res_dyn_fit_list)
     disturb_array, decay_array, decay_param_array = np.array(disturb_list), np.array(decay_list), np.array(decay_param_list)
     for i in range(env.dim):
         axs[env.dim+i].set_title(f"force measurement dim={i}")
         axs[env.dim+i].plot(res_dyn_numpy[:,i], label="res_dyn")
+        axs[env.dim+i].plot(res_dyn_fit_numpy[:,i], label="res_dyn_fit")
         if i < 2:
             axs[env.dim+i].plot(a_numpy[:,0], label="action", linestyle='--', alpha=0.5)
         else:
