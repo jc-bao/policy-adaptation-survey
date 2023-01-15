@@ -398,6 +398,8 @@ class ResDynMLP(nn.Module):
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
+        self.offset = torch.tensor([0.1, 0.25, -0.1])
+        self.scale = 3.0
 
     def forward(self, x):
         raw = self.mlp(x)
@@ -410,10 +412,14 @@ class ResDynMLP(nn.Module):
         # raw[..., 2] += 0.05
         # return raw*3.0
         # for f(v, u, w_1)
-        raw[..., 0] += 0.1
-        raw[..., 1] += 0.25
-        raw[..., 2] -= 0.1
-        return raw*3.0
+        # raw[..., 0] += 0.1
+        # raw[..., 1] += 0.25
+        # raw[..., 2] -= 0.01
+        return raw*self.scale + self.offset
+    
+    def to(self, device:torch.device):
+        self.offset = self.offset.to(device)
+        return super().to(device)
 
 def get_drone_policy(env, policy_name = "ppo"):
     if policy_name == "lqr":
@@ -452,7 +458,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             state.requires_grad=True
             policy.zero_grad()
         e_pred = adaptor(info['adapt_obs'])
-        e_diff_list.append((e_pred - info['e']).detach().numpy())
+        e_diff_list.append((e_pred - info['e']).detach().numpy()[0])
         act = policy(state, e_pred)
         # act = policy(state, info)
         if if_policy_grad:
@@ -482,7 +488,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     # set matplotlib style
     plt.style.use('seaborn')
     # plot x_list, v_list, action_list in three subplots
-    plot_num = 2*env.dim+2+if_policy_grad
+    plot_num = 2*env.dim+5+if_policy_grad
     fig, axs = plt.subplots(plot_num, 1, figsize=(10, 3*plot_num))
     x_numpy, v_array = np.array(x_list), np.array(v_list)
     traj_x_array, traj_v_array = np.array(traj_x_list), np.array(traj_v_list)
@@ -523,15 +529,25 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # plot e_diff_list respect to different parameters
     e_diff_array = np.array(e_diff_list)
-    axs[env.dim*2+1].set_title(f"e_diff respect to extra parameters")
-    for i in range(e_diff_array.shape[1]):
-        axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"e_diff-{i}")
+    axs[env.dim*2+1].set_title(f"mass_diff respect to extra parameters")
+    for i in range(3):
+        axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"mass-{i}")
+    axs[env.dim*2+2].set_title(f"disturb_diff respect to extra parameters")
+    for i in range(3):
+        axs[env.dim*2+2].plot(e_diff_array[:,i+3], label=f"disturb-{i}")
+    axs[env.dim*2+3].set_title(f"decay_diff respect to extra parameters")
+    for i in range(3):
+        axs[env.dim*2+3].plot(e_diff_array[:,i+6], label=f"decay-{i}")
+    if e_diff_array.shape[-1] > 9:
+        axs[env.dim*2+4].set_title(f"w_diff respect to extra parameters")
+        for i in range(e_diff_array.shape[-1]-9):
+            axs[env.dim*2+4].plot(e_diff_array[:,i+9], label=f"w-{i}")
     # plot jacobian respect to different parameters
     if if_policy_grad:
         js_array = np.array(js)
-        axs[env.dim*2+2].set_title(f"jacobian respect to extra parameters")
+        axs[env.dim*2+5].set_title(f"jacobian respect to extra parameters")
         for j in range(env.expert_dim):
-            axs[env.dim*2+2].plot(js_array[j], label=f"jacobian-{j}")
+            axs[env.dim*2+5].plot(js_array[j], label=f"jacobian-{j}")
     for i in range(plot_num):
         axs[i].legend()
     # save the plot as image

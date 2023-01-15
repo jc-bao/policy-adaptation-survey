@@ -157,7 +157,7 @@ def train(args:Args)->None:
         })
 
 
-def eval_env(env, agent:PPO, deterministic=True, use_adaptor=False):
+def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     origin_curri_param = env.curri_param
     env.curri_param = 0.0
 
@@ -166,6 +166,11 @@ def eval_env(env, agent:PPO, deterministic=True, use_adaptor=False):
     # env.decay_max = 0.1*1.0
     # env.res_dyn_param_max = -1+2.0*1.0
     # env.disturb_max = -0.8+0.8*1.0
+    # if not hasattr(env, 'res_dyn_fit'):
+    #     env.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_32_0.37.pt').to(env.device)
+    # if not hasattr(env, 'res_dyn_origin'):
+    #     env.res_dyn_origin = env.res_dyn
+    # env.res_dyn = env.res_dyn_origin
 
     agent.last_state, agent.last_info = env.reset()
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
@@ -176,6 +181,8 @@ def eval_env(env, agent:PPO, deterministic=True, use_adaptor=False):
     # env.decay_max = 0.1*0.7
     # env.res_dyn_param_max = -1+2.0*0.7
     # env.disturb_max = -0.8+0.8*0.7
+    # env.res_dyn = env.res_dyn_fit
+    # assert(env.res_dyn_fit!=env.res_dyn_origin)
     
     rew_mean = rewards.mean().item()
     err_x, err_v = infos['err_x'][:-1], infos['err_v'][:-1]
