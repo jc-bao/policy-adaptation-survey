@@ -167,10 +167,6 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     # env.decay_max = 0.1*1.0
     # env.res_dyn_param_max = -1+2.0*1.0
     # env.disturb_max = -0.8+0.8*1.0
-    # if not hasattr(env, 'res_dyn_fit'):
-    #     env.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_512_0.01.pt').to(env.device)
-    # if not hasattr(env, 'res_dyn_origin'):
-    #     env.res_dyn_origin = env.res_dyn
     # env.res_dyn = env.res_dyn_origin
 
     agent.last_state, agent.last_info = env.reset()

@@ -56,7 +56,7 @@ class DroneEnv(gym.Env):
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
 
         self.res_dyn_origin = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
-        # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_32_0.29.pt').to(self.device)
+        # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_128_0.033.pt').to(self.device)
         self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
         self.res_dyn = self.res_dyn_origin
         self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
@@ -403,7 +403,7 @@ class ResDynMLP(nn.Module):
         for p in self.mlp.parameters():
             p.requires_grad = False
         self.offset = nn.Parameter(torch.tensor([0.1, 0.25, -0.1]), requires_grad=False)
-        self.scale = nn.Parameter(torch.tensor([1.5, 3.0, 1.5]), requires_grad=False)
+        self.scale = nn.Parameter(torch.tensor([2.0, 4.0, 2.0]), requires_grad=False)
 
     def forward(self, x):
         raw = self.mlp(x)
