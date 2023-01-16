@@ -44,11 +44,11 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_res_dyn_fit_512.pt', map_location=f'cuda:{args.gpu_id}')
-    # agent.act = loaded_agent['actor']
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_C4_TUC-3_Mis.pt', map_location=f'cuda:{args.gpu_id}')
+    # agent.act.load_state_dict(loaded_agent['actor'].state_dict())
     # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
-    # agent.adaptor = loaded_agent['adaptor']
-    # agent.compressor = loaded_agent['compressor']
+    # agent.adaptor.load_state_dict(loaded_agent['adaptor'].state_dict())
+    # agent.compressor.load_state_dict(loaded_agent['compressor'].state_dict())
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
@@ -65,7 +65,7 @@ def train(args:Args)->None:
             total_steps += explore_steps * env_num
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=False)
             torch.set_grad_enabled(True)
-            critic_loss, actor_loss, action_std = agent.update_net(states, infos['e'], actions, logprobs, rewards, undones)
+            critic_loss, actor_loss, ada_com_loss, action_std, compressor_std = agent.update_net(states, infos['e'], infos['adapt_obs'], actions, logprobs, rewards, undones, update_adaptor=False)
             torch.set_grad_enabled(False)
 
             # log
@@ -82,14 +82,16 @@ def train(args:Args)->None:
                     'train/rewards_final': rew_final_mean,
                     'train/actor_loss': actor_loss, 
                     'train/critic_loss': critic_loss,
+                    'train/ada_com_loss': ada_com_loss,
                     'train/action_std': action_std, 
+                    'train/compressor_std': compressor_std,
                     'train/curri': env.curri_param, 
                     'train/err_x': err_x_mean,
                     'train/err_v': err_v_mean,
                     'train/err_x_last10': err_x_last10_mean,
                     'train/err_v_last10': err_v_last10_mean,
                 }, step=total_steps)
-            t.set_postfix(e10=err_x_last10_mean, rewards=rew_mean, actor_loss=actor_loss, critic_loss=critic_loss, steps = total_steps)
+            t.set_postfix(e10=err_x_last10_mean, rewards=rew_mean, actor_loss=actor_loss, critic_loss=critic_loss, compressor_std=compressor_std, ada_com_loss=ada_com_loss, steps = total_steps)
 
             # evaluate
             if i_ep % eval_freq == 0:
@@ -105,12 +107,16 @@ def train(args:Args)->None:
     adapt_err_x_initial = torch.nan
     adapt_err_x_end = torch.nan
     n_ep = int(adapt_steps//steps_per_ep)
+    for p in list(agent.cri.parameters())+list(agent.act.parameters())+list(agent.compressor.parameters()):
+        p.requires_grad = False
     with trange(n_ep) as t:
         agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
             total_steps+=(env.max_steps*env_num)
-            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, use_adaptor=True)
+            # states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, use_adaptor=True)
             torch.set_grad_enabled(True)
+            # critic_loss, actor_loss, ada_com_loss, action_std, compressor_std = agent.update_net(states, infos['e'], infos['adapt_obs'], actions, logprobs, rewards, undones, update_adaptor=True, update_actor=False, update_critic=False)
+            # adaptor_loss, adaptor_err = actor_loss, ada_com_loss
             adaptor_loss, adaptor_err = agent.update_adaptor(infos['e'], infos['adapt_obs'])
             torch.set_grad_enabled(False)
 
@@ -147,7 +153,7 @@ def train(args:Args)->None:
             'adapt_err_x_initial': adapt_err_x_initial,
             'adapt_err_x_end': adapt_err_x_end,
         }, path)
-    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim), agent.act.cpu(), agent.adaptor.cpu(), save_path=plt_path)
+    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim), agent.act.cpu(), agent.adaptor.cpu(), compressor = agent.compressor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(path, base_path="../../../results/rl", policy="now")

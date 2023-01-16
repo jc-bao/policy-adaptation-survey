@@ -57,7 +57,9 @@ class DroneEnv(gym.Env):
 
         self.res_dyn_origin = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
         # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_128_0.033.pt').to(self.device)
-        self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
+        self.res_dyn_fit = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim, dropout_rate=0.1).to(self.device)
+        self.res_dyn_fit.load_state_dict(self.res_dyn_origin.state_dict())
+        # self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
         self.res_dyn = self.res_dyn_origin
         self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
 
@@ -383,14 +385,16 @@ class ResDynPolynomial:
         return y/self.input_dim
 
 class ResDynMLP(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, dropout_rate = 0.0):
         super().__init__()
         embedding_size = 128
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, embedding_size),
             nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate, inplace=True),
             nn.Linear(embedding_size, embedding_size),
             nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate, inplace=True),
             nn.Linear(embedding_size, output_dim),
             nn.Tanh()
         )
@@ -402,23 +406,18 @@ class ResDynMLP(nn.Module):
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
+        # for f(v, u, w_1)
         self.offset = nn.Parameter(torch.tensor([0.1, 0.25, -0.1]), requires_grad=False)
         self.scale = nn.Parameter(torch.tensor([2.0, 4.0, 2.0]), requires_grad=False)
+        # for f(v, u, w_0)
+        # self.offset = nn.Parameter(torch.tensor([-0.1, -0.3, 0.05]), requires_grad=False)
+        # self.scale = nn.Parameter(torch.tensor([3.0, 3.0, 3.0]), requires_grad=False)
+        # for f(v, w_1)
+        # self.offset = nn.Parameter(torch.tensor([0.0, 0.2, 0.0]), requires_grad=False)
+        # self.scale = nn.Parameter(torch.tensor([5.0, 5.0, 5.0]), requires_grad=False)
 
     def forward(self, x):
         raw = self.mlp(x)
-        # for f(v, w_1)
-        # raw[..., 1] += 0.2 
-        # return raw * 5.0
-        # for f(v, u, w_0)
-        # raw[..., 0] -= 0.1
-        # raw[..., 1] -= 0.3
-        # raw[..., 2] += 0.05
-        # return raw*3.0
-        # for f(v, u, w_1)
-        # raw[..., 0] += 0.1
-        # raw[..., 1] += 0.25
-        # raw[..., 2] -= 0.01
         return (raw+self.offset)*self.scale
 
 def get_drone_policy(env, policy_name = "ppo"):
@@ -441,7 +440,7 @@ def get_drone_policy(env, policy_name = "ppo"):
     return policy
 
 
-def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
+def test_drone(env:DroneEnv, policy, adaptor, compressor=lambda x: x, save_path = None):
     state, info = env.reset()
     obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, res_dyn_fit_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
@@ -458,7 +457,7 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
             state.requires_grad=True
             policy.zero_grad()
         e_pred = adaptor(info['adapt_obs'])
-        e_diff_list.append((e_pred - info['e']).detach().numpy()[0])
+        e_diff_list.append((e_pred - compressor(info['e'])).detach().numpy()[0])
         act = policy(state, e_pred)
         # act = policy(state, info)
         if if_policy_grad:
@@ -532,19 +531,23 @@ def test_drone(env:DroneEnv, policy, adaptor, save_path = None):
     axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # plot e_diff_list respect to different parameters
     e_diff_array = np.array(e_diff_list)
-    axs[env.dim*2+1].set_title(f"mass_diff respect to extra parameters")
-    for i in range(3):
-        axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"mass-{i}")
-    axs[env.dim*2+2].set_title(f"disturb_diff respect to extra parameters")
-    for i in range(3):
-        axs[env.dim*2+2].plot(e_diff_array[:,i+3], label=f"disturb-{i}")
-    axs[env.dim*2+3].set_title(f"decay_diff respect to extra parameters")
-    for i in range(3):
-        axs[env.dim*2+3].plot(e_diff_array[:,i+6], label=f"decay-{i}")
-    if e_diff_array.shape[-1] > 9:
-        axs[env.dim*2+4].set_title(f"w_diff respect to extra parameters")
-        for i in range(e_diff_array.shape[-1]-9):
-            axs[env.dim*2+4].plot(e_diff_array[:,i+9], label=f"w-{i}")
+    if e_diff_array.shape[-1] == env.expert_dim:
+        axs[env.dim*2+1].set_title(f"mass_diff respect to extra parameters")
+        for i in range(3):
+            axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"mass-{i}")
+        axs[env.dim*2+2].set_title(f"disturb_diff respect to extra parameters")
+        for i in range(3):
+            axs[env.dim*2+2].plot(e_diff_array[:,i+3], label=f"disturb-{i}")
+        axs[env.dim*2+3].set_title(f"decay_diff respect to extra parameters")
+        for i in range(3):
+            axs[env.dim*2+3].plot(e_diff_array[:,i+6], label=f"decay-{i}")
+        if e_diff_array.shape[-1] > 9:
+            axs[env.dim*2+4].set_title(f"w_diff respect to extra parameters")
+            for i in range(e_diff_array.shape[-1]-9):
+                axs[env.dim*2+4].plot(e_diff_array[:,i+9], label=f"w-{i}")
+    else:
+        for i in range(e_diff_array.shape[-1]):
+            axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"e_diff-{i}")
     # plot jacobian respect to different parameters
     if if_policy_grad:
         js_array = np.array(js)

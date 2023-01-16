@@ -32,15 +32,15 @@ class PPO:
         self.adapt_repeat_times = 1
         self.adapt_lr = 1e-3
         # network
-        self.cri = CriticPPO(state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
         # compressor
         self.compressor = Compressor(expert_dim, compressor_dim).to(self.device)
         if compressor_dim > 0:
+            self.compressor_optimizer = torch.optim.Adam(self.compressor.parameters(), self.learning_rate)
             self.act = ActorPPO(state_dim, compressor_dim, action_dim, act_expert_mode).to(self.device)
-            self.act_optimizer = torch.optim.Adam(list(self.act.parameters())+list(self.compressor.parameters()), self.learning_rate)
         else:
             self.act = ActorPPO(state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
-            self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
+        self.cri = CriticPPO(state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
+        self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
         self.criterion = torch.nn.SmoothL1Loss(reduction="mean")
         self.adapt_criterion = torch.nn.MSELoss(reduction="mean")
@@ -57,6 +57,7 @@ class PPO:
             self.adaptor = AdaptorMLP(self.adapt_dim, adapt_horizon, compressor_dim).to(self.device)
         else:
             self.adaptor = AdaptorMLP(self.adapt_dim, adapt_horizon, expert_dim).to(self.device)
+        self.act_adapt_optimizer = torch.optim.Adam(list(self.act.parameters())+list(self.adaptor.parameters()), self.learning_rate)
         self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
 
 
@@ -84,7 +85,10 @@ class PPO:
             if use_adaptor:
                 e = self.adaptor(info['adapt_obs'])
             else:
-                e = self.compressor(e)
+                if deterministic:
+                    e = self.compressor.get_compress_mean(e)
+                else:
+                    e, _ = self.compressor.get_compress(e)
             action, logprob = get_action(state, e)
             states[t] = state
 
@@ -106,7 +110,7 @@ class PPO:
         infos = {"err_x": err_xs, "err_v": err_vs, 'e': es, 'adapt_obs': adapt_obses}
         return states, actions, logprobs, rewards, undones, infos
 
-    def update_net(self, states, es, actions, logprobs, rewards, undones):
+    def update_net(self, states, es_origin, adapt_obs, actions, logprobs, rewards, undones, update_adaptor=False, update_critic=True, update_actor=True):
         with torch.no_grad():
             buffer_size = states.shape[0]
             buffer_num = states.shape[1]
@@ -115,7 +119,7 @@ class PPO:
             values = torch.empty_like(rewards)  # values.shape == (buffer_size, buffer_num)
             for i in range(0, buffer_size, self.batch_size):
                 for j in range(buffer_num):
-                    values[i:i + self.batch_size, j] = self.cri(states[i:i + self.batch_size, j], es[i:i+self.batch_size, j]).squeeze(1)
+                    values[i:i + self.batch_size, j] = self.cri(states[i:i + self.batch_size, j], es_origin[i:i+self.batch_size, j]).squeeze(1)
 
             advantages = self.get_advantages(rewards, undones, values)  # shape == (buffer_size, buffer_num)
             reward_sums = advantages + values  # shape == (buffer_size, buffer_num)
@@ -126,6 +130,7 @@ class PPO:
         '''update network'''
         obj_critics = 0.0
         obj_actors = 0.0
+        obj_ada_coms = 0.0
         sample_len = buffer_size - 1
 
 
@@ -137,30 +142,60 @@ class PPO:
             ids1 = torch.div(ids, sample_len, rounding_mode='floor')  # ids // sample_len
 
             state = states[ids0, ids1]
-            e = es[ids0, ids1]
+            e_origin = es_origin[ids0, ids1]
             action = actions[ids0, ids1]
             logprob = logprobs[ids0, ids1]
             advantage = advantages[ids0, ids1]
             reward_sum = reward_sums[ids0, ids1]
 
-            value = self.cri(state, e).squeeze(1)  # critic network predicts the reward_sum (Q value) of state
-            obj_critic = self.criterion(value, reward_sum)
-            self.optimizer_update(self.cri_optimizer, obj_critic)
+            if update_critic:
+                value = self.cri(state, e_origin).squeeze(1)  # critic network predicts the reward_sum (Q value) of state
+                obj_critic = self.criterion(value, reward_sum)
+                self.optimizer_update(self.cri_optimizer, obj_critic)
+                obj_critics += obj_critic.item()
 
-            # judge if self.x contains nan
-            new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, self.compressor(e))
+            if update_actor:
+                # judge if self.x contains nan
+                with torch.no_grad():
+                    if update_adaptor:
+                        e = self.adaptor(adapt_obs[ids0, ids1])
+                    else:
+                        e = self.compressor(e_origin)
+                new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, e)
+                ratio = (new_logprob - logprob.detach()).exp()
+                surrogate1 = advantage * ratio
+                surrogate2 = advantage * ratio.clamp(1 - self.ratio_clip, 1 + self.ratio_clip)
+                obj_surrogate = torch.min(surrogate1, surrogate2).mean()
+
+                obj_actor = obj_surrogate + obj_entropy.mean() * self.lambda_entropy
+                self.optimizer_update(self.act_optimizer, -obj_actor)
+                obj_actors += obj_actor.item()
+
+            # update adaptor or compressor
+            if update_adaptor:
+                e = self.adaptor(adapt_obs[ids0, ids1])
+            else:
+                e = self.compressor(e_origin)
+            new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, e)
             ratio = (new_logprob - logprob.detach()).exp()
             surrogate1 = advantage * ratio
             surrogate2 = advantage * ratio.clamp(1 - self.ratio_clip, 1 + self.ratio_clip)
             obj_surrogate = torch.min(surrogate1, surrogate2).mean()
-
             obj_actor = obj_surrogate + obj_entropy.mean() * self.lambda_entropy
-            self.optimizer_update(self.act_optimizer, -obj_actor)
+            if update_adaptor:
+                with torch.no_grad():
+                    e_compress = self.compressor(e_origin)
+                obj_adaptor = -obj_actor +  (e - e_compress).pow(2).mean()*10.0
+                self.optimizer_update(self.adaptor_optimizer, obj_adaptor)
+                obj_ada_coms += obj_adaptor.item()
+            elif self.compressor_dim > 0:
+                obj_compressor = -obj_actor
+                self.optimizer_update(self.compressor_optimizer, obj_compressor)
+                obj_ada_coms += obj_compressor.item()
 
-            obj_critics += obj_critic.item()
-            obj_actors += obj_actor.item()
         a_std_log = self.act.action_std_log.mean()
-        return obj_critics / update_times, obj_actors / update_times, a_std_log.item()
+        compressor_std_log = self.compressor.std_log.mean()
+        return obj_critics / update_times, obj_actors / update_times, obj_ada_coms / update_times, a_std_log.item(), compressor_std_log.item()
 
     def update_adaptor(self, es, adapt_obs):
         adaptor_loss = 0.0
@@ -205,9 +240,9 @@ class PPO:
             next_value = values[t]
         return advantages
 
-    def optimizer_update(self, optimizer, objective):
+    def optimizer_update(self, optimizer, objective, retain_graph=False):
         optimizer.zero_grad()
-        objective.backward()
+        objective.backward(retain_graph=retain_graph)
         clip_grad_norm_(parameters=optimizer.param_groups[0]["params"], max_norm=self.clip_grad_norm)
         optimizer.step()
 

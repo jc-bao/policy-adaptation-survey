@@ -213,13 +213,36 @@ class Compressor(nn.Module):
         self.embedding_dim = embedding_dim
         if embedding_dim > 0:
             self.mlp = build_mlp_net([expert_dim, 128, embedding_dim], activation=nn.ReLU, if_raw_out=False)
+        self.std_log = nn.Parameter(torch.ones((1, embedding_dim))*(-10.0), requires_grad=True)  # trainable parameter
+        self.dist = torch.distributions.normal.Normal
     
     def forward(self, x):
+        return self.get_compress_mean(x)
+
+    def get_compress(self, x):
+        mean = self.get_compress_mean(x)
+        std = self.std_log.exp()
+
+        dist = self.dist(mean, std)
+        z = dist.sample()
+        logprob = dist.log_prob(z).sum(1)
+        return z, logprob
+
+    def get_compress_mean(self, x):
         if self.embedding_dim > 0:
             # use tanh as activation
             return torch.tanh(self.mlp(x))
         else:
             return x
+
+    def get_logprob_entropy(self, x, h):
+        avg = self.get_compress(x)
+        std = self.std_log.exp()
+
+        dist = self.dist(avg, std)
+        logprob = dist.log_prob(h).sum(1)
+        entropy = dist.entropy().sum(1)
+        return logprob, entropy
 
 def build_mlp_net(dims: [int], activation: nn = None, if_raw_out: bool = True) -> nn.Sequential:
     """
