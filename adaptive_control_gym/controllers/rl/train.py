@@ -198,9 +198,9 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     err_x_mean = err_x.mean().item()
     err_v_mean = err_v.mean().item()
     err_x_last10_mean = err_x[-10:].mean().item()
-    err_x_last10_std = err_x[-10:].mean(dim=-1).std().item()
+    err_x_last10_std = err_x[-10:].mean(dim=0).std().item()
     err_v_last10_mean = err_v[-10:].mean().item()
-    err_v_last10_std = err_v[-10:].mean(dim=-1).std().item()
+    err_v_last10_std = err_v[-10:].mean(dim=0).std().item()
     log_dict = {
         'eval/rewards_mean': rew_mean,
         'eval/rewards_final': rewards[-1].mean().item(),
