@@ -99,9 +99,11 @@ def train(args:Args)->None:
                 if args.use_wandb:
                     wandb.log(log_dict, step=total_steps)
                 else:
-                    ic(log_dict['eval/err_x_last10'])
+                    print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
                     env.curri_param+=0.5
+                # log_dict = eval_env(env, agent, use_adaptor=True)
+                # print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
         expert_err_x_final = log_dict['eval/err_x_last10'] 
 
     adapt_err_x_initial = torch.nan
@@ -135,7 +137,9 @@ def train(args:Args)->None:
             if args.use_wandb:
                 wandb.log(log_dict, step=total_steps)
             else:
-                ic(log_dict['eval/err_x_last10'])
+                print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
+            # log_dict = eval_env(env, agent, use_adaptor=False)
+            # print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
             
             if i_ep == 0:
                 adapt_err_x_initial = log_dict['eval/err_x_last10'] 
@@ -162,6 +166,8 @@ def train(args:Args)->None:
             "eval/plot": wandb.Image(f'{plt_path}_plot.png', caption="plot"), 
             "eval/vis": wandb.Image(f'{plt_path}_vis.png', caption="vis")
         })
+    # print the result
+    print(f'{expert_err_x_final} | {adapt_err_x_initial} | {adapt_err_x_end}')
 
 
 def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
@@ -169,10 +175,10 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     env.curri_param = 0.0
 
     # env.res_dyn_scale = 1.0
-    # env.mass_max = 0.03*1.0
+    # env.mass_max = 0.006+0.024*1.0
     # env.decay_max = 0.1*1.0
     # env.res_dyn_param_max = -1+2.0*1.0
-    # env.disturb_max = -0.8+1.6*2.0
+    # env.disturb_max = -0.8+1.6*1.0
     # env.res_dyn = env.res_dyn_origin
 
     agent.last_state, agent.last_info = env.reset()
@@ -180,7 +186,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     env.curri_param = origin_curri_param
 
     # env.res_dyn_scale = 0.0
-    # env.mass_max = 0.03*0.7
+    # env.mass_max = 0.006+0.024*0.7
     # env.decay_max = 0.1*0.7
     # env.res_dyn_param_max = -1+2.0*0.7
     # env.disturb_max = -0.8+1.6*0.7
@@ -192,14 +198,18 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     err_x_mean = err_x.mean().item()
     err_v_mean = err_v.mean().item()
     err_x_last10_mean = err_x[-10:].mean().item()
+    err_x_last10_std = err_x[-10:].mean(dim=-1).std().item()
     err_v_last10_mean = err_v[-10:].mean().item()
+    err_v_last10_std = err_v[-10:].mean(dim=-1).std().item()
     log_dict = {
         'eval/rewards_mean': rew_mean,
         'eval/rewards_final': rewards[-1].mean().item(),
         'eval/err_x': err_x_mean,
         'eval/err_v': err_v_mean,
         'eval/err_x_last10': err_x_last10_mean,
+        'eval/err_x_last10_std': err_x_last10_std,
         'eval/err_v_last10': err_v_last10_mean,
+        'eval/err_v_last10_std': err_v_last10_std,
     }
     return log_dict
 
