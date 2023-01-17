@@ -172,7 +172,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     # env.mass_max = 0.03*1.0
     # env.decay_max = 0.1*1.0
     # env.res_dyn_param_max = -1+2.0*1.0
-    # env.disturb_max = -0.8+0.8*1.0
+    # env.disturb_max = -0.8+1.6*2.0
     # env.res_dyn = env.res_dyn_origin
 
     agent.last_state, agent.last_info = env.reset()
@@ -183,7 +183,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     # env.mass_max = 0.03*0.7
     # env.decay_max = 0.1*0.7
     # env.res_dyn_param_max = -1+2.0*0.7
-    # env.disturb_max = -0.8+0.8*0.7
+    # env.disturb_max = -0.8+1.6*0.7
     # env.res_dyn = env.res_dyn_fit
     # assert(env.res_dyn_fit!=env.res_dyn_origin)
     
