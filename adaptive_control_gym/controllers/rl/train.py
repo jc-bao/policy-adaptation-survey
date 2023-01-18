@@ -214,4 +214,5 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     return log_dict
 
 if __name__=='__main__':
+    
     train(tyro.cli(Args))
