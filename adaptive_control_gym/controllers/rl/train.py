@@ -115,7 +115,7 @@ def train(args:Args)->None:
         agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
             total_steps+=(env.max_steps*env_num)
-            # states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, use_adaptor=True)
+            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, use_adaptor=True)
             torch.set_grad_enabled(True)
             # critic_loss, actor_loss, ada_com_loss, action_std, compressor_std = agent.update_net(states, infos['e'], infos['adapt_obs'], actions, logprobs, rewards, undones, update_adaptor=True, update_actor=False, update_critic=False)
             # adaptor_loss, adaptor_err = actor_loss, ada_com_loss
@@ -167,12 +167,10 @@ def train(args:Args)->None:
             "eval/vis": wandb.Image(f'{plt_path}_vis.png', caption="vis")
         })
     # print the result
-    print(f'{expert_err_x_final} | {adapt_err_x_initial} | {adapt_err_x_end}')
+    print(f'{expert_err_x_final:.4f} | {adapt_err_x_initial:.4f} | {adapt_err_x_end:.4f}')
 
 
 def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
-    origin_curri_param = env.curri_param
-    env.curri_param = 0.0
 
     # env.res_dyn_scale = 1.0
     # env.mass_max = 0.006+0.024*1.0
@@ -181,6 +179,8 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     # env.disturb_max = -0.8+1.6*1.0
     # env.res_dyn = env.res_dyn_origin
 
+    origin_curri_param = env.curri_param
+    env.curri_param = 0.0
     agent.last_state, agent.last_info = env.reset()
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
     env.curri_param = origin_curri_param
@@ -214,5 +214,4 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     return log_dict
 
 if __name__=='__main__':
-    
     train(tyro.cli(Args))

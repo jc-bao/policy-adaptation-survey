@@ -214,6 +214,7 @@ class DroneEnv(gym.Env):
             self.res_dyn_fit_force = self.res_dyn_fit(torch.cat([self.v*0.3, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
         else:
             self.res_dyn_force = torch.zeros_like(self.force)
+            self.res_dyn_fit_force = torch.zeros_like(self.force)
         self.force += self.res_dyn_force
         
         # system dynamics
@@ -593,8 +594,8 @@ def test_drone(env:DroneEnv, policy, adaptor, compressor=lambda x: x, save_path 
 if __name__ == "__main__":
     env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
     # policy = get_drone_policy(env, policy_name = "ppo")
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_res_dyn.pt', map_location='cpu')
-    policy, adaptor = loaded_agent['actor'], loaded_agent['adaptor']
-    test_drone(env, policy, adaptor)
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_Baseline.pt', map_location='cpu')
+    policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
+    test_drone(env, policy, adaptor, compressor)
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
