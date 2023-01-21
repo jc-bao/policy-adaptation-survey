@@ -25,7 +25,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 1e7
+    total_steps = 2e7
     adapt_steps = 4e6 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
@@ -95,6 +95,7 @@ def train(args:Args)->None:
 
             # evaluate
             if i_ep % eval_freq == 0:
+                agent.last_state, agent.last_info = env.reset()
                 log_dict = eval_env(env, agent, use_adaptor=False)
                 if args.use_wandb:
                     wandb.log(log_dict, step=total_steps)
@@ -133,6 +134,7 @@ def train(args:Args)->None:
             t.set_postfix(err=adaptor_err, adaptor_loss = adaptor_loss, steps = total_steps)
 
             # evaluate
+            agent.last_state, agent.last_info = env.reset()
             log_dict = eval_env(env, agent, use_adaptor=True)
             if args.use_wandb:
                 wandb.log(log_dict, step=total_steps)
