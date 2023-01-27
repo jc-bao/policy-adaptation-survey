@@ -15,6 +15,9 @@
    - [x] RL example
    - [x] RMA example
 
+|PPO-RMA|PPO|
+|-|-|
+|![](https://p.ipic.vip/10inmo.gif)|![](https://p.ipic.vip/5kqz95.gif)|
 ## Policy
 
 * Classic
