@@ -44,7 +44,7 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, 
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_C4_TUC-3_Mis.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA_nodisturb.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act.load_state_dict(loaded_agent['actor'].state_dict())
     # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
     # agent.adaptor.load_state_dict(loaded_agent['adaptor'].state_dict())

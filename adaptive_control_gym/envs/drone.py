@@ -41,6 +41,7 @@ class DroneEnv(gym.Env):
         self.decay_min, self.decay_max = 0.0, 0.1
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8
+        self.force_scale_min, self.force_scale_max = 0.75, 1.5
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -54,6 +55,7 @@ class DroneEnv(gym.Env):
         self.v_mean, self.v_std = 0, 1.0 / 0.3
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
+        self.force_scale_mean, self.force_scale_std = 1.0, 0.25
 
         self.res_dyn_origin = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
         # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_128_0.033.pt').to(self.device)
@@ -65,7 +67,7 @@ class DroneEnv(gym.Env):
 
 
         self.tau = 1.0/30.0  # seconds between state updates
-        self.force_scale = 1.0
+        self.force_scale = torch.ones([env_num, 2], device=self.device)
         self.max_force = 1.0
         self.gravity = torch.zeros((env_num, 3), device=self.device)
         self.gravity[:, 1] = -9.8
@@ -92,6 +94,8 @@ class DroneEnv(gym.Env):
             self.expert_dim += self.dim
         if self.delay_min != self.delay_max:
             self.expert_dim += 1
+        if self.force_scale_min != self.force_scale_max:
+            self.expert_dim += 2
         self.action_dim = dim - 1
         self.adapt_dim = (3+3+3+3+3)*self.adapt_horizon
         # [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']]
@@ -149,6 +153,7 @@ class DroneEnv(gym.Env):
         # decay[:, 1] = decay[:, 0]
         # decay[:, 2] = decay[:, 0]
         res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
+        force_scale = sample_inv_norm(std, [size, self.dim-1], device=self.device) * (self.force_scale_max-self.force_scale_min) * 0.5 + (self.force_scale_min+self.force_scale_max)*0.5
 
         mass = torch.clip(mass, self.mass_min, self.mass_max)
         mass[:, 1] = mass[:, 0]
@@ -157,12 +162,13 @@ class DroneEnv(gym.Env):
         delay = torch.clip(delay, self.delay_min, self.delay_max).type(torch.int)
         decay = torch.clip(decay, self.decay_min, self.decay_max)
         res_dyn_param = torch.clip(res_dyn_param, self.res_dyn_param_min, self.res_dyn_param_max)
+        force_scale = torch.clip(force_scale, self.force_scale_min, self.force_scale_max)
 
         x = (torch.rand((size, self.dim), device=self.device)*2-1)* self.init_x_std + self.init_x_mean
         x[:, 2] = torch.rand((size), device=self.device) * 2 * np.pi - np.pi
         v = (torch.rand((size, self.dim), device=self.device)*2-1)* self.init_v_std + self.init_v_mean
         x = torch.clip(x, self.x_min, self.x_max)
-        return x, v, mass, delay, decay, res_dyn_param
+        return x, v, mass, delay, decay, res_dyn_param, force_scale
     
     def step(self, action):
         # delay action
@@ -267,7 +273,7 @@ class DroneEnv(gym.Env):
         if mode is None: 
             mode = self.mode
         self.step_cnt = 0
-        self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param = self._get_initial_state()
+        self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param, self.force_scale = self._get_initial_state()
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.action_force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.action = torch.zeros((self.env_num, self.dim-1), device=self.device)
@@ -361,6 +367,9 @@ class DroneEnv(gym.Env):
         if self.res_dyn_param_dim > 0:
             res_dyn_param_normed = (self.res_dyn_param-self.res_dyn_param_mean)/self.res_dyn_param_std
             es.append(res_dyn_param_normed)
+        if self.force_scale_min != self.force_scale_max:
+            force_scale_normed = (self.force_scale-self.force_scale_mean)/self.force_scale_std
+            es.append(force_scale_normed)
         return torch.concat(es, dim=-1)
 
     def _set_disturb(self):
@@ -651,4 +660,4 @@ if __name__ == "__main__":
     # policy = get_drone_policy(env, policy_name = "ppo")
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
-    vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA')
+    vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA_nodisturb')
