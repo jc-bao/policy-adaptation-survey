@@ -6,7 +6,9 @@ def sample_inv_norm(std, size, device='cpu'):
     value = torch.zeros(size, device=device)
     torch.nn.init.trunc_normal_(value, mean=0, std=std, a=-1, b=1)
     value = value + 1
-    return value - (value>1).type(torch.float32)
+    value = value - (value>1).type(torch.float32)
+    value = value * 2.0 - 1.0
+    return value
 
 if __name__ == '__main__':
     # sample sample_inv_norm and plot the histogram

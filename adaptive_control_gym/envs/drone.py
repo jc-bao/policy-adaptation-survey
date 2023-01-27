@@ -409,7 +409,7 @@ class ResDynMLP(nn.Module):
             p.requires_grad = False
         # for f(v, u, w_1)
         self.offset = nn.Parameter(torch.tensor([0.1, 0.25, -0.1]), requires_grad=False)
-        self.scale = nn.Parameter(torch.tensor([2.0, 4.0, 2.0]), requires_grad=False)
+        self.scale = nn.Parameter(torch.tensor([1.0, 2.0, 1.0]), requires_grad=False)
         # for f(v, u, w_0)
         # self.offset = nn.Parameter(torch.tensor([-0.1, -0.3, 0.05]), requires_grad=False)
         # self.scale = nn.Parameter(torch.tensor([3.0, 3.0, 3.0]), requires_grad=False)
@@ -591,11 +591,64 @@ def test_drone(env:DroneEnv, policy, adaptor, compressor=lambda x: x, save_path 
     
     env.close()
 
+    np.save(f'{save_path}_x.npy', x_numpy)
+    np.save(f'{save_path}_res_dyn.npy', res_dyn_numpy)
+    np.save(f'{save_path}_disturb.npy', disturb_array)
+
+def vis_data(path = None):
+    # load data
+    x = np.load(f'{path}_x.npy')
+    res_dyn = np.load(f'{path}_res_dyn.npy')
+    disturb = np.load(f'{path}_disturb.npy')
+    
+    # use meshcat to visualize the data
+    import meshcat
+    import meshcat.geometry as g
+    import meshcat.transformations as tf
+    import time
+
+    # create a visualizer
+    vis = meshcat.Visualizer()
+    vis.open()
+    # set camera position
+    vis["/Cameras/default"].set_transform(
+		tf.translation_matrix([0,0,0]).dot(
+		tf.euler_matrix(0,np.radians(-30),-np.pi/2)))
+    vis["/Cameras/default/rotated/<object>"].set_transform(
+        tf.translation_matrix([1, 0, 0]))
+    # set quadrotor position
+    vis["Quadrotor"].set_object(g.StlMeshGeometry.from_file('../assets/crazyflie2.stl'))
+
+    # update quadrotor position with x
+    while True:
+        for state, res_force, dist in zip(x, res_dyn, disturb):
+            pos = np.array([state[0], 0, state[1]])
+            vis["Quadrotor"].set_transform(
+                tf.translation_matrix(pos).dot(
+                    tf.euler_matrix(0, state[2], 0)))
+            vis["ResForce"].set_object(g.LineSegments(
+                g.PointsGeometry(position=np.array([
+                    pos, pos+res_force]).astype(np.float32).T,
+                    color=np.array([
+                    [1, 1, 0], [1, 1, 0]]).astype(np.float32).T
+                ),
+                g.LineBasicMaterial(vertexColors=True)))
+            vis['Disturb'].set_object(g.LineSegments(
+                g.PointsGeometry(position=np.array([
+                    pos, pos+dist]).astype(np.float32).T,
+                    color=np.array([
+                    [0, 1, 1], [0, 1, 1]]).astype(np.float32).T
+                ),
+                g.LineBasicMaterial(vertexColors=True)))
+            time.sleep(1/30)
+
+
 if __name__ == "__main__":
-    env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
+    # env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_Baseline.pt', map_location='cpu')
+    # policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
+    # test_drone(env, policy, adaptor, compressor)
     # policy = get_drone_policy(env, policy_name = "ppo")
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_Baseline.pt', map_location='cpu')
-    policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
-    test_drone(env, policy, adaptor, compressor)
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
+    vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA')

@@ -174,11 +174,11 @@ def train(args:Args)->None:
 
 def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
 
-    # env.res_dyn_scale = 1.0
     # env.mass_max = 0.006+0.024*1.0
     # env.decay_max = 0.1*1.0
     # env.res_dyn_param_max = -1+2.0*1.0
     # env.disturb_max = -0.8+1.6*1.0
+    # env.res_dyn_scale = 1.0
     # env.res_dyn = env.res_dyn_origin
 
     origin_curri_param = env.curri_param
@@ -187,11 +187,11 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
     env.curri_param = origin_curri_param
 
-    # env.res_dyn_scale = 0.0
     # env.mass_max = 0.006+0.024*0.7
     # env.decay_max = 0.1*0.7
     # env.res_dyn_param_max = -1+2.0*0.7
     # env.disturb_max = -0.8+1.6*0.7
+    # env.res_dyn_scale = 0.0
     # env.res_dyn = env.res_dyn_fit
     # assert(env.res_dyn_fit!=env.res_dyn_origin)
     
@@ -214,6 +214,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
         'eval/err_v_last10_std': err_v_last10_std,
     }
     return log_dict
+
 
 if __name__=='__main__':
     train(tyro.cli(Args))
