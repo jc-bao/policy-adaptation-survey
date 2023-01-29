@@ -26,6 +26,8 @@ class DroneEnv(gym.Env):
         torch.manual_seed(seed)
 
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
+        self.gpu_id = gpu_id
+        self.seed = seed
         # parameters
         self.mode = 0 # evaluation mode
         self.dim=dim=3
@@ -269,11 +271,13 @@ class DroneEnv(gym.Env):
         next_obs += torch.randn_like(next_obs, device=self.device) * self.obs_noise_std
         return next_obs, reward, done, next_info
 
-    def reset(self, mode = None):
+    def reset(self, mode = None, env_params = None):
         if mode is None: 
             mode = self.mode
         self.step_cnt = 0
         self.x, self.v, self.mass, self.delay, self.decay, self.res_dyn_param, self.force_scale = self._get_initial_state()
+        if env_params is not None:
+            self.set_env_params(*env_params)
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.action_force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.action = torch.zeros((self.env_num, self.dim-1), device=self.device)
@@ -376,6 +380,16 @@ class DroneEnv(gym.Env):
         std = 0.4 - 0.2 * self.curri_param
         self.disturb = sample_inv_norm(std, [self.env_num, self.dim], device=self.device) * (self.disturb_max-self.disturb_min)*0.5 + (self.disturb_max+self.disturb_min)*0.5
         self.disturb *= (self.mass*self.gravity[0,1])
+    
+    def get_env_params(self):
+        return (self.mass, self.delay, self.decay, self.res_dyn_param, self.force_scale)
+
+    def set_env_params(self, mass, delay, decay, res_dyn_param, force_scale):
+        self.mass[:] = mass
+        self.delay[:] = delay
+        self.decay[:] = decay
+        self.res_dyn_param[:] = res_dyn_param
+        self.force_scale[:] = force_scale
 
 class ResDynPolynomial:
     def __init__(self, input_dim:int, output_dim:int) -> None:
@@ -660,4 +674,4 @@ if __name__ == "__main__":
     # policy = get_drone_policy(env, policy_name = "ppo")
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
-    vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA_nodisturb')
+    vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA')

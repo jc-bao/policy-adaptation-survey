@@ -20,13 +20,14 @@ class Args:
     act_expert_mode:int=1
     cri_expert_mode:int=1
     exp_name:str= ''
-    compressor_dim: int = 0
+    compressor_dim: int = 4
+    search_dim: int = 0
     res_dyn_param_dim: int=1
 
 def train(args:Args)->None:
     env_num = 1024
     total_steps = 3e7
-    adapt_steps = 2e6 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
+    adapt_steps = 1e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
     
@@ -41,10 +42,10 @@ def train(args:Args)->None:
         adapt_dim=env.adapt_dim, action_dim=env.action_dim, 
         adapt_horizon=env.adapt_horizon, 
         act_expert_mode=args.act_expert_mode, cri_expert_mode=args.cri_expert_mode,
-        compressor_dim=args.compressor_dim, 
+        compressor_dim=args.compressor_dim, search_dim=args.search_dim,
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA_nodisturb.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act.load_state_dict(loaded_agent['actor'].state_dict())
     # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
     # agent.adaptor.load_state_dict(loaded_agent['adaptor'].state_dict())
@@ -58,12 +59,15 @@ def train(args:Args)->None:
     env.curri_param = 0.0
     expert_err_x_final = torch.nan
     with trange(n_ep) as t:
-        agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
+            # get optimal w
+            agent.last_state, agent.last_info = env.reset()
+            w, env_params = get_optimal_w(env, agent, args.search_dim)
             # train
             explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.1, 1))
             total_steps += explore_steps * env_num
-            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=False)
+            states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=False, w=w)
+            agent.last_info['e'] = torch.concat([agent.last_info['e'], w], dim=-1)
             torch.set_grad_enabled(True)
             critic_loss, actor_loss, ada_com_loss, action_std, compressor_std = agent.update_net(states, infos['e'], infos['adapt_obs'], actions, logprobs, rewards, undones, update_adaptor=False)
             torch.set_grad_enabled(False)
@@ -96,7 +100,8 @@ def train(args:Args)->None:
             # evaluate
             if i_ep % eval_freq == 0:
                 agent.last_state, agent.last_info = env.reset()
-                log_dict = eval_env(env, agent, use_adaptor=False)
+                w, env_params = get_optimal_w(env, agent, args.search_dim)
+                log_dict = eval_env(env, agent, use_adaptor=False, w=w)
                 if args.use_wandb:
                     wandb.log(log_dict, step=total_steps)
                 else:
@@ -113,8 +118,8 @@ def train(args:Args)->None:
     for p in list(agent.cri.parameters())+list(agent.act.parameters())+list(agent.compressor.parameters()):
         p.requires_grad = False
     with trange(n_ep) as t:
-        agent.last_state, agent.last_info = env.reset()
         for i_ep in t:
+            agent.last_state, agent.last_info = env.reset()
             total_steps+=(env.max_steps*env_num)
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, use_adaptor=True)
             torch.set_grad_enabled(True)
@@ -171,26 +176,63 @@ def train(args:Args)->None:
     # print the result
     print(f'{expert_err_x_final:.4f} | {adapt_err_x_initial:.4f} | {adapt_err_x_end:.4f}')
 
+def get_optimal_w(env:DroneEnv, agent:PPO, search_dim:int = 0):
+    # save initial environment parameters
+    env_params = env.get_env_params()
+    old_last_state, old_last_info = agent.last_state, agent.last_info
+    w = torch.zeros([env.env_num, search_dim], device = env.device)
+    if search_dim == 0:
+        return w, env_params
 
-def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
+    # grid search w 
+    w_per_dim = 6
+    w_single_dim = torch.linspace(-1, 1, w_per_dim, device = env.device)
+    w_stacked = torch.stack(torch.meshgrid([w_single_dim]*search_dim), dim=-1).reshape(-1, search_dim)
+    w_num = w_per_dim**search_dim
+    task_num = env.env_num
+    search_env = DroneEnv(env_num=task_num*w_num, gpu_id = env.gpu_id, seed=env.seed, res_dyn_param_dim=env.res_dyn_param_dim)
+
+    # set parameters to env params
+    search_env_params = search_env.get_env_params()
+    for sp, p in zip(search_env_params, env_params):
+        for i in range(env.env_num):
+            sp[i*w_num:(i+1)*w_num] = p[i]
+    # repeat w
+    w_repeat = w_stacked.repeat(env.env_num, 1).reshape(-1, search_dim)
+    torch.set_grad_enabled(False)
+    agent.last_state, agent.last_info = search_env.reset(env_params = search_env_params)
+    states, actions, logprobs, rewards, undones, infos = agent.explore_env(search_env, env.max_steps*20, deterministic=True, use_adaptor=False, w=w_repeat)
+    rew_mean = rewards.mean(dim=0)
+    torch.set_grad_enabled(True)
+    for i in range(task_num):
+        # find the best w with max rew_mean
+        w_best_idx = torch.argmax(rew_mean[i*w_num:(i+1)*w_num])
+        w[i] = w_stacked[w_best_idx]
+
+    agent.last_state, agent.last_info = old_last_state, old_last_info
+
+    return w, env_params
+
+
+def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=False, w=None):
 
     # env.mass_max = 0.006+0.024*1.0
     # env.decay_max = 0.1*1.0
-    # env.res_dyn_param_max = -1+2.0*1.0
     # env.disturb_max = -0.8+1.6*1.0
+    # env.res_dyn_param_max = -1+2.0*1.0
     # env.res_dyn_scale = 1.0
     # env.res_dyn = env.res_dyn_origin
 
     origin_curri_param = env.curri_param
     env.curri_param = 0.0
     agent.last_state, agent.last_info = env.reset()
-    states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor)
+    states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor, w=w)
     env.curri_param = origin_curri_param
 
     # env.mass_max = 0.006+0.024*0.7
     # env.decay_max = 0.1*0.7
-    # env.res_dyn_param_max = -1+2.0*0.7
     # env.disturb_max = -0.8+1.6*0.7
+    # env.res_dyn_param_max = -1+2.0*0.7
     # env.res_dyn_scale = 0.0
     # env.res_dyn = env.res_dyn_fit
     # assert(env.res_dyn_fit!=env.res_dyn_origin)
@@ -218,3 +260,13 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic=True, use_adaptor=False):
 
 if __name__=='__main__':
     train(tyro.cli(Args))
+    # env_num = 256
+    # env = DroneEnv(env_num=env_num, gpu_id =0, seed=0, res_dyn_param_dim=0)
+    # agent = PPO(
+    #     state_dim=env.state_dim, expert_dim=env.expert_dim, 
+    #     adapt_dim=env.adapt_dim, action_dim=env.action_dim, 
+    #     adapt_horizon=env.adapt_horizon, 
+    #     act_expert_mode=1, cri_expert_mode=1,
+    #     compressor_dim=4, search_dim=2,
+    #     env_num=env_num, gpu_id=0)
+    # w, env_params = get_optimal_w(env, agent, search_dim=2)

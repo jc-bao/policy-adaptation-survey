@@ -9,7 +9,7 @@ from adaptive_control_gym.controllers.rl.adaptor import AdaptorMLP, AdaptorTConv
 class PPO:
     def __init__(self, 
         state_dim: int, expert_dim: int, adapt_dim: int, action_dim: int, adapt_horizon: int,
-        act_expert_mode: int, cri_expert_mode: int, compressor_dim: int,
+        act_expert_mode: int, cri_expert_mode: int, compressor_dim: int, search_dim: int,
         env_num: int, gpu_id: int = 0):
         # env
         self.env_num = env_num
@@ -17,6 +17,7 @@ class PPO:
         self.state_dim = state_dim
         self.expert_dim = expert_dim
         self.adapt_dim = adapt_dim
+        self.search_dim = search_dim
         self.compressor_dim = compressor_dim
         self.last_state, self.last_info = None, None  # last state of the trajectory for training
         self.reward_scale = 1.0
@@ -36,10 +37,10 @@ class PPO:
         self.compressor = Compressor(expert_dim, compressor_dim).to(self.device)
         if compressor_dim > 0:
             self.compressor_optimizer = torch.optim.Adam(self.compressor.parameters(), self.learning_rate)
-            self.act = ActorPPO(state_dim, compressor_dim, action_dim, act_expert_mode).to(self.device)
+            self.act = ActorPPO(state_dim, compressor_dim+search_dim, action_dim, act_expert_mode).to(self.device)
         else:
-            self.act = ActorPPO(state_dim, expert_dim, action_dim, act_expert_mode).to(self.device)
-        self.cri = CriticPPO(state_dim, expert_dim, action_dim, cri_expert_mode).to(self.device)
+            self.act = ActorPPO(state_dim, expert_dim+search_dim, action_dim, act_expert_mode).to(self.device)
+        self.cri = CriticPPO(state_dim, expert_dim+search_dim, action_dim, cri_expert_mode).to(self.device)
         self.act_optimizer = torch.optim.Adam(self.act.parameters(), self.learning_rate)
         self.cri_optimizer = torch.optim.Adam(self.cri.parameters(), self.learning_rate)
         self.criterion = torch.nn.SmoothL1Loss(reduction="mean")
@@ -61,16 +62,16 @@ class PPO:
         self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
 
 
-    def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False) -> List[torch.Tensor]:
-        states = torch.zeros((horizon_len, self.env_num, self.state_dim), dtype=torch.float32).to(self.device)
-        actions = torch.zeros((horizon_len, self.env_num, self.action_dim), dtype=torch.float32).to(self.device)
-        logprobs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
-        rewards = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
-        dones = torch.zeros((horizon_len, self.env_num), dtype=torch.bool).to(self.device)
-        err_xs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
-        err_vs = torch.zeros((horizon_len, self.env_num), dtype=torch.float32).to(self.device)
-        es = torch.zeros((horizon_len, self.env_num, self.expert_dim), dtype=torch.float32).to(self.device)
-        adapt_obses = torch.zeros((horizon_len, self.env_num, env.adapt_dim), dtype=torch.float32).to(self.device)
+    def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False, w=None) -> List[torch.Tensor]:
+        states = torch.zeros((horizon_len, env.env_num, self.state_dim), dtype=torch.float32).to(self.device)
+        actions = torch.zeros((horizon_len, env.env_num, self.action_dim), dtype=torch.float32).to(self.device)
+        logprobs = torch.zeros((horizon_len, env.env_num), dtype=torch.float32).to(self.device)
+        rewards = torch.zeros((horizon_len, env.env_num), dtype=torch.float32).to(self.device)
+        dones = torch.zeros((horizon_len, env.env_num), dtype=torch.bool).to(self.device)
+        err_xs = torch.zeros((horizon_len, env.env_num), dtype=torch.float32).to(self.device)
+        err_vs = torch.zeros((horizon_len, env.env_num), dtype=torch.float32).to(self.device)
+        es = torch.zeros((horizon_len, env.env_num, self.expert_dim+self.search_dim), dtype=torch.float32).to(self.device)
+        adapt_obses = torch.zeros((horizon_len, env.env_num, env.adapt_dim), dtype=torch.float32).to(self.device)
 
         state, info = self.last_state, self.last_info  # shape == (env_num, state_dim) for a vectorized env.
         e = info['e']
@@ -89,6 +90,8 @@ class PPO:
                     e = self.compressor.get_compress_mean(e)
                 else:
                     e, _ = self.compressor.get_compress(e)
+            if w is not None:
+                e = torch.concat([e, w], dim=-1)
             action, logprob = get_action(state, e)
             states[t] = state
 
@@ -98,7 +101,10 @@ class PPO:
             logprobs[t] = logprob
             rewards[t] = reward
             dones[t] = done
-            es[t] = e
+            if w is not None:
+                es[t] = torch.concat([e, w], dim=-1)
+            else:
+                es[t] = e
             err_xs[t] = info["err_x"]
             err_vs[t] = info["err_v"]
             adapt_obses[t] = info["adapt_obs"]
@@ -160,7 +166,11 @@ class PPO:
                     if update_adaptor:
                         e = self.adaptor(adapt_obs[ids0, ids1])
                     else:
-                        e = self.compressor(e_origin)
+                        if self.search_dim > 0:
+                            e = self.compressor(e_origin[:, :-self.search_dim])
+                            e = torch.cat([e, e_origin[:, -self.search_dim:]], dim=-1)
+                        else:
+                            e = self.compressor(e_origin)
                 new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, e)
                 ratio = (new_logprob - logprob.detach()).exp()
                 surrogate1 = advantage * ratio
@@ -175,7 +185,11 @@ class PPO:
             if update_adaptor:
                 e = self.adaptor(adapt_obs[ids0, ids1])
             else:
-                e = self.compressor(e_origin)
+                if self.search_dim > 0:
+                    e = self.compressor(e_origin[:, :-self.search_dim])
+                    e = torch.cat([e, e_origin[:, -self.search_dim:]], dim=-1)
+                else:
+                    e = self.compressor(e_origin)
             new_logprob, obj_entropy = self.act.get_logprob_entropy(state, action, e)
             ratio = (new_logprob - logprob.detach()).exp()
             surrogate1 = advantage * ratio
