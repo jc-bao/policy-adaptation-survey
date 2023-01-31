@@ -154,7 +154,14 @@ class DroneEnv(gym.Env):
         decay = sample_inv_norm(std, [size, self.dim], device=self.device)* (self.decay_max-self.decay_min) * 0.5 + (self.decay_min+self.decay_max)*0.5
         # decay[:, 1] = decay[:, 0]
         # decay[:, 2] = decay[:, 0]
+
+        # if self.res_dyn_param_max != 1.0:
+        #     res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * 0.7
+        #     offset = ((res_dyn_param>0.)*2.0-1.0) * 0.3
+        #     res_dyn_param = res_dyn_param + offset
+        # else:
         res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
+
         force_scale = sample_inv_norm(std, [size, self.dim-1], device=self.device) * (self.force_scale_max-self.force_scale_min) * 0.5 + (self.force_scale_min+self.force_scale_max)*0.5
 
         mass = torch.clip(mass, self.mass_min, self.mass_max)
