@@ -26,7 +26,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 3e7
+    total_steps = 1e7
     adapt_steps = 1e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
@@ -232,7 +232,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=
     # env.mass_max = 0.006+0.024*0.7
     # env.decay_max = 0.1*0.7
     # env.disturb_max = -0.8+1.6*0.7
-    # env.res_dyn_param_max = -1+2.0*0.7
+    # env.res_dyn_param_max = -1+2.0*0.5
     # env.res_dyn_scale = 0.0
     # env.res_dyn = env.res_dyn_fit
     # assert(env.res_dyn_fit!=env.res_dyn_origin)

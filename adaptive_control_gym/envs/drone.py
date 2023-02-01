@@ -59,9 +59,9 @@ class DroneEnv(gym.Env):
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
         self.force_scale_mean, self.force_scale_std = 1.0, 0.25
 
-        self.res_dyn_origin = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim).to(self.device)
+        self.res_dyn_origin = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim, res_dyn_param_dim = res_dyn_param_dim).to(self.device)
         # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_128_0.033.pt').to(self.device)
-        self.res_dyn_fit = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim, dropout_rate=0.1).to(self.device)
+        self.res_dyn_fit = ResDynMLP(input_dim=dim+2+self.res_dyn_param_dim, output_dim=dim, dropout_rate=0.1, res_dyn_param_dim=res_dyn_param_dim).to(self.device)
         self.res_dyn_fit.load_state_dict(self.res_dyn_origin.state_dict())
         # self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
         self.res_dyn = self.res_dyn_origin
@@ -416,7 +416,7 @@ class ResDynPolynomial:
         return y/self.input_dim
 
 class ResDynMLP(nn.Module):
-    def __init__(self, input_dim, output_dim, dropout_rate = 0.0):
+    def __init__(self, input_dim, output_dim, dropout_rate = 0.0, res_dyn_param_dim: int = 1):
         super().__init__()
         embedding_size = 128
         self.mlp = nn.Sequential(
@@ -437,9 +437,17 @@ class ResDynMLP(nn.Module):
         # freeze the network
         for p in self.mlp.parameters():
             p.requires_grad = False
-        # for f(v, u, w_1)
-        self.offset = nn.Parameter(torch.tensor([0.1, 0.25, -0.1]), requires_grad=False)
-        self.scale = nn.Parameter(torch.tensor([1.0, 2.0, 1.0]), requires_grad=False)
+        if res_dyn_param_dim == 1:
+            # for f(v, u, w_1)
+            self.offset = nn.Parameter(torch.tensor([0.1, 0.25, -0.1]), requires_grad=False)
+            self.scale = nn.Parameter(torch.tensor([1.0, 2.0, 1.0]), requires_grad=False)
+        elif res_dyn_param_dim == 2:
+            # for f(v, u, w_2)
+            self.offset = nn.Parameter(torch.tensor([0.0, 0.0, -0.20]), requires_grad=False)
+            self.scale = nn.Parameter(torch.tensor([1.0, 1.0, 2.0]), requires_grad=False)
+        else:
+            raise NotImplementedError
+
         # for f(v, u, w_0)
         # self.offset = nn.Parameter(torch.tensor([-0.1, -0.3, 0.05]), requires_grad=False)
         # self.scale = nn.Parameter(torch.tensor([3.0, 3.0, 3.0]), requires_grad=False)
@@ -472,6 +480,7 @@ def get_drone_policy(env, policy_name = "ppo"):
 
 
 def test_drone(env:DroneEnv, policy, adaptor, compressor=lambda x: x, save_path = None):
+    compressor = lambda x: torch.zeros([1, 4], device=env.device)
     state, info = env.reset()
     obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, res_dyn_fit_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
@@ -674,11 +683,11 @@ def vis_data(path = None):
 
 
 if __name__ == "__main__":
-    # env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=1, seed=1)
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_Baseline.pt', map_location='cpu')
-    # policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
-    # test_drone(env, policy, adaptor, compressor)
+    env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=2, seed=1)
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S1.pt', map_location='cpu')
+    policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
+    test_drone(env, policy, adaptor, compressor)
     # policy = get_drone_policy(env, policy_name = "ppo")
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
-    vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA')
+    # vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA')
