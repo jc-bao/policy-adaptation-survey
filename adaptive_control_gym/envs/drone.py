@@ -480,7 +480,7 @@ def get_drone_policy(env, policy_name = "ppo"):
 
 
 def test_drone(env:DroneEnv, policy, adaptor, compressor=lambda x: x, save_path = None):
-    compressor = lambda x: torch.zeros([1, 4], device=env.device)
+    # compressor = lambda x: torch.zeros([1, 4], device=env.device)
     state, info = env.reset()
     obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, res_dyn_fit_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
