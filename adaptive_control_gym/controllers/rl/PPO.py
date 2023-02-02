@@ -62,7 +62,7 @@ class PPO:
         self.adaptor_optimizer = torch.optim.Adam(self.adaptor.parameters(), self.learning_rate)
 
 
-    def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False, w=None) -> List[torch.Tensor]:
+    def explore_env(self, env, horizon_len: int, deterministic: bool=False, use_adaptor: bool=False, w=None, predefined_e=None) -> List[torch.Tensor]:
         states = torch.zeros((horizon_len, env.env_num, self.state_dim), dtype=torch.float32).to(self.device)
         actions = torch.zeros((horizon_len, env.env_num, self.action_dim), dtype=torch.float32).to(self.device)
         logprobs = torch.zeros((horizon_len, env.env_num), dtype=torch.float32).to(self.device)
@@ -74,7 +74,10 @@ class PPO:
         adapt_obses = torch.zeros((horizon_len, env.env_num, env.adapt_dim), dtype=torch.float32).to(self.device)
 
         state, info = self.last_state, self.last_info  # shape == (env_num, state_dim) for a vectorized env.
-        e = info['e']
+        if predefined_e is not None:
+            e = predefined_e
+        else:
+            e = info['e']
 
         if deterministic:
             get_action = lambda x,e: (self.act(x,e), 0.0)
@@ -83,13 +86,16 @@ class PPO:
             get_action = self.act.get_action
             convert = self.act.convert_action_for_env
         for t in range(horizon_len):
-            if use_adaptor:
-                e = self.adaptor(info['adapt_obs'])
+            if predefined_e is not None:
+                e = predefined_e
             else:
-                if deterministic:
-                    e = self.compressor.get_compress_mean(e)
+                if use_adaptor:
+                    e = self.adaptor(info['adapt_obs'])
                 else:
-                    e, _ = self.compressor.get_compress(e)
+                    if deterministic:
+                        e = self.compressor.get_compress_mean(e)
+                    else:
+                        e, _ = self.compressor.get_compress(e)
             if w is not None:
                 e = torch.concat([e, w], dim=-1)
             action, logprob = get_action(state, e)

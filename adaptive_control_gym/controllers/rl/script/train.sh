@@ -1,0 +1,1 @@
+python train.py --res-dyn-param-dim 4 --compressor-dim 2 --exp-name ood-only-res4-center-50 --gpu-id 2

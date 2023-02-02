@@ -232,7 +232,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=
     env.curri_param = origin_curri_param
 
     # env.res_dyn_param_min = -0.5
-    # env.res_dyn_param_max = 0.0
+    # env.res_dyn_param_max = 0.5
     # env.mass_max = 0.006+0.024*0.7
     # env.decay_max = 0.1*0.7
     # env.disturb_max = -0.8+1.6*0.7
