@@ -224,6 +224,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=
     # env.res_dyn = env.res_dyn_origin
     # env.res_dyn_param_min = -1.0
     # env.res_dyn_param_max = 1.0
+    # env.disturb_min, env.disturb_max = -0.8, 0.8
 
     origin_curri_param = env.curri_param
     env.curri_param = 0.0
@@ -231,6 +232,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor, w=w)
     env.curri_param = origin_curri_param
 
+    # env.disturb_min, env.disturb_max = -0.4, 0.4
     # env.res_dyn_param_min = -0.5
     # env.res_dyn_param_max = 0.5
     # env.mass_max = 0.006+0.024*0.7
