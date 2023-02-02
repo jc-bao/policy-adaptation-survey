@@ -38,12 +38,12 @@ class DroneEnv(gym.Env):
         self.curri_param = 0.0
         self.adapt_horizon = 3
 
-        self.mass_min, self.mass_max = 0.006, 0.03
+        self.mass_min, self.mass_max = 0.006, 0.03 #0.02, 0.02
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max = 0.0, 0.1
+        self.decay_min, self.decay_max =  0.0, 0.1 #0.0, 0.0
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = -0.8, 0.8
-        self.force_scale_min, self.force_scale_max = 0.75, 1.5
+        self.disturb_min, self.disturb_max = -0.8, 0.8 # 0.0, 0.0
+        self.force_scale_min, self.force_scale_max = 0.75, 1.5 # 1.0, 1.0
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # generated parameters
@@ -156,8 +156,8 @@ class DroneEnv(gym.Env):
         # decay[:, 2] = decay[:, 0]
 
         # if self.res_dyn_param_max != 1.0:
-        #     res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * 0.7
-        #     offset = ((res_dyn_param>0.)*2.0-1.0) * 0.3
+        #     res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * 0.5
+        #     offset = ((res_dyn_param>0.)*2.0-1.0) * 0.5
         #     res_dyn_param = res_dyn_param + offset
         # else:
         res_dyn_param = sample_inv_norm(std, [size, self.res_dyn_param_dim], device=self.device) * (self.res_dyn_param_max-self.res_dyn_param_min) * 0.5 + (self.res_dyn_param_min+self.res_dyn_param_max)*0.5
