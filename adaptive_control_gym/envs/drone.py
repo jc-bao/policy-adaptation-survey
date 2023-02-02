@@ -453,6 +453,14 @@ class ResDynMLP(nn.Module):
             # for f(v, u, w_2)
             self.offset = nn.Parameter(torch.tensor([0.0, 0.0, -0.20]), requires_grad=False)
             self.scale = nn.Parameter(torch.tensor([1.0, 1.0, 2.0]), requires_grad=False)
+        elif res_dyn_param_dim == 3:
+            # for f(v, u, w_3)
+            self.offset = nn.Parameter(torch.tensor([0.0, 0.0, 0.2]), requires_grad=False)
+            self.scale = nn.Parameter(torch.tensor([2.0, 2.0, 2.0]), requires_grad=False)
+        elif res_dyn_param_dim == 4:
+            # for f(v, u, w_4)
+            self.offset = nn.Parameter(torch.tensor([0.0, 0.0, 0.0]), requires_grad=False)
+            self.scale = nn.Parameter(torch.tensor([1.0, 1.0, 1.0]), requires_grad=False)
         else:
             raise NotImplementedError
 
@@ -691,7 +699,7 @@ def vis_data(path = None):
 
 
 if __name__ == "__main__":
-    env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=2, seed=1)
+    env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=4, seed=1)
     loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S1.pt', map_location='cpu')
     policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
     test_drone(env, policy, adaptor, compressor)
