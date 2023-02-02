@@ -212,7 +212,7 @@ class Compressor(nn.Module):
         super().__init__()
         self.embedding_dim = embedding_dim
         if embedding_dim > 0:
-            self.mlp = build_mlp_net([expert_dim, 128, embedding_dim], activation=nn.ReLU, if_raw_out=False)
+            self.mlp = build_mlp_net([expert_dim, 128, embedding_dim], activation=nn.ReLU, if_raw_out=True)
             self.std_log = nn.Parameter(torch.ones((1, embedding_dim))*(-10.0), requires_grad=True)  # trainable parameter
         else:
             self.std_log = nn.Parameter(torch.ones((1, expert_dim))*(-10.0), requires_grad=True)  # trainable parameter
