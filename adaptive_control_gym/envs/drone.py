@@ -43,7 +43,7 @@ class DroneEnv(gym.Env):
         self.decay_min, self.decay_max =  0.0, 0.1 #0.0, 0.0
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8 # 0.0, 0.0
-        self.force_scale_min, self.force_scale_max = 0.75, 1.5 # 1.0, 1.0
+        self.force_scale_min, self.force_scale_max = 0.75, 1.25 # 1.0, 1.0
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # self.mass_min, self.mass_max = 0.02, 0.02
@@ -60,7 +60,7 @@ class DroneEnv(gym.Env):
         self.mass_mean, self.mass_std = 0.018, 0.012
         self.delay_mean, self.delay_std = 0, 1
         # self.decay_mean, self.decay_std = (self.decay_max+self.decay_min)/2, (self.decay_max-self.decay_min)/2
-        self.decay_mean, self.decay_std = 0.15, 0.3
+        self.decay_mean, self.decay_std = 0.05, 0.05
         self.disturb_mean, self.disturb_std = 0, 0.8
         self.v_mean, self.v_std = 0, 1.0 / 0.3
         self.acc_mean, self.acc_std = 0, 1.0 / 0.03

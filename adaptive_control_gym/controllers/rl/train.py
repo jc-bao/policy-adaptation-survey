@@ -20,14 +20,14 @@ class Args:
     act_expert_mode:int=1
     cri_expert_mode:int=1
     exp_name:str= ''
-    compressor_dim: int = 4
+    compressor_dim: int = 3
     search_dim: int = 0
     res_dyn_param_dim: int=1
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 1.5e7
-    adapt_steps = 1e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
+    total_steps = 2e6
+    adapt_steps = 1e6 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
     
@@ -216,15 +216,16 @@ def get_optimal_w(env:DroneEnv, agent:PPO, search_dim:int = 0):
 
 def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=False, w=None):
 
-    # env.mass_max = 0.006+0.024*1.0
-    # env.decay_max = 0.1*1.0
-    # env.disturb_max = -0.8+1.6*1.0
-    # env.res_dyn_param_max = -1+2.0*1.0
-    # env.res_dyn_scale = 1.0
-    # env.res_dyn = env.res_dyn_origin
-    # env.res_dyn_param_min = -1.0
-    # env.res_dyn_param_max = 1.0
-    # env.disturb_min, env.disturb_max = -0.8, 0.8
+    # env.mass_max = env.mass_mean + env.mass_std*0.5
+    # env.mass_min = env.mass_mean - env.mass_std*0.5
+    # env.decay_max = env.decay_mean + env.decay_std*0.5
+    # env.decay_min = env.decay_mean - env.decay_std*0.5
+    # env.disturb_max = env.disturb_mean + env.disturb_std*0.5
+    # env.disturb_min = env.disturb_mean - env.disturb_std*0.5
+    # env.res_dyn_param_max = env.res_dyn_param_mean + env.res_dyn_param_std*0.5
+    # env.res_dyn_param_min = env.res_dyn_param_mean - env.res_dyn_param_std*0.5
+    # env.force_scale_max = env.force_scale_mean + env.force_scale_std*0.5
+    # env.force_scale_min = env.force_scale_mean - env.force_scale_std*0.5
 
     origin_curri_param = env.curri_param
     env.curri_param = 0.0
@@ -232,16 +233,16 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor, w=w)
     env.curri_param = origin_curri_param
 
-    # env.disturb_min, env.disturb_max = -0.4, 0.4
-    # env.res_dyn_param_min = -0.5
-    # env.res_dyn_param_max = 0.5
-    # env.mass_max = 0.006+0.024*0.7
-    # env.decay_max = 0.1*0.7
-    # env.disturb_max = -0.8+1.6*0.7
-    # env.res_dyn_param_max = -1+2.0*0.7
-    # env.res_dyn_scale = 0.0
-    # env.res_dyn = env.res_dyn_fit
-    # assert(env.res_dyn_fit!=env.res_dyn_origin)
+    # env.mass_max = env.mass_mean + env.mass_std*1.0
+    # env.mass_min = env.mass_mean - env.mass_std*1.0
+    # env.decay_max = env.decay_mean + env.decay_std*1.0
+    # env.decay_min = env.decay_mean - env.decay_std*1.0
+    # env.disturb_max = env.disturb_mean + env.disturb_std*1.0
+    # env.disturb_min = env.disturb_mean - env.disturb_std*1.0
+    # env.res_dyn_param_max = env.res_dyn_param_mean + env.res_dyn_param_std*1.0
+    # env.res_dyn_param_min = env.res_dyn_param_mean - env.res_dyn_param_std*1.0
+    # env.force_scale_max = env.force_scale_mean + env.force_scale_std*1.0
+    # env.force_scale_min = env.force_scale_mean - env.force_scale_std*1.0
     
     rew_mean = rewards.mean().item()
     err_x, err_v = infos['err_x'][:-1], infos['err_v'][:-1]
