@@ -38,12 +38,12 @@ class DroneEnv(gym.Env):
         self.curri_param = 0.0
         self.adapt_horizon = 3
 
-        self.mass_min, self.mass_max = 0.006, 0.03 #0.02, 0.02
+        self.mass_min, self.mass_max = 0.018, 0.018 #0.006, 0.03 
         self.delay_min, self.delay_max = 0, 0
-        self.decay_min, self.decay_max =  0.0, 0.1 #0.0, 0.0
+        self.decay_min, self.decay_max =  0.05, 0.05 #0.0, 0.1 #0.0, 0.0
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.disturb_min, self.disturb_max = -0.8, 0.8 # 0.0, 0.0
-        self.force_scale_min, self.force_scale_max = 0.75, 1.25 # 1.0, 1.0
+        self.force_scale_min, self.force_scale_max = 1.0, 1.0 # 0.75, 1.25
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         # self.mass_min, self.mass_max = 0.02, 0.02

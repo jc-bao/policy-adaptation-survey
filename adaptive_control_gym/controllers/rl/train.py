@@ -22,7 +22,7 @@ class Args:
     exp_name:str= ''
     compressor_dim: int = 3
     search_dim: int = 0
-    res_dyn_param_dim: int=1
+    res_dyn_param_dim: int=0
 
 def train(args:Args)->None:
     env_num = 1024
