@@ -31,7 +31,7 @@ class DroneEnv(gym.Env):
         # parameters
         self.mode = 0 # evaluation mode
         self.dim=dim=3
-        self.disturb_period = 30
+        self.disturb_period = 120 #30
         self.model_delay_alpha = 0.9
         self.res_dyn_scale = 1.0
         self.res_dyn_param_dim = res_dyn_param_dim 
@@ -500,7 +500,7 @@ def get_drone_policy(env, policy_name = "ppo"):
 
 
 def test_drone(env:DroneEnv, policy, adaptor, compressor=lambda x: x, save_path = None):
-    compressor = lambda x: torch.zeros([1, 4], device=env.device)
+    # compressor = lambda x: torch.zeros([1, 4], device=env.device)
     state, info = env.reset()
     obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, res_dyn_fit_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
@@ -591,23 +591,23 @@ def test_drone(env:DroneEnv, policy, adaptor, compressor=lambda x: x, save_path 
     axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # plot e_diff_list respect to different parameters
     e_diff_array = np.array(e_diff_list)
-    if e_diff_array.shape[-1] == env.expert_dim:
-        axs[env.dim*2+1].set_title(f"mass_diff respect to extra parameters")
-        for i in range(3):
-            axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"mass-{i}")
-        axs[env.dim*2+2].set_title(f"disturb_diff respect to extra parameters")
-        for i in range(3):
-            axs[env.dim*2+2].plot(e_diff_array[:,i+3], label=f"disturb-{i}")
-        axs[env.dim*2+3].set_title(f"decay_diff respect to extra parameters")
-        for i in range(3):
-            axs[env.dim*2+3].plot(e_diff_array[:,i+6], label=f"decay-{i}")
-        if e_diff_array.shape[-1] > 9:
-            axs[env.dim*2+4].set_title(f"w_diff respect to extra parameters")
-            for i in range(e_diff_array.shape[-1]-9):
-                axs[env.dim*2+4].plot(e_diff_array[:,i+9], label=f"w-{i}")
-    else:
-        for i in range(e_diff_array.shape[-1]):
-            axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"e_diff-{i}")
+    # if e_diff_array.shape[-1] == env.expert_dim:
+    #     axs[env.dim*2+1].set_title(f"mass_diff respect to extra parameters")
+    #     for i in range(3):
+    #         axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"mass-{i}")
+    #     axs[env.dim*2+2].set_title(f"disturb_diff respect to extra parameters")
+    #     for i in range(3):
+    #         axs[env.dim*2+2].plot(e_diff_array[:,i+3], label=f"disturb-{i}")
+    #     axs[env.dim*2+3].set_title(f"decay_diff respect to extra parameters")
+    #     for i in range(3):
+    #         axs[env.dim*2+3].plot(e_diff_array[:,i+6], label=f"decay-{i}")
+    #     if e_diff_array.shape[-1] > 9:
+    #         axs[env.dim*2+4].set_title(f"w_diff respect to extra parameters")
+    #         for i in range(e_diff_array.shape[-1]-9):
+    #             axs[env.dim*2+4].plot(e_diff_array[:,i+9], label=f"w-{i}")
+    # else:
+    for i in range(e_diff_array.shape[-1]):
+        axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"e_diff-{i}")
     # plot jacobian respect to different parameters
     if if_policy_grad:
         js_array = np.array(js)
@@ -704,7 +704,7 @@ def vis_data(path = None):
 
 if __name__ == "__main__":
     env = DroneEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=0, seed=1)
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_ActEx1_CriEx1_S1.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA3_OOD_T120.pt', map_location='cpu')
     policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
     test_drone(env, policy, adaptor, compressor)
     # policy = get_drone_policy(env, policy_name = "ppo")
