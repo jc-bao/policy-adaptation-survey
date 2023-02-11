@@ -32,7 +32,7 @@ class QuadEnv(gym.Env):
         self.mode = 0 # evaluation mode
         self.disturb_period = 120 #30
         self.model_delay_alpha = 0.9
-        self.res_dyn_scale = 1.0
+        self.res_dyn_scale = 0.0
         self.res_dyn_param_dim = res_dyn_param_dim 
         self.curri_param = 0.0
         self.adapt_horizon = 3
