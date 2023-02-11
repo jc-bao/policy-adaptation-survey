@@ -172,6 +172,7 @@ class QuadEnv(gym.Env):
         return x, v, mass, delay, decay, res_dyn_param, force_scale
     
     def step(self, action):
+        
         # delay action
         if not (self.delay == 0).all():
             self.action_history.append(action)
