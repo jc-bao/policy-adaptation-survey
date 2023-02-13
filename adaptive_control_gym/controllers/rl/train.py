@@ -158,6 +158,7 @@ def train(args:Args)->None:
     # save agent.act, agent.adaptor, agent.compressor
     torch.save({
             'actor': agent.act, 
+            'critic': agent.cri, 
             'adaptor': agent.adaptor,
             'compressor': agent.compressor,
             'expert_err_x_final': expert_err_x_final,

@@ -16,7 +16,7 @@ if __name__ == '__main__':
     import numpy as np
     import seaborn as sns
     sns.set()
-    x = sample_inv_norm(0.4, 100000).cpu().numpy()
+    x = sample_inv_norm(0.2, 100000).cpu().numpy()
     plt.hist(x, bins=100)
     # save the plot
     plt.savefig('results/sample_inv_norm.png')

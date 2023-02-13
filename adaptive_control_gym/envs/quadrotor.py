@@ -68,8 +68,8 @@ class QuadEnv(gym.Env):
         self.tau = 1.0/30.0  # seconds between state updates
         self.force_scale = torch.ones([env_num, 2], device=self.device)
         self.max_force = 1.0
-        self.gravity = torch.zeros((env_num, 3), device=self.device)
-        self.gravity[:, 1] = -9.8
+        self.gravity = torch.zeros((env_num, 6), device=self.device)
+        self.gravity[:, 2] = -9.8
 
         # generate a sin trajectory with torch
         self.obs_traj_len = 1
@@ -106,7 +106,6 @@ class QuadEnv(gym.Env):
         B = (1 / self.mass).cpu().numpy()
         self.B = np.expand_dims(np.stack([np.zeros_like(B), B], axis=1), axis=2)
         # self.dynamic_info = self._get_dynamic_info()
-        # ic(self.dynamic_info)
 
         self.action_space = gym.spaces.Box(
             low=-self.max_force, high=self.max_force, shape=(3,), dtype=float)
@@ -185,11 +184,11 @@ class QuadEnv(gym.Env):
             action_delay = action
 
         # get information from state
-        pos = self.x[:3]
-        quat = self.x[3:7]
+        pos = self.x[..., :3]
+        quat = self.x[..., 3:7]
         rot_mat = quat2rotmat(quat)
-        vel = self.v[:3]
-        omega = self.v[3:6]
+        vel = self.v[..., :3]
+        omega = self.v[..., 3:6]
         # quadrotor dynamics
         u = action_delay
 
@@ -211,9 +210,9 @@ class QuadEnv(gym.Env):
 
         # calculate force
         f_u_local = torch.zeros((self.env_num, 3), device=self.device)
-        f_u_local[:, 2] = u[:, 0]
+        f_u_local[..., 2] = u[..., 0]
         f_u = torch.matmul(rot_mat, f_u_local.unsqueeze(-1)).squeeze(-1)
-        tau_u = u[:, 1:4]
+        tau_u = u[..., 1:4]
         u_force = torch.cat([f_u, tau_u], dim=1)
         self.action_force = u_force
         # record parameters
@@ -235,15 +234,15 @@ class QuadEnv(gym.Env):
         self.force += self.res_dyn_force
         
         # system dynamics
-        self.x[:, :3] += self.v[:, :3] * self.tau
+        self.x[..., :3] += self.v[..., :3] * self.tau
         rpy = quat2rpy(quat)
         new_rpy = rpy + omega * self.tau
         new_quat = rpy2quat(new_rpy)
-        self.x[:, 3:7] = new_quat
+        self.x[..., 3:7] = new_quat
 
         self.acc = self.force / self.mass
         self.v += self.acc * self.tau
-        self.x[:,:3] = torch.clip(self.x[:,:3], self.x_min, self.x_max)
+        self.x[...,:3] = torch.clip(self.x[...,:3], self.x_min, self.x_max)
         self.v_his.append(self.v.clone())
         self.v_his.pop(0)
         self.acc_his.append(self.acc)
@@ -253,8 +252,8 @@ class QuadEnv(gym.Env):
             self.d_acc_his.pop(0)
 
         # calculate reward
-        err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:3],dim=1)
-        err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:3],dim=1)
+        err_x = torch.norm((self.x[..., :3]-self.traj_x[...,self.step_cnt])[...,:3],dim=1)
+        err_v = torch.norm((self.v[..., :3]-self.traj_v[...,self.step_cnt])[...,:3],dim=1)
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - torch.clip(err_v, 0, 1)*0.1
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1 # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1 # for 0.1
@@ -262,8 +261,8 @@ class QuadEnv(gym.Env):
         reward -= torch.clip(torch.log(err_x+1)*50, 0, 1)*0.1 # for 0.02
         # for hover task, add penalty for angular velocity
         if self.traj_scale == 0:
-            reward -= torch.abs(self.x[:,2])*0.00
-            reward -= torch.tanh(torch.abs(self.v[:,2]))*0.05
+            reward -= torch.abs(self.x[...,2])*0.00
+            reward -= torch.tanh(torch.abs(self.v[...,2]))*0.05
 
         self.step_cnt += 1
 
@@ -306,17 +305,17 @@ class QuadEnv(gym.Env):
 
     def _set_history(self, obs):
         # for delay controller
-        self.action_history = [torch.zeros((self.env_num, 2), device=self.device)] * self.delay_max
+        self.action_history = [torch.zeros((self.env_num, self.action_dim), device=self.device)] * self.delay_max
         # for adaptive controller
-        self.u_his = [torch.zeros((self.env_num, 2), device=self.device)] * self.adapt_horizon
-        self.d_u_his = [torch.zeros((self.env_num, 2), device=self.device)] * self.adapt_horizon
-        self.u_force_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
-        self.d_u_force_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
-        self.v_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
-        self.acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
-        self.d_acc_his = [torch.zeros((self.env_num, 3), device=self.device)] * self.adapt_horizon
+        self.u_his = [torch.zeros((self.env_num, self.action_dim), device=self.device)] * self.adapt_horizon
+        self.d_u_his = [torch.zeros((self.env_num, self.action_dim), device=self.device)] * self.adapt_horizon
+        self.u_force_his = [torch.zeros((self.env_num, 6), device=self.device)] * self.adapt_horizon
+        self.d_u_force_his = [torch.zeros((self.env_num, 6), device=self.device)] * self.adapt_horizon
+        self.v_his = [torch.zeros((self.env_num, 6), device=self.device)] * self.adapt_horizon
+        self.acc_his = [torch.zeros((self.env_num, 6), device=self.device)] * self.adapt_horizon
+        self.d_acc_his = [torch.zeros((self.env_num, 6), device=self.device)] * self.adapt_horizon
         obs_his_shape = list(obs.shape)
-        obs_his_shape[-1] += 2
+        obs_his_shape[-1] += self.action_dim
         self.obs_his = [torch.zeros(obs_his_shape, device=self.device)] * self.adapt_horizon
 
         self.v_his.append(self.v.clone())
@@ -325,13 +324,22 @@ class QuadEnv(gym.Env):
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
         future_traj_v = self.traj_v[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
-        err_x, err_v = future_traj_x[..., 0] - self.x, future_traj_v[..., 0] - self.v
-        obs = torch.concat([self.x, self.v*0.3, err_x, err_v*0.3, future_traj_x.reshape(self.env_num,-1), future_traj_v.reshape(self.env_num, -1)], dim=-1)
-        return obs
+        err_x, err_v = future_traj_x[..., 0] - self.x[..., :3], future_traj_v[..., 0] - self.v[..., :3]
+        return torch.concat(
+            [
+                self.x,
+                self.v * 0.3,
+                err_x,
+                err_v * 0.3,
+                future_traj_x.reshape(self.env_num, -1),
+                future_traj_v.reshape(self.env_num, -1),
+            ],
+            dim=-1,
+        )
 
     def _get_info(self):
-        err_x = torch.norm((self.x-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
-        err_v = torch.norm((self.v-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
+        err_x = torch.norm((self.x[..., :3]-self.traj_x[...,self.step_cnt])[:,:2],dim=1)
+        err_v = torch.norm((self.v[..., :3]-self.traj_v[...,self.step_cnt])[:,:2],dim=1)
         info = {
             'pos': self.x,
             'vel': self.v,
@@ -500,7 +508,6 @@ def get_drone_policy(env, policy_name = "ppo"):
 
 
 def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path = None):
-    # compressor = lambda x: torch.zeros([1, 4], device=env.device)
     state, info = env.reset()
     obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, res_dyn_fit_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
@@ -522,12 +529,11 @@ def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path =
         # act = policy(state, info)
         if if_policy_grad:
             # calculate jacobian respect to state
-            ic(act.requires_grad, state.requires_grad)
             jacobian = torch.autograd.grad(act, state, grad_outputs=torch.ones_like(act), create_graph=True)[0][0, -env.expert_dim:]
         with torch.no_grad():
             state, rew, done, info = env.step(act)  # take a random action
-        x_list.append(state[0,:env.dim].numpy())
-        v_list.append(state[0,env.dim:env.dim*2].numpy())
+        x_list.append(state[0,:7].numpy())
+        v_list.append(state[0,7:7+6].numpy())
         traj_x_list.append(env.traj_x[0,:,t%env.max_steps].numpy())
         traj_v_list.append(env.traj_v[0,:,t%env.max_steps].numpy()*0.3)
         a_list.append(act[0].detach().numpy())
@@ -548,72 +554,64 @@ def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path =
     # set matplotlib style
     plt.style.use('seaborn')
     # plot x_list, v_list, action_list in three subplots
-    plot_num = 2*env.dim+5+if_policy_grad
+    plot_num = 16
     fig, axs = plt.subplots(plot_num, 1, figsize=(10, 3*plot_num))
-    x_numpy, v_array = np.array(x_list), np.array(v_list)
+    x_array, v_array = np.array(x_list), np.array(v_list)
+    quat_array = x_array[:,3:7]
+    # convert quaternion to rpy angle
+    rpy_array = quat2rpy(torch.tensor(quat_array)).numpy()
     traj_x_array, traj_v_array = np.array(traj_x_list), np.array(traj_v_list)
-    for i in range(env.dim):
-        axs[i].set_title(f"kinematics measurement dim={i}")
-        axs[i].plot(x_numpy[:,i], label="x")
+    for i in range(3):
+        axs[i].set_title(f"position dim={i}")
+        axs[i].plot(x_array[:,i], label="x")
         axs[i].plot(v_array[:,i], label="v*0.3", alpha=0.3)
-        if i < 2:
-            axs[i].plot(traj_x_array[:,i], label="traj_x")
-            axs[i].plot(traj_v_array[:,i], label="traj_v*0.3", alpha=0.3)
+        axs[i].plot(traj_x_array[:,i], label="traj_x")
+        axs[i].plot(traj_v_array[:,i], label="traj_v*0.3", alpha=0.3)
         for t in done_list:
             axs[i].axvline(t, color="red", linestyle="--", label='reset')
         if i == 2:
             # plot horizontal line for the ground
             axs[i].axhline(0, color="black", linestyle="--", label='ground')
+    for j in range(3):
+        axs[3+j].set_title(f"rpy angle dim={j}")
+        axs[3+j].plot(rpy_array[:,j], label="rpy")
+        for t in done_list:
+            axs[3+j].axvline(t, color="red", linestyle="--", label='reset')
     res_dyn_numpy, a_numpy, force_array = np.array(res_dyn_list), np.array(a_list), np.array(force_list)
     res_dyn_fit_numpy = np.array(res_dyn_fit_list)
     disturb_array, decay_array, decay_param_array = np.array(disturb_list), np.array(decay_list), np.array(decay_param_list)
-    for i in range(env.dim):
-        axs[env.dim+i].set_title(f"force measurement dim={i}")
-        axs[env.dim+i].plot(res_dyn_numpy[:,i], label="res_dyn")
-        axs[env.dim+i].plot(res_dyn_fit_numpy[:,i], label="res_dyn_fit")
-        if i < 2:
-            axs[env.dim+i].plot(a_numpy[:,0], label="action", linestyle='--', alpha=0.5)
-        else:
-            axs[env.dim+i].plot(a_numpy[:,1], label="action", linestyle='--', alpha=0.5)
-        axs[env.dim+i].plot(force_array[:,i], label="force", alpha=0.5)
-        axs[env.dim+i].plot(disturb_array[:,i], label="disturb", alpha=0.2)
-        axs[env.dim+i].plot(decay_array[:,i], label="decay", alpha=0.3)
+    for i in range(6):
+        axs[6+i].set_title(f"force measurement dim={i}")
+        axs[6+i].plot(res_dyn_numpy[:,i], label="res_dyn")
+        axs[6+i].plot(res_dyn_fit_numpy[:,i], label="res_dyn_fit")
+        axs[6+i].plot(force_array[:,i], label="force", alpha=0.5)
+        axs[6+i].plot(disturb_array[:,i], label="disturb", alpha=0.2)
+        axs[6+i].plot(decay_array[:,i], label="decay", alpha=0.3)
     mass_array = np.array(mass_list)
     res_dyn_param_numpy = np.array(res_dyn_param_list)
-    axs[env.dim*2].set_title(f"system parameters and reward")
-    for i in range(env.dim):
-        axs[env.dim*2].plot(mass_array[:,i], label=f"mass-{i}*10", alpha=0.5)
+    axs[12].set_title(f"system parameters and reward")
+    for i in range(6):
+        axs[12].plot(mass_array[:,i], label=f"mass-{i}*10", alpha=0.5)
     for i in range(env.res_dyn_param_dim):
-        axs[env.dim*2].plot(res_dyn_param_numpy[:,i], label=f"res_dyn_param-{i}", alpha=0.5)
-    axs[env.dim*2].plot(delay_list, label="delay*0.2", alpha=0.5)
-    axs[env.dim*2].plot(r_list, 'y', label="reward")
+        axs[12].plot(res_dyn_param_numpy[:,i], label=f"res_dyn_param-{i}", alpha=0.5)
+    axs[12].plot(delay_list, label="delay*0.2", alpha=0.5)
+    axs[12].plot(r_list, 'y', label="reward")
     # add mean reward to axs 2 as text
-    axs[env.dim*2].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
+    axs[12].text(0.5, 0.5, f"mean reward: {np.mean(r_list):.3f}")
     # plot e_diff_list respect to different parameters
     e_diff_array = np.array(e_diff_list)
-    # if e_diff_array.shape[-1] == env.expert_dim:
-    #     axs[env.dim*2+1].set_title(f"mass_diff respect to extra parameters")
-    #     for i in range(3):
-    #         axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"mass-{i}")
-    #     axs[env.dim*2+2].set_title(f"disturb_diff respect to extra parameters")
-    #     for i in range(3):
-    #         axs[env.dim*2+2].plot(e_diff_array[:,i+3], label=f"disturb-{i}")
-    #     axs[env.dim*2+3].set_title(f"decay_diff respect to extra parameters")
-    #     for i in range(3):
-    #         axs[env.dim*2+3].plot(e_diff_array[:,i+6], label=f"decay-{i}")
-    #     if e_diff_array.shape[-1] > 9:
-    #         axs[env.dim*2+4].set_title(f"w_diff respect to extra parameters")
-    #         for i in range(e_diff_array.shape[-1]-9):
-    #             axs[env.dim*2+4].plot(e_diff_array[:,i+9], label=f"w-{i}")
-    # else:
     for i in range(e_diff_array.shape[-1]):
-        axs[env.dim*2+1].plot(e_diff_array[:,i], label=f"e_diff-{i}")
+        axs[13].plot(e_diff_array[:,i], label=f"e_diff-{i}")
     # plot jacobian respect to different parameters
     if if_policy_grad:
         js_array = np.array(js)
-        axs[env.dim*2+5].set_title(f"jacobian respect to extra parameters")
+        axs[14].set_title(f"jacobian respect to extra parameters")
         for j in range(env.expert_dim):
-            axs[env.dim*2+5].plot(js_array[j], label=f"jacobian-{j}")
+            axs[14].plot(js_array[j], label=f"jacobian-{j}")
+    # plot action
+    axs[15].set_title(f"action")
+    for i in range(env.action_dim):
+        axs[15].plot(a_numpy[:,i], label=f"action-{i}")
     for i in range(plot_num):
         axs[i].legend()
     # save the plot as image
@@ -622,35 +620,45 @@ def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path =
         save_path = f"{package_path}/../results/test"
     plt.savefig(f'{save_path}_plot.png')
 
-    # plot the movement of the drone over different timesteps
-    fig, axs = plt.subplots(n_ep, 1, figsize=(5, 5*n_ep))
+    # plot 3D the movement of the drone over different timesteps
+    fig = plt.figure(figsize=(10, 3*n_ep))
     for i in range(n_ep):
-        axs[i].set_title(f"drone movement experiment {i+1} of {n_ep}")
-        axs[i].set_xlabel("x")
-        axs[i].set_ylabel("y")
-        axs[i].set_xlim(-1, 1)
-        axs[i].set_ylim(-1, 1)
+        # 3d projection
+        ax = fig.add_subplot(n_ep, 1, i+1, projection='3d')
+        ax.set_title(f"drone movement experiment {i+1} of {n_ep}")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_zlabel("z")
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.set_zlim(0, 2)
         # get drone position and direction
-        pos_info = x_numpy[i*env.max_steps:(i+1)*env.max_steps-1]
-        x, y, theta = pos_info[:,0], pos_info[:,1], pos_info[:,2]
+        pos_info = x_array[i*env.max_steps:(i+1)*env.max_steps-1]
+        x, y, z, quat = pos_info[:,0], pos_info[:,1], pos_info[:,2], pos_info[:,3:]
         # draw arrow for the drone
         for t in range(0, len(x), 5):
             # set color for each arrow according to t
-            axs[i].arrow(x[t], y[t], np.sin(theta[t])*0.1, np.cos(theta[t])*0.1, head_width=0.05, head_length=0.1, fc='k', ec='k', alpha=t/len(x))
-            # plot reference trajectory as dot
-            axs[i].scatter(traj_x_array[i*env.max_steps+t,0], traj_x_array[i*env.max_steps+t,1], alpha=t/len(x), color='red', marker='*', s=10)
+            color = (t/len(x), 0, 1-t/len(x))
+            # get the direction of the arrow
+            direction = np.array([2*(quat[t,1]*quat[t,3]-quat[t,0]*quat[t,2]), 2*(quat[t,0]*quat[t,1]+quat[t,2]*quat[t,3]), 1-2*(quat[t,1]**2+quat[t,2]**2)])
+            # draw the arrow
+            ax.quiver(x[t], y[t], z[t], direction[0], direction[1], direction[2], color=color, length=0.1, normalize=True)
+            # plot reference trajectory traj_x_array as dot
+            ax.scatter(traj_x_array[i*env.max_steps+t,0], traj_x_array[i*env.max_steps+t,1], traj_x_array[i*env.max_steps+t,2], color=color, marker='.')
         # add related parameters as text
         # mass
-        axs[i].text(0.3, 0.5, f"mass*10: {mass_array[i*env.max_steps,0]:.3f}, {mass_array[i*env.max_steps,1]:.3f}, {mass_array[i*env.max_steps,2]:.3f}")
+        ax.text(0.3, 0.5, -1.0, f"mass*10: {mass_array[i*env.max_steps,0]:.3f}, {mass_array[i*env.max_steps,1]:.3f}, {mass_array[i*env.max_steps,2]:.3f}")
+        # rotation mass
+        ax.text(0.3, 0.6, -1.0, f"rotation mass: {mass_array[i*env.max_steps,3]:.3f}, {mass_array[i*env.max_steps,4]:.3f}, {mass_array[i*env.max_steps,5]:.3f}")
         # decay
-        axs[i].text(0.3, 0.4, f"decay: {decay_param_array[i*env.max_steps,0]:.3f}, {decay_param_array[i*env.max_steps,1]:.3f}, {decay_param_array[i*env.max_steps,2]:.3f}")
+        ax.text(0.3, 0.7, -1.0, f"decay: {decay_param_array[i*env.max_steps,0]:.3f}, {decay_param_array[i*env.max_steps,1]:.3f}, {decay_param_array[i*env.max_steps,2]:.3f}, {decay_param_array[i*env.max_steps,3]:.3f}, {decay_param_array[i*env.max_steps,4]:.3f}, {decay_param_array[i*env.max_steps,5]:.3f}")
         # disturb
-        axs[i].text(0.3, 0.3, f"disturb: {disturb_array[i*env.max_steps,0]:.3f}, {disturb_array[i*env.max_steps,1]:.3f}, {disturb_array[i*env.max_steps,2]:.3f}")
+        ax.text(0.3, 0.8, -1.0, f"disturb: {disturb_array[i*env.max_steps,0]:.3f}, {disturb_array[i*env.max_steps,1]:.3f}, {disturb_array[i*env.max_steps,2]:.3f}, {disturb_array[i*env.max_steps,3]:.3f}, {disturb_array[i*env.max_steps,4]:.3f}, {disturb_array[i*env.max_steps,5]:.3f}")
     plt.savefig(f'{save_path}_vis.png')
     
     env.close()
 
-    np.save(f'{save_path}_x.npy', x_numpy)
+    np.save(f'{save_path}_x.npy', x_array)
     np.save(f'{save_path}_res_dyn.npy', res_dyn_numpy)
     np.save(f'{save_path}_disturb.npy', disturb_array)
 
@@ -703,12 +711,11 @@ def vis_data(path = None):
 
 
 if __name__ == "__main__":
-    env = QuadEnv(env_num=1, gpu_id = -1, res_dyn_param_dim=0, seed=1)
-    env.reset()
-    env.step()
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA3_OOD_T120.pt', map_location='cpu')
-    # policy, adaptor, compressor = loaded_agent['actor'], loaded_agent['adaptor'], loaded_agent['compressor']
-    # test_drone(env, policy, adaptor, compressor)
+    env_num = 1
+    env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
+    policy = lambda x,y: torch.rand([env_num, env.action_dim])*2.0-1.0
+    adaptor = lambda x: torch.zeros([env_num, env.expert_dim])
+    test_drone(env, policy, adaptor)
     # policy = get_drone_policy(env, policy_name = "ppo")
     # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
     # plot_drone()
