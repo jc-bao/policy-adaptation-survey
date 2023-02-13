@@ -689,20 +689,21 @@ def vis_data(path = None):
     # update quadrotor position with x
     while True:
         for state, res_force, dist in zip(x, res_dyn, disturb):
-            pos = np.array([state[0], 0, state[1]])
+            pos = state[:3]
+            quat = state[3:]
             vis["Quadrotor"].set_transform(
                 tf.translation_matrix(pos).dot(
-                    tf.euler_matrix(0, state[2], 0)))
+                    tf.quaternion_matrix(quat)))
             vis["ResForce"].set_object(g.LineSegments(
                 g.PointsGeometry(position=np.array([
-                    pos, pos+res_force]).astype(np.float32).T,
+                    pos, pos+res_force[:3]]).astype(np.float32).T,
                     color=np.array([
                     [1, 1, 0], [1, 1, 0]]).astype(np.float32).T
                 ),
                 g.LineBasicMaterial(vertexColors=True)))
             vis['Disturb'].set_object(g.LineSegments(
                 g.PointsGeometry(position=np.array([
-                    pos, pos+dist]).astype(np.float32).T,
+                    pos, pos+dist[:3]]).astype(np.float32).T,
                     color=np.array([
                     [0, 1, 1], [0, 1, 1]]).astype(np.float32).T
                 ),
@@ -716,7 +717,5 @@ if __name__ == "__main__":
     policy = lambda x,y: torch.rand([env_num, env.action_dim])*2.0-1.0
     adaptor = lambda x: torch.zeros([env_num, env.expert_dim])
     test_drone(env, policy, adaptor)
-    # policy = get_drone_policy(env, policy_name = "ppo")
-    # eval_drone(policy.to("cuda:0"), {'seed': 0}, gpu_id = 0)
-    # plot_drone()
-    # vis_data(path = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA')
+
+    vis_data(path='/home/pcy/rl/policy-adaptation-survey/results/test')
