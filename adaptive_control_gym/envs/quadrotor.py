@@ -77,6 +77,7 @@ class QuadEnv(gym.Env):
         self.traj_T = 360
         self.max_steps = 120 if self.traj_scale == 0 else 360
         self.init_x_mean, self.init_x_std = 0.0, 0.8 # self.traj_A, 0.0
+        self.init_rpy_mean, self.init_rpy_std = 0.0, np.pi
         self.init_v_mean, self.init_v_std = 0.0, 1.0 # 0.0, 0.0
         self.x_min, self.x_max = -2.0, 2.0
 
@@ -162,7 +163,7 @@ class QuadEnv(gym.Env):
         x = (torch.rand((size, 3), device=self.device)*2-1)* self.init_x_std + self.init_x_mean
         x = torch.clip(x, self.x_min, self.x_max)
         # uniformly generate xyz euler angles uniformly
-        rpy = (torch.rand((size, 3), device=self.device)*2-1) * torch.pi
+        rpy = (torch.rand((size, 3), device=self.device)*2-1) * self.init_rpy_std + self.init_rpy_mean
         # convert to quaternion
         quat = rpy2quat(rpy)
         # concat quat to x
@@ -176,7 +177,7 @@ class QuadEnv(gym.Env):
         if not (self.delay == 0).all():
             self.action_history.append(action)
             self.action_history.pop(0)
-            action_delay = torch.zeros((self.env_num, 3), device=self.device)
+            action_delay = torch.zeros((self.env_num, self.action_dim), device=self.device)
             for i in range(self.delay_max):
                 env_mask = (self.delay == i)[:,0]
                 action_delay[env_mask] = self.action_history[-i-1][env_mask]
@@ -184,10 +185,8 @@ class QuadEnv(gym.Env):
             action_delay = action
 
         # get information from state
-        pos = self.x[..., :3]
         quat = self.x[..., 3:7]
         rot_mat = quat2rotmat(quat)
-        vel = self.v[..., :3]
         omega = self.v[..., 3:6]
         # quadrotor dynamics
         u = action_delay
@@ -209,10 +208,10 @@ class QuadEnv(gym.Env):
         u_delay_noise = torch.clip(u_delay_noise*self.force_scale, -self.max_force, self.max_force) 
 
         # calculate force
-        f_u_local = torch.zeros((self.env_num, 3), device=self.device)
-        f_u_local[..., 2] = u[..., 0]
+        f_u_local = u_delay_noise[..., 0:3]
+        f_u_local[..., 2] = u_delay_noise[..., 0]
         f_u = torch.matmul(rot_mat, f_u_local.unsqueeze(-1)).squeeze(-1)
-        tau_u = u[..., 1:4]
+        tau_u = u_delay_noise[..., 1:4]
         u_force = torch.cat([f_u, tau_u], dim=1)
         self.action_force = u_force
         # record parameters
@@ -710,11 +709,85 @@ def vis_data(path = None):
                 g.LineBasicMaterial(vertexColors=True)))
             time.sleep(1/30)
 
+class PID():	
+	def __init__(self, env:QuadEnv):
+		self.name = 'PID'
+		self.mass = env.mass[..., :3]
+		self.J = env.mass[..., 3:6]
+
+		# Note: we assume here that our control is forces
+		arm_length = 0.046 # m
+		arm = 0.707106781 * arm_length
+		self.arm = arm
+		t2t = 0.006 # thrust-to-torque ratio
+		self.t2t = t2t
+		self.g = 9.81 # not signed
+		self.a_min = np.array([0, 0, 0, 0])
+		self.a_max = np.array([12, 12, 12, 12]) / 1000 * 9.81 # g->N
+
+		# PID parameters
+		self.K_i = 0.5 # eigs[0] * eigs[1] * eigs[2]
+		self.K_p = 3.0 # eigs[0] * eigs[1] + eigs[1] * eigs[2] + eigs[2] * eigs[0]
+		self.K_d = 6.0 # sum(eigs)
+		self.Att_p = 400
+		self.Att_d = 150
+		self.time = 0.0 
+		self.int_p_e = np.zeros(3)
+
+	def policy(self, state, time=None):
+		p_e = -state[:3]
+		v_e = -state[3:6]
+		int_p_e = self.integrate_error(p_e, time)
+		F_d = (self.K_i * int_p_e + self.K_p * p_e + self.K_d * v_e) * self.mass # TODO: add integral term
+		F_d[2] += self.g * self.mass
+		T_d = np.linalg.norm(F_d)
+		yaw_d = 0
+		roll_d = np.arcsin((F_d[0]*np.sin(yaw_d)-F_d[1]*np.cos(yaw_d)) / T_d)
+		pitch_d = np.arctan((F_d[0]*np.cos(yaw_d)+F_d[1]*np.sin(yaw_d)) / F_d[2])
+		euler_d = np.array([roll_d, pitch_d, yaw_d])
+		euler = rowan.to_euler(rowan.normalize(state[6:10]), 'xyz')
+		att_e = -(euler - euler_d)
+		att_v_e = -state[10:]
+		torque = self.Att_p * att_e + self.Att_d * att_v_e
+		torque[0] *= self.J[0]
+		torque[1] *= self.J[1]
+		torque[2] *= self.J[2]
+		Jomega = np.array([self.J[0]*state[10], self.J[1]*state[11], self.J[2]*state[12]])
+		torque -= np.cross(Jomega, state[10:])
+
+		yawpart = -0.25 * torque[2] / self.t2t
+		rollpart = 0.25 / self.arm * torque[0]
+		pitchpart = 0.25 / self.arm * torque[1]
+		thrustpart = 0.25 * T_d
+
+		motorForce = np.array([
+			thrustpart - rollpart - pitchpart + yawpart,
+			thrustpart - rollpart + pitchpart - yawpart,
+			thrustpart + rollpart + pitchpart + yawpart,
+			thrustpart + rollpart - pitchpart - yawpart
+		])
+		motorForce = np.clip(motorForce, self.a_min, self.a_max)
+
+		return motorForce
+
+	def integrate_error(self, p_e, time):
+		if not self.time:
+			dt = 0.0
+			self.time = time 
+			return np.zeros(3)
+		else:
+			dt = time - self.time
+			self.time = time 
+			self.int_p_e += dt * p_e
+			return self.int_p_e
+
 
 if __name__ == "__main__":
     env_num = 1
     env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
-    policy = lambda x,y: torch.rand([env_num, env.action_dim])*2.0-1.0
+    env.init_x_mean = env.init_x_std = env.init_v_mean = env.init_v_std = env.init_rpy_mean = env.init_rpy_std = 0.0
+    env.res_dyn_scale = 0.0
+    policy = lambda x,y: torch.tensor([[9.8*0.018, 0, 0, 0]])
     adaptor = lambda x: torch.zeros([env_num, env.expert_dim])
     test_drone(env, policy, adaptor)
 
