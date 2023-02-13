@@ -13,7 +13,7 @@ from tqdm import trange
 
 import adaptive_control_gym
 from adaptive_control_gym import controllers as ctrl
-from adaptive_control_gym.utils import sample_inv_norm, rpy2quat, quat2rotmat, quat2rpy
+from adaptive_control_gym.utils import sample_inv_norm, rpy2quat, quat2rotmat, quat2rpy, quat_mul
 
 install()
 
@@ -208,7 +208,7 @@ class QuadEnv(gym.Env):
         u_delay_noise = torch.clip(u_delay_noise*self.force_scale, -self.max_force, self.max_force) 
 
         # calculate force
-        f_u_local = u_delay_noise[..., 0:3]
+        f_u_local = torch.zeros((self.env_num, 3), device=self.device)
         f_u_local[..., 2] = u_delay_noise[..., 0]
         f_u = torch.matmul(rot_mat, f_u_local.unsqueeze(-1)).squeeze(-1)
         tau_u = u_delay_noise[..., 1:4]
@@ -234,9 +234,9 @@ class QuadEnv(gym.Env):
         
         # system dynamics
         self.x[..., :3] += self.v[..., :3] * self.tau
-        rpy = quat2rpy(quat)
-        new_rpy = rpy + omega * self.tau
-        new_quat = rpy2quat(new_rpy)
+        d_rpy = omega * self.tau
+        d_quat = rpy2quat(d_rpy)
+        new_quat = quat_mul(d_quat, quat)
         self.x[..., 3:7] = new_quat
 
         self.acc = self.force / self.mass
@@ -786,6 +786,7 @@ if __name__ == "__main__":
     env_num = 1
     env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
     env.init_x_mean = env.init_x_std = env.init_v_mean = env.init_v_std = env.init_rpy_mean = env.init_rpy_std = 0.0
+    env.disturb_max, env.disturb_min = 1e-5, 0.0
     env.res_dyn_scale = 0.0
     policy = lambda x,y: torch.tensor([[9.8*0.018, 0, 0, 0]])
     adaptor = lambda x: torch.zeros([env_num, env.expert_dim])
