@@ -56,9 +56,8 @@ class QuadEnv(gym.Env):
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
         self.force_scale_mean, self.force_scale_std = 1.0, 0.25
 
-        self.res_dyn_origin = ResDynMLP(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, res_dyn_param_dim = res_dyn_param_dim).to(self.device)
-        # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_128_0.033.pt').to(self.device)
-        self.res_dyn_fit = ResDynMLP(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, dropout_rate=0.1, res_dyn_param_dim=res_dyn_param_dim).to(self.device)
+        self.res_dyn_origin = ResDynNeuralFly(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, res_dyn_param_dim = res_dyn_param_dim).to(self.device)
+        self.res_dyn_fit = ResDynNeuralFly(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, dropout_rate=0.1, res_dyn_param_dim=res_dyn_param_dim).to(self.device)
         self.res_dyn_fit.load_state_dict(self.res_dyn_origin.state_dict())
         # self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
         self.res_dyn = self.res_dyn_origin
@@ -433,6 +432,50 @@ class ResDynPolynomial:
         y = self.vector + torch.einsum('bi,oij,bj->bo', x, self.matrix, x)
         return y/self.input_dim
 
+class Phi_Net(nn.Module):
+    def __init__(self):
+        super(Phi_Net, self).__init__()
+
+        self.fc1 = nn.Linear(11, 50)
+        self.fc2 = nn.Linear(50, 60)
+        self.fc3 = nn.Linear(60, 50)
+        self.fc4 = nn.Linear(50, 2)
+        
+    def forward(self, x:torch.Tensor):
+        x = nn.functional.relu(self.fc1(x))
+        x = nn.functional.relu(self.fc2(x))
+        x = nn.functional.relu(self.fc3(x))
+        x = self.fc4(x)
+        if len(x.shape) == 1:
+            # single input
+            return torch.cat([x, torch.ones(1, device=x.device)])
+        else:
+            # batch input for training
+            return torch.cat([x, torch.ones([x.shape[0], 1], device=x.device)], dim=-1)
+
+class ResDynNeuralFly(nn.Module):
+    def __init__(self, input_dim, output_dim, dropout_rate = 0.0, res_dyn_param_dim = 0):
+        super().__init__()
+        self.phi_net = Phi_Net()
+        model = torch.load('/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/neural-fly_dim-a-3_v-q-pwm-epoch-950.pth')
+        self.phi_net.load_state_dict(model['phi_net_state_dict'])
+        self.phi_net.eval()
+        self.A = nn.Parameter(torch.tensor([
+            [0.2, 0.13, 0.16], 
+            [0.11, 0.2, 0.17], 
+            [0.12, 0.1, 0.3]
+        ]))
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        v = x[..., 7:10]
+        q = x[..., 3:7]
+        pwm = torch.zeros([*x.shape[:-1], 4], device=x.device)
+        x = self.phi_net(torch.cat([v, q, pwm], dim=-1))
+        x = x@self.A
+        x = torch.cat([x, torch.zeros([*x.shape[:-1], 3], device=x.device)], dim=-1)
+        ic(x)
+        return x
+
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim, dropout_rate = 0.0, res_dyn_param_dim: int = 1):
         super().__init__()
@@ -777,15 +820,15 @@ class PID():
 
 
 if __name__ == "__main__":
-    # env_num = 1
-    # env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
+    env_num = 1
+    env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
     # env.init_x_mean = env.init_x_std = env.init_v_mean = env.init_v_std = env.init_rpy_mean = env.init_rpy_std = 0.0
     # env.disturb_max, env.disturb_min = 1e-5, 0.0
     # env.res_dyn_scale = 0.0
     # policy = lambda x,y: torch.tensor([[9.8*0.018, 0, 0, 0]])
     # adaptor = lambda x: torch.zeros([env_num, env.expert_dim])
 
-    # agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D.pt', map_location='cpu')
-    # test_quad(env, agent['actor'], agent['adaptor'], agent['compressor'])
+    agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D.pt', map_location='cpu')
+    test_quad(env, agent['actor'], agent['adaptor'], agent['compressor'])
 
-    vis_data(path='/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D')
+    # vis_data(path='/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D')
