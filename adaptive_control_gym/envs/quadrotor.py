@@ -473,7 +473,6 @@ class ResDynNeuralFly(nn.Module):
         x = self.phi_net(torch.cat([v, q, pwm], dim=-1))
         x = x@self.A
         x = torch.cat([x, torch.zeros([*x.shape[:-1], 3], device=x.device)], dim=-1)
-        ic(x)
         return x
 
 class ResDynMLP(nn.Module):
