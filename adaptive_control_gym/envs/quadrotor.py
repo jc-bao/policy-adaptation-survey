@@ -191,6 +191,7 @@ class QuadEnv(gym.Env):
         u = action_delay
         # make sure u[0] is always positive
         u[..., 0] = (u[..., 0] + 1.0) / 2.0
+        u[..., 3] *= 0.1 # weaken the rotation along z-axis
 
         self.u_his.append(u)
         self.u_his.pop(0)
@@ -212,7 +213,8 @@ class QuadEnv(gym.Env):
         f_u_local = torch.zeros((self.env_num, 3), device=self.device)
         f_u_local[..., 2] = u_delay_noise[..., 0]
         f_u = torch.matmul(rot_mat, f_u_local.unsqueeze(-1)).squeeze(-1)
-        tau_u = u_delay_noise[..., 1:4]
+        tau_u_local = u_delay_noise[..., 1:4]
+        tau_u = torch.matmul(rot_mat, tau_u_local.unsqueeze(-1)).squeeze(-1)
         u_force = torch.cat([f_u, tau_u], dim=1)
         self.action_force = u_force
         # record parameters
@@ -456,7 +458,7 @@ class ResDynMLP(nn.Module):
         if res_dyn_param_dim == 0:
             # for f(v, u, w_0)
             self.offset = nn.Parameter(torch.tensor([-0.25, -0.25, 0.0, 0.0, 0.0, 0.0]), requires_grad=False)
-            self.scale = nn.Parameter(torch.tensor([2.0, 2.0, 2.0, 2.0, 2.0, 2.0]), requires_grad=False)
+            self.scale = nn.Parameter(torch.tensor([2.0, 2.0, 2.0, 0.2, 0.2, 0.1]), requires_grad=False)
         else:
             self.offset = nn.Parameter(torch.tensor([0.0, 0.0, 0.0]), requires_grad=False)
             self.scale = nn.Parameter(torch.tensor([1.0, 1.0, 1.0]), requires_grad=False)
