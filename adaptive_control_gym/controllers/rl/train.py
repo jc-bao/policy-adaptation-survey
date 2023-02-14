@@ -8,7 +8,7 @@ import tyro
 
 install()
 
-from adaptive_control_gym.envs import HoverEnv, test_hover, DodgerEnv, test_dodger, DroneEnv, test_drone
+from adaptive_control_gym.envs import QuadEnv, test_quad, QuadEnv, test_quad
 from adaptive_control_gym.controllers import PPO
 
 @dataclass
@@ -20,20 +20,20 @@ class Args:
     act_expert_mode:int=1
     cri_expert_mode:int=1
     exp_name:str= ''
-    compressor_dim: int = 3
+    compressor_dim: int = 8
     search_dim: int = 0
     res_dyn_param_dim: int=0
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 2e7
-    adapt_steps = 1e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
+    total_steps = 1.5e7
+    adapt_steps = 0.5e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
     
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
-    env = DroneEnv(
+    env = QuadEnv(
         env_num=env_num, gpu_id=args.gpu_id, seed = args.seed, 
         res_dyn_param_dim=args.res_dyn_param_dim
     ) 
@@ -165,7 +165,7 @@ def train(args:Args)->None:
             'adapt_err_x_initial': adapt_err_x_initial,
             'adapt_err_x_end': adapt_err_x_end,
         }, path)
-    test_drone(DroneEnv(env_num=1, gpu_id =-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim), agent.act.cpu(), agent.adaptor.cpu(), compressor = agent.compressor.cpu(), save_path=plt_path)
+    test_quad(QuadEnv(env_num=1, gpu_id =-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim), agent.act.cpu(), agent.adaptor.cpu(), compressor = agent.compressor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(path, base_path="../../../results/rl", policy="now")
@@ -177,7 +177,7 @@ def train(args:Args)->None:
     # print the result
     print(f'{expert_err_x_final:.4f} | {adapt_err_x_initial:.4f} | {adapt_err_x_end:.4f}')
 
-def get_optimal_w(env:DroneEnv, agent:PPO, search_dim:int = 0):
+def get_optimal_w(env:QuadEnv, agent:PPO, search_dim:int = 0):
     # save initial environment parameters
     env_params = env.get_env_params()
     old_last_state, old_last_info = agent.last_state, agent.last_info
@@ -191,7 +191,7 @@ def get_optimal_w(env:DroneEnv, agent:PPO, search_dim:int = 0):
     w_stacked = torch.stack(torch.meshgrid([w_single_dim]*search_dim), dim=-1).reshape(-1, search_dim)
     w_num = w_per_dim**search_dim
     task_num = env.env_num
-    search_env = DroneEnv(env_num=task_num*w_num, gpu_id = env.gpu_id, seed=env.seed, res_dyn_param_dim=env.res_dyn_param_dim)
+    search_env = QuadEnv(env_num=task_num*w_num, gpu_id = env.gpu_id, seed=env.seed, res_dyn_param_dim=env.res_dyn_param_dim)
 
     # set parameters to env params
     search_env_params = search_env.get_env_params()
@@ -215,7 +215,7 @@ def get_optimal_w(env:DroneEnv, agent:PPO, search_dim:int = 0):
     return w, env_params
 
 
-def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=False, w=None):
+def eval_env(env:QuadEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=False, w=None):
 
     # env.mass_max = env.mass_mean + env.mass_std*1.0
     # env.mass_min = env.mass_mean - env.mass_std*1.0
@@ -269,7 +269,7 @@ def eval_env(env:DroneEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=
 if __name__=='__main__':
     train(tyro.cli(Args))
     # env_num = 256
-    # env = DroneEnv(env_num=env_num, gpu_id =0, seed=0, res_dyn_param_dim=0)
+    # env = QuadEnv(env_num=env_num, gpu_id =0, seed=0, res_dyn_param_dim=0)
     # agent = PPO(
     #     state_dim=env.state_dim, expert_dim=env.expert_dim, 
     #     adapt_dim=env.adapt_dim, action_dim=env.action_dim, 

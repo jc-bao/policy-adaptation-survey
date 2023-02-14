@@ -32,7 +32,7 @@ class QuadEnv(gym.Env):
         self.mode = 0 # evaluation mode
         self.disturb_period = 120 #30
         self.model_delay_alpha = 0.9
-        self.res_dyn_scale = 0.0
+        self.res_dyn_scale = 1.0
         self.res_dyn_param_dim = res_dyn_param_dim 
         self.curri_param = 0.0
         self.adapt_horizon = 3
@@ -56,9 +56,9 @@ class QuadEnv(gym.Env):
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
         self.force_scale_mean, self.force_scale_std = 1.0, 0.25
 
-        self.res_dyn_origin = ResDynMLP(input_dim=3+2+self.res_dyn_param_dim, output_dim=3, res_dyn_param_dim = res_dyn_param_dim).to(self.device)
+        self.res_dyn_origin = ResDynMLP(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, res_dyn_param_dim = res_dyn_param_dim).to(self.device)
         # self.res_dyn_fit = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/res_dyn_fit_128_0.033.pt').to(self.device)
-        self.res_dyn_fit = ResDynMLP(input_dim=3+2+self.res_dyn_param_dim, output_dim=3, dropout_rate=0.1, res_dyn_param_dim=res_dyn_param_dim).to(self.device)
+        self.res_dyn_fit = ResDynMLP(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, dropout_rate=0.1, res_dyn_param_dim=res_dyn_param_dim).to(self.device)
         self.res_dyn_fit.load_state_dict(self.res_dyn_origin.state_dict())
         # self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
         self.res_dyn = self.res_dyn_origin
@@ -83,7 +83,7 @@ class QuadEnv(gym.Env):
 
         # state
         self.env_num = env_num
-        self.state_dim = 4*3+2*3*self.obs_traj_len
+        self.state_dim = 7+6+3+3+2*3*self.obs_traj_len
         self.expert_dim = self.res_dyn_param_dim
         if self.mass_min != self.mass_max:
             self.expert_dim += 6
@@ -94,9 +94,9 @@ class QuadEnv(gym.Env):
         if self.delay_min != self.delay_max:
             self.expert_dim += 1
         if self.force_scale_min != self.force_scale_max:
-            self.expert_dim += 2
+            self.expert_dim += 4
         self.action_dim = 4 # force and angle rate
-        self.adapt_dim = (3+3+3+3+3)*self.adapt_horizon
+        self.adapt_dim = (6+6+6+6+6)*self.adapt_horizon
         # [info['u_force_his'], info['d_u_force_his'], info['v_his'], info['acc_his'], info['d_acc_his']]
 
         self.reset()
@@ -153,7 +153,7 @@ class QuadEnv(gym.Env):
         force_scale = sample_inv_norm(std, [size, 1+3], device=self.device) * (self.force_scale_max-self.force_scale_min) * 0.5 + (self.force_scale_min+self.force_scale_max)*0.5
 
         mass = torch.clip(mass, self.mass_min, self.mass_max)
-        mass[:, 0:3] = mass[:, 0]
+        mass[..., 0:3] = mass[..., :1]
         mass[:, 3:6] *= self.rotate_mass_scale
         delay = torch.clip(delay, self.delay_min, self.delay_max).type(torch.int)
         decay = torch.clip(decay, self.decay_min, self.decay_max)
@@ -172,7 +172,6 @@ class QuadEnv(gym.Env):
         return x, v, mass, delay, decay, res_dyn_param, force_scale
     
     def step(self, action):
-        
         # delay action
         if not (self.delay == 0).all():
             self.action_history.append(action)
@@ -190,6 +189,8 @@ class QuadEnv(gym.Env):
         omega = self.v[..., 3:6]
         # quadrotor dynamics
         u = action_delay
+        # make sure u[0] is always positive
+        u[..., 0] = (u[..., 0] + 1.0) / 2.0
 
         self.u_his.append(u)
         self.u_his.pop(0)
@@ -401,7 +402,7 @@ class QuadEnv(gym.Env):
     def _set_disturb(self):
         std = 0.4 - 0.2 * self.curri_param
         self.disturb = sample_inv_norm(std, [self.env_num, 3+3], device=self.device) * (self.disturb_max-self.disturb_min)*0.5 + (self.disturb_max+self.disturb_min)*0.5
-        self.disturb *= (self.mass*self.gravity[0,1])
+        self.disturb *= (self.mass*self.gravity[0,2])
     
     def get_env_params(self):
         return (self.mass, self.delay, self.decay, self.res_dyn_param, self.force_scale)
@@ -454,26 +455,12 @@ class ResDynMLP(nn.Module):
             p.requires_grad = False
         if res_dyn_param_dim == 0:
             # for f(v, u, w_0)
-            self.offset = nn.Parameter(torch.tensor([0.0, 0.0, 0.0]), requires_grad=False)
-            self.scale = nn.Parameter(torch.tensor([0.5, 0.5, 0.5]), requires_grad=False)
-        elif res_dyn_param_dim == 1:
-            # for f(v, u, w_1)
-            self.offset = nn.Parameter(torch.tensor([0.1, 0.25, -0.1]), requires_grad=False)
-            self.scale = nn.Parameter(torch.tensor([1.0, 2.0, 1.0]), requires_grad=False)
-        elif res_dyn_param_dim == 2:
-            # for f(v, u, w_2)
-            self.offset = nn.Parameter(torch.tensor([0.0, 0.0, -0.20]), requires_grad=False)
-            self.scale = nn.Parameter(torch.tensor([1.0, 1.0, 2.0]), requires_grad=False)
-        elif res_dyn_param_dim == 3:
-            # for f(v, u, w_3)
-            self.offset = nn.Parameter(torch.tensor([0.0, 0.0, 0.2]), requires_grad=False)
-            self.scale = nn.Parameter(torch.tensor([2.0, 2.0, 2.0]), requires_grad=False)
-        elif res_dyn_param_dim == 4:
-            # for f(v, u, w_4)
+            self.offset = nn.Parameter(torch.tensor([-0.25, -0.25, 0.0, 0.0, 0.0, 0.0]), requires_grad=False)
+            self.scale = nn.Parameter(torch.tensor([2.0, 2.0, 2.0, 2.0, 2.0, 2.0]), requires_grad=False)
+        else:
             self.offset = nn.Parameter(torch.tensor([0.0, 0.0, 0.0]), requires_grad=False)
             self.scale = nn.Parameter(torch.tensor([1.0, 1.0, 1.0]), requires_grad=False)
-        else:
-            raise NotImplementedError
+
 
         # for f(v, u, w_0)
         # self.offset = nn.Parameter(torch.tensor([-0.1, -0.3, 0.05]), requires_grad=False)
@@ -506,11 +493,11 @@ def get_drone_policy(env, policy_name = "ppo"):
     return policy
 
 
-def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path = None):
+def test_quad(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path = None):
     state, info = env.reset()
     obs_his = info['obs_his']
     x_list, v_list, a_list, force_list, disturb_list, decay_list, decay_param_list, res_dyn_list, res_dyn_fit_list, mass_list, delay_list, res_dyn_param_list, traj_x_list, traj_v_list, r_list, done_list = [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
-    e_diff_list = []
+    e_diff_list, action_force_list = [], []
     js = []
     # check if the policy is torch neural network
     if_policy_grad =  False
@@ -545,6 +532,7 @@ def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path =
         res_dyn_fit_list.append(env.res_dyn_fit_force[0].numpy())
         mass_list.append(env.mass[0,:].numpy()*10)
         delay_list.append(env.delay[0,0].item()*0.2)
+        action_force_list.append(env.action_force[0].numpy())
         if if_policy_grad:
             js.append(jacobian.detach().numpy())
         res_dyn_param_list.append(env.res_dyn_param[0,:].numpy())
@@ -579,6 +567,7 @@ def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path =
     res_dyn_numpy, a_numpy, force_array = np.array(res_dyn_list), np.array(a_list), np.array(force_list)
     res_dyn_fit_numpy = np.array(res_dyn_fit_list)
     disturb_array, decay_array, decay_param_array = np.array(disturb_list), np.array(decay_list), np.array(decay_param_list)
+    action_force_array = np.array(action_force_list)
     for i in range(6):
         axs[6+i].set_title(f"force measurement dim={i}")
         axs[6+i].plot(res_dyn_numpy[:,i], label="res_dyn")
@@ -586,6 +575,7 @@ def test_drone(env:QuadEnv, policy, adaptor, compressor=lambda x: x, save_path =
         axs[6+i].plot(force_array[:,i], label="force", alpha=0.5)
         axs[6+i].plot(disturb_array[:,i], label="disturb", alpha=0.2)
         axs[6+i].plot(decay_array[:,i], label="decay", alpha=0.3)
+        axs[6+i].plot(action_force_array[:,i], label="action_force", alpha=1.0)
     mass_array = np.array(mass_list)
     res_dyn_param_numpy = np.array(res_dyn_param_list)
     axs[12].set_title(f"system parameters and reward")
@@ -690,6 +680,8 @@ def vis_data(path = None):
         for state, res_force, dist in zip(x, res_dyn, disturb):
             pos = state[:3]
             quat = state[3:]
+            # quat from [x,y,z,w] to [w,x,y,z]
+            quat = np.array([quat[3], quat[0], quat[1], quat[2]])
             vis["Quadrotor"].set_transform(
                 tf.translation_matrix(pos).dot(
                     tf.quaternion_matrix(quat)))
@@ -783,13 +775,15 @@ class PID():
 
 
 if __name__ == "__main__":
-    env_num = 1
-    env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
-    env.init_x_mean = env.init_x_std = env.init_v_mean = env.init_v_std = env.init_rpy_mean = env.init_rpy_std = 0.0
-    env.disturb_max, env.disturb_min = 1e-5, 0.0
-    env.res_dyn_scale = 0.0
-    policy = lambda x,y: torch.tensor([[9.8*0.018, 0, 0, 0]])
-    adaptor = lambda x: torch.zeros([env_num, env.expert_dim])
-    test_drone(env, policy, adaptor)
+    # env_num = 1
+    # env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
+    # env.init_x_mean = env.init_x_std = env.init_v_mean = env.init_v_std = env.init_rpy_mean = env.init_rpy_std = 0.0
+    # env.disturb_max, env.disturb_min = 1e-5, 0.0
+    # env.res_dyn_scale = 0.0
+    # policy = lambda x,y: torch.tensor([[9.8*0.018, 0, 0, 0]])
+    # adaptor = lambda x: torch.zeros([env_num, env.expert_dim])
 
-    vis_data(path='/home/pcy/rl/policy-adaptation-survey/results/test')
+    # agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D.pt', map_location='cpu')
+    # test_quad(env, agent['actor'], agent['adaptor'], agent['compressor'])
+
+    vis_data(path='/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D')
