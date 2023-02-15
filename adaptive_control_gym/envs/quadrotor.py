@@ -10,6 +10,7 @@ from icecream import install
 from matplotlib import pyplot as plt
 from torch import nn
 from tqdm import trange
+from typing import List
 
 import adaptive_control_gym
 from adaptive_control_gym import controllers as ctrl
@@ -20,7 +21,7 @@ install()
 class QuadEnv(gym.Env):
     def __init__(self, 
         env_num: int = 1, gpu_id: int = 0, seed:int = 1, 
-        res_dyn_param_dim: int = 0
+        res_dyn_param_dim: int = 3
         ):
         torch.random.set_rng_state(torch.manual_seed(1024).get_state())
         torch.manual_seed(seed)
@@ -40,8 +41,8 @@ class QuadEnv(gym.Env):
         self.mass_min, self.mass_max = 0.018, 0.018 #0.006, 0.03 
         self.delay_min, self.delay_max = 0, 0
         self.decay_min, self.decay_max =  0.05, 0.05 #0.0, 0.1 #0.0, 0.0
-        self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
-        self.disturb_min, self.disturb_max = -0.8, 0.8 # 0.0, 0.0
+        self.res_dyn_param_min, self.res_dyn_param_max = -0.25, 0.25
+        self.disturb_min, self.disturb_max = 0.0, 0.0 # -0.8, 0.8
         self.force_scale_min, self.force_scale_max = 1.0, 1.0 # 0.75, 1.25
         self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
@@ -56,12 +57,12 @@ class QuadEnv(gym.Env):
         self.d_acc_mean, self.d_acc_std = 0, 2.0 / 0.03
         self.force_scale_mean, self.force_scale_std = 1.0, 0.25
 
-        self.res_dyn_origin = ResDynNeuralFly(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, res_dyn_param_dim = res_dyn_param_dim).to(self.device)
-        self.res_dyn_fit = ResDynNeuralFly(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, dropout_rate=0.1, res_dyn_param_dim=res_dyn_param_dim).to(self.device)
-        self.res_dyn_fit.load_state_dict(self.res_dyn_origin.state_dict())
+        self.res_dyn_origin = ResDynNeuralFly(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, res_dyn_param_dim = res_dyn_param_dim, path='/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/v-q.pth').to(self.device)
+        self.res_dyn_fit = ResDynNeuralFly(input_dim=6+4+self.res_dyn_param_dim, output_dim=6, dropout_rate=0.1, res_dyn_param_dim=res_dyn_param_dim, path='/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/v.pth').to(self.device)
+        # self.res_dyn_fit.load_state_dict(self.res_dyn_origin.state_dict())
         # self.res_dyn_fit = lambda x: torch.zeros((self.env_num, 3), device=self.device)
         self.res_dyn = self.res_dyn_origin
-        self.res_dyn_param_mean, self.res_dyn_param_std = 0, 1.0
+        self.res_dyn_param_mean, self.res_dyn_param_std = 0, 0.25
 
 
         self.tau = 1.0/30.0  # seconds between state updates
@@ -379,6 +380,8 @@ class QuadEnv(gym.Env):
         return info
 
     def _get_e(self):
+        if self.expert_dim == 0: 
+            return torch.zeros([self.env_num, 0], device=self.device)
         es = []
         if self.mass_min != self.mass_max:
             mass_normed = (self.mass-self.mass_mean)/self.mass_std
@@ -433,10 +436,10 @@ class ResDynPolynomial:
         return y/self.input_dim
 
 class Phi_Net(nn.Module):
-    def __init__(self):
+    def __init__(self, input_dim:int):
         super(Phi_Net, self).__init__()
 
-        self.fc1 = nn.Linear(11, 50)
+        self.fc1 = nn.Linear(input_dim, 50)
         self.fc2 = nn.Linear(50, 60)
         self.fc3 = nn.Linear(60, 50)
         self.fc4 = nn.Linear(50, 2)
@@ -454,26 +457,50 @@ class Phi_Net(nn.Module):
             return torch.cat([x, torch.ones([x.shape[0], 1], device=x.device)], dim=-1)
 
 class ResDynNeuralFly(nn.Module):
-    def __init__(self, input_dim, output_dim, dropout_rate = 0.0, res_dyn_param_dim = 0):
+    def __init__(self, input_dim, output_dim, dropout_rate = 0.0, res_dyn_param_dim = 0, path=None):
+        if path is None: 
+            path = '/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/v-q.pth'
+        if 'v-q' in path:
+            self.mode='v-q'
+            input_dim=7
+        elif 'v' in path:
+            self.mode='v'
+            input_dim=3
+        else:
+            raise ValueError('path should contain v-q or v')
         super().__init__()
-        self.phi_net = Phi_Net()
-        model = torch.load('/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/neural-fly_dim-a-3_v-q-pwm-epoch-950.pth')
+        self.phi_net = Phi_Net(input_dim=input_dim)
+        model = torch.load(path)
         self.phi_net.load_state_dict(model['phi_net_state_dict'])
+        self.res_dyn_param_dim = res_dyn_param_dim
+        if res_dyn_param_dim == 0:
+            self.A = nn.Parameter(torch.tensor([
+                [0.1, 0.05, 0.05], 
+                [0.05, 0.1, 0.05], 
+                [0.05, 0.05, 0.1]
+            ]), requires_grad=False)
+        else:
+            assert res_dyn_param_dim in [3,9], 'res_dyn_param_dim should be 0, 3 or 9'
         self.phi_net.eval()
-        self.A = nn.Parameter(torch.tensor([
-            [0.2, 0.13, 0.16], 
-            [0.11, 0.2, 0.17], 
-            [0.12, 0.1, 0.3]
-        ]))
+        for p in self.phi_net.parameters():
+            p.requires_grad = False
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         v = x[..., 7:10]
-        q = x[..., 3:7]
-        pwm = torch.zeros([*x.shape[:-1], 4], device=x.device)
-        x = self.phi_net(torch.cat([v, q, pwm], dim=-1))
-        x = x@self.A
-        x = torch.cat([x, torch.zeros([*x.shape[:-1], 3], device=x.device)], dim=-1)
-        return x
+        if self.mode == 'v-q':
+            q = x[..., 3:7]
+            phi = self.phi_net(torch.cat([v, q], dim=-1))
+        else:
+            phi = self.phi_net(v)
+        if self.res_dyn_param_dim == 0:
+            A = self.A
+        elif self.res_dyn_param_dim ==3: 
+            # create diagonal matrix from x[..., -3:]
+            A = torch.diag_embed(x[..., -3:])
+        elif self.res_dyn_param_dim == 9:
+            A = x[..., -9:].reshape([*x.shape[:-1], 3, 3])
+        f = torch.einsum('bij,bj->bi', A, phi)
+        return torch.cat([f, torch.zeros([*f.shape[:-1], 3], device=f.device)], dim=-1)
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim, dropout_rate = 0.0, res_dyn_param_dim: int = 1):
@@ -820,7 +847,7 @@ class PID():
 
 if __name__ == "__main__":
     env_num = 1
-    env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=0, seed=1)
+    env = QuadEnv(env_num=env_num, gpu_id = -1, res_dyn_param_dim=9, seed=1)
     # env.init_x_mean = env.init_x_std = env.init_v_mean = env.init_v_std = env.init_rpy_mean = env.init_rpy_std = 0.0
     # env.disturb_max, env.disturb_min = 1e-5, 0.0
     # env.res_dyn_scale = 0.0
@@ -830,4 +857,4 @@ if __name__ == "__main__":
     agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D.pt', map_location='cpu')
     test_quad(env, agent['actor'], agent['adaptor'], agent['compressor'])
 
-    # vis_data(path='/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3D')
+    # vis_data(path='/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_3Dneural')

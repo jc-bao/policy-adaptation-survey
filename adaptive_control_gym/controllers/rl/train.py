@@ -20,9 +20,9 @@ class Args:
     act_expert_mode:int=1
     cri_expert_mode:int=1
     exp_name:str= ''
-    compressor_dim: int = 8
+    compressor_dim: int = 3
     search_dim: int = 0
-    res_dyn_param_dim: int=0
+    res_dyn_param_dim: int=3
 
 def train(args:Args)->None:
     env_num = 1024
@@ -228,11 +228,15 @@ def eval_env(env:QuadEnv, agent:PPO, deterministic:bool=True, use_adaptor:bool=F
     # env.force_scale_max = env.force_scale_mean + env.force_scale_std*1.0
     # env.force_scale_min = env.force_scale_mean - env.force_scale_std*1.0
 
+    # env.res_dyn = env.res_dyn_origin
+
     origin_curri_param = env.curri_param
     env.curri_param = 0.0
     agent.last_state, agent.last_info = env.reset()
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor, w=w)
     env.curri_param = origin_curri_param
+
+    # env.res_dyn = env.res_dyn_fit
 
     # env.mass_max = env.mass_mean + env.mass_std*0.5
     # env.mass_min = env.mass_mean - env.mass_std*0.5
