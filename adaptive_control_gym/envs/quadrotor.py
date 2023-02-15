@@ -485,7 +485,7 @@ class ResDynNeuralFly(nn.Module):
         for p in self.phi_net.parameters():
             p.requires_grad = False
 
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         v = x[..., 7:10]
         if self.mode == 'v-q':
             q = x[..., 3:7]
