@@ -16,6 +16,23 @@ def rpy2quat(rpy: torch.Tensor) -> torch.Tensor:
     q[:, 3] = w
     return q
 
+def rpy2rotmat(rpy: torch.Tensor) -> torch.Tensor:
+    # convert roll-pitch-yaw to rotation matrix with torch
+    # rpy: (batch_size, 3)
+    # rotmat: (batch_size, 3, 3)
+    roll, pitch, yaw = rpy[:, 0], rpy[:, 1], rpy[:, 2]
+    rotmat = torch.zeros(rpy.shape[0], 3, 3, device=rpy.device)
+    rotmat[:, 0, 0] = torch.cos(yaw) * torch.cos(pitch)
+    rotmat[:, 0, 1] = torch.cos(yaw) * torch.sin(pitch) * torch.sin(roll) - torch.sin(yaw) * torch.cos(roll)
+    rotmat[:, 0, 2] = torch.cos(yaw) * torch.sin(pitch) * torch.cos(roll) + torch.sin(yaw) * torch.sin(roll)
+    rotmat[:, 1, 0] = torch.sin(yaw) * torch.cos(pitch)
+    rotmat[:, 1, 1] = torch.sin(yaw) * torch.sin(pitch) * torch.sin(roll) + torch.cos(yaw) * torch.cos(roll)
+    rotmat[:, 1, 2] = torch.sin(yaw) * torch.sin(pitch) * torch.cos(roll) - torch.cos(yaw) * torch.sin(roll)
+    rotmat[:, 2, 0] = -torch.sin(pitch)
+    rotmat[:, 2, 1] = torch.cos(pitch) * torch.sin(roll)
+    rotmat[:, 2, 2] = torch.cos(pitch) * torch.cos(roll)
+    return rotmat
+
 def quat2rpy(quat: torch.Tensor) -> torch.Tensor:
     # convert quaternion to roll-pitch-yaw with torch
     # quat: (batch_size, 4) 
