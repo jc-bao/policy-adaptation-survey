@@ -496,13 +496,14 @@ def playground():
             #     ctl_row = -angle
             #     ctl_pitch = 0.0
             # ============= PID control =============
-            total_force = -rope_force + env.mass_drone[0]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.xyz_drone[0] * 1.0 - env.vxyz_drone[0] * 0.1
-            total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
-            thrust = total_force_projected
-            total_force_normed = total_force / torch.norm(total_force)
-            ctl_row = torch.atan2(-total_force_normed[1], torch.sqrt(total_force_normed[0]**2 + total_force_normed[2]**2))
-            ctl_pitch = torch.atan2(total_force_normed[0], total_force_normed[2])
-            vis_vector(vis["force_pid"], env.xyz_drone[0].numpy(), total_force.numpy())
+            if t % env.substep_num == 0:
+                total_force = -rope_force + env.mass_drone[0]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.xyz_drone[0] * 1.0 - env.vxyz_drone[0] * 0.1
+                total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
+                thrust = total_force_projected
+                total_force_normed = total_force / torch.norm(total_force)
+                ctl_row = torch.atan2(-total_force_normed[1], torch.sqrt(total_force_normed[0]**2 + total_force_normed[2]**2))
+                ctl_pitch = torch.atan2(total_force_normed[0], total_force_normed[2])
+                vis_vector(vis["force_pid"], env.xyz_drone[0].numpy(), total_force.numpy())
             # ============= random control =============
             # if t % 10 == 0:
             #     thrust = np.random.uniform(0.0, 1.2)
