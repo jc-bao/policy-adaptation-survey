@@ -17,6 +17,6 @@ setup(name='adaptive_control_gym',
         'icecream',
         'torch', 
         'tqdm', 
-        'tyro'
+        'tyro', 
         ]
 )
