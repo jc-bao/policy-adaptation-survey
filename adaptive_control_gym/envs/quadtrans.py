@@ -156,10 +156,10 @@ class QuadTransEnv(gym.Env):
         # sample parameters uniformly using pytorch
         for key in self.state_params:
             self.__dict__[key] = self.sample_params(key)
-        self.rpy_drone *= 0.2
-        self.vrpy_drone *= 0.1
-        self.tp_obj *= 0.2
-        self.vtp_obj *= 0.1
+        self.rpy_drone *= 0.0
+        self.vrpy_drone *= 0.0
+        self.tp_obj *= 0.0
+        self.vtp_obj *= 0.0
 
         self.thrust = torch.ones((self.env_num, 1), device=self.device, dtype=torch.float32) * 0.5
         self.vxyz_obj = self.vxyz_drone + self.get_obj_rel_vel(self.tp_obj, self.vtp_obj, self.length_rope)
@@ -497,7 +497,7 @@ def playground():
             #     ctl_pitch = 0.0
             # ============= PID control =============
             if t % env.substep_num == 0:
-                total_force = -rope_force + env.mass_drone[0]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.xyz_drone[0] * 1.0 - env.vxyz_drone[0] * 0.1
+                total_force = -rope_force + env.mass_drone[0]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.xyz_drone[0] * 1.0 - env.vxyz_drone[0] * 0.2
                 total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
                 thrust = total_force_projected
                 total_force_normed = total_force / torch.norm(total_force)
