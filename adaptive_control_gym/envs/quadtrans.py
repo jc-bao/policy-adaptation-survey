@@ -86,9 +86,9 @@ class QuadTransEnv(gym.Env):
         self.action_mean, self.action_std = (self.action_min + self.action_max)/2, (self.action_max - self.action_min)/2
         self.thrust_min, self.thrust_max = 0.0, 1.2 # N
         self.thrust_mean, self.thrust_std = (self.thrust_min + self.thrust_max)/2, (self.thrust_max - self.thrust_min)/2
-        self.ctl_row_min, self.ctl_row_max = -np.pi/6, np.pi/6 # rad
+        self.ctl_row_min, self.ctl_row_max = -np.pi/3, np.pi/3 # rad
         self.ctl_row_mean, self.ctl_row_std = (self.ctl_row_min + self.ctl_row_max)/2, (self.ctl_row_max - self.ctl_row_min)/2
-        self.ctl_pitch_min, self.ctl_pitch_max = -np.pi/4, np.pi/4 # rad
+        self.ctl_pitch_min, self.ctl_pitch_max = -np.pi/3, np.pi/3 # rad
         self.ctl_pitch_mean, self.ctl_pitch_std = (self.ctl_pitch_min + self.ctl_pitch_max)/2, (self.ctl_pitch_max - self.ctl_pitch_min)/2
         self.ctl_row_rate_min, self.ctl_row_rate_max = -20, 20 # rad/s
         self.ctl_row_rate_mean, self.ctl_row_rate_std = (self.ctl_row_rate_min + self.ctl_row_rate_max)/2, (self.ctl_row_rate_max - self.ctl_row_rate_min)/2
@@ -509,8 +509,8 @@ def playground():
             # ============= random control =============
             if t % 10 == 0:
                 thrust = np.random.uniform(0.0, 1.2)
-                ctl_row = np.random.uniform(-np.pi/4, np.pi/4)
-                ctl_pitch = np.random.uniform(-np.pi/4, np.pi/4)
+                ctl_row = np.random.uniform(-np.pi/3, np.pi/3)
+                ctl_pitch = np.random.uniform(-np.pi/3, np.pi/3)
             thrust = torch.tensor([thrust], dtype=torch.float32)
             ctl_row = torch.tensor([ctl_row], dtype=torch.float32)
             ctl_pitch = torch.tensor([ctl_pitch], dtype=torch.float32)
