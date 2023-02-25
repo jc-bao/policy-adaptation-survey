@@ -64,7 +64,7 @@ def train(args:Args)->None:
             agent.last_state, agent.last_info = env.reset()
             w, env_params = get_optimal_w(env, agent, args.search_dim)
             # train
-            explore_steps = int(env.max_steps * np.clip(i_ep/10, 0.1, 1))
+            explore_steps = env.max_steps
             total_steps += explore_steps * env_num
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=False, w=w)
             agent.last_info['e'] = torch.concat([agent.last_info['e'], w], dim=-1)

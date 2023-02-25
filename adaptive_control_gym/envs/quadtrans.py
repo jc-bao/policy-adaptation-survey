@@ -28,7 +28,7 @@ class QuadTransEnv(gym.Env):
         self.dt = 1/100 # s
         self.g = 9.81 # m/s^2
         self.substep_num = 10
-        self.max_steps = 120
+        self.max_steps = 60
         self.gpu_id = gpu_id
         self.device = torch.device(
             f"cuda:{self.gpu_id}" if (torch.cuda.is_available() & (gpu_id>=0)) else "cpu"
@@ -63,12 +63,12 @@ class QuadTransEnv(gym.Env):
         self.xyz_drone_min, self.xyz_drone_max = torch.tensor(self.xyz_drone_min, dtype=torch.float32).to(self.device), torch.tensor(self.xyz_drone_max, dtype=torch.float32).to(self.device)
         self.xyz_drone_mean, self.xyz_drone_std = (self.xyz_drone_min + self.xyz_drone_max)/2, (self.xyz_drone_max - self.xyz_drone_min)/2
 
-        self.xyz_target_min, self.xyz_target_max = np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0])
+        self.xyz_target_min, self.xyz_target_max = np.array([-1.0, -1.0, -1.0])*0.7, np.array([1.0, 1.0, 1.0])*0.7
         self.xyz_target_min, self.xyz_target_max = torch.tensor(self.xyz_target_min, dtype=torch.float32).to(self.device), torch.tensor(self.xyz_target_max, dtype=torch.float32).to(self.device)
         self.xyz_target_mean, self.xyz_target_std = (self.xyz_target_min + self.xyz_target_max)/2, (self.xyz_target_max - self.xyz_target_min)/2
         self.xyz_target_std[self.xyz_target_std==0] = 1.0
 
-        self.vxyz_drone_min, self.vxyz_drone_max = np.array([-5.0, -5.0, -5.0]), np.array([5.0, 5.0, 5.0])
+        self.vxyz_drone_min, self.vxyz_drone_max = np.array([-1.0, -1.0, -1.0])*2.0, np.array([1.0, 1.0, 1.0])*2.0
         self.vxyz_drone_min, self.vxyz_drone_max = torch.tensor(self.vxyz_drone_min, dtype=torch.float32).to(self.device), torch.tensor(self.vxyz_drone_max, dtype=torch.float32).to(self.device)
         self.vxyz_drone_mean, self.vxyz_drone_std = (self.vxyz_drone_min + self.vxyz_drone_max)/2, (self.vxyz_drone_max - self.vxyz_drone_min)/2
 
@@ -160,10 +160,10 @@ class QuadTransEnv(gym.Env):
         # sample parameters uniformly using pytorch
         for key in self.state_params:
             self.__dict__[key] = self.sample_params(key)
-        self.rpy_drone *= 0.0
-        self.vrpy_drone *= 0.0
-        self.tp_obj *= 0.0
-        self.vtp_obj *= 0.0
+        self.rpy_drone *= 0.5
+        self.vrpy_drone *= 0.5
+        self.tp_obj *= 0.1
+        self.vtp_obj *= 0.01
 
         self.thrust = torch.ones((self.env_num, 1), device=self.device, dtype=torch.float32) * 0.5
         self.vxyz_obj = self.vxyz_drone + self.get_obj_rel_vel(self.tp_obj, self.vtp_obj, self.length_rope)
@@ -211,13 +211,11 @@ class QuadTransEnv(gym.Env):
 
     def _get_reward(self):
         # calculate reward
-        err_x = torch.norm(self.obj2goal,dim=1) * 0.7 + torch.norm(self.drone2goal,dim=1) * 0.3
-        err_v = torch.norm(self.vxyz_obj,dim=1) * 0.7 + torch.norm(self.vxyz_drone,dim=1) * 0.3
-        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - torch.clip(err_v, 0, 3)*0.1
+        err_x = torch.norm(self.obj2goal,dim=1) * 0.95 + torch.norm(self.drone2goal,dim=1) * 0.05
+        err_v = torch.norm(self.vxyz_obj,dim=1) * 0.95 + torch.norm(self.vxyz_drone,dim=1) * 0.05
+        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - torch.clip(err_v, 0, 2)*0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1 # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1 # for 0.1
-        reward -= torch.clip(torch.log(err_x+1)*20, 0, 1)*0.1 # for 0.05
-        reward -= torch.clip(torch.log(err_x+1)*50, 0, 1)*0.1 # for 0.02 
         return reward
 
     def substep(self, thrust, ctl_row, ctl_pitch):
@@ -498,7 +496,7 @@ def playground():
     # for PID
     vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_substep10_100Hz.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_expert.pt', map_location='cpu')
     policy = loaded_agent['actor']
     compressor = loaded_agent['compressor']
 
@@ -539,9 +537,9 @@ def playground():
             # ============= neural control =============
             if t % env.substep_num == 0:
                 action = policy(env._get_obs(), compressor(env._get_info()['e']))
-                thrust = action[0].item() * env.thrust_std + env.thrust_mean
-                ctl_row = action[1].item() * env.ctl_row_std + env.ctl_row_mean
-                ctl_pitch = action[2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
+                thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
+                ctl_row = action[vis_env_id, 1].item() * env.ctl_row_std + env.ctl_row_mean
+                ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
             thrust = torch.tensor([thrust], dtype=torch.float32)
             ctl_row = torch.tensor([ctl_row], dtype=torch.float32)
             ctl_pitch = torch.tensor([ctl_pitch], dtype=torch.float32)
@@ -572,10 +570,10 @@ def playground():
                 else:
                     raise "unknown key: {}".format(key)
                 vis_vector(obj=vis[key], origin=origin, vec=debug_info[key][vis_env_id].numpy(), scale=2.0)
-            time.sleep(env.dt*env.substep_num)
-        # env.step_cnt += 1
-        # if env.step_cnt == env.max_steps:
-        #     env.reset()
+            time.sleep(env.dt)
+        env.step_cnt += 1
+        if env.step_cnt == env.max_steps:
+            env.reset()
         
 if __name__ == '__main__':
     playground()
