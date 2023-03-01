@@ -14,13 +14,13 @@ from adaptive_control_gym import controllers as ctrl
 
 class HoverEnv(gym.Env):
     def __init__(self, 
-        dim: int = 2, env_num: int = 1, gpu_id: int = 0, seed:int = 0, 
+        dim: int = 1, env_num: int = 1, gpu_id: int = 0, seed:int = 0, 
         expert_mode:bool = False, ood_mode:bool = False, 
         mass_mean:float = 0.05, mass_std:float=0.02, 
         disturb_uncertainty_rate:float=0.0, disturb_period: int = 15,
-        delay_mean:float = 0.0, delay_std:float = 0.0, model_delay_alpha: float = 0.9, 
-        decay_mean:float = 0.2, decay_std:float = 0.1, 
-        res_dyn_scale: float = 10.0, res_dyn_param_dim: int = 8, res_dyn_param_std:float = 1.0,
+        delay_mean:float = 0.0, delay_std:float = 0.0, model_delay_alpha: float = 1.0, 
+        decay_mean:float = 0.0, decay_std:float = 0.0, 
+        res_dyn_scale: float = 0.0, res_dyn_param_dim: int = 8, res_dyn_param_std:float = 1.0,
         ):
         torch.manual_seed(seed)
         self.device = torch.device(f"cuda:{gpu_id}" if (torch.cuda.is_available() and (gpu_id>=0)) else "cpu")
@@ -28,19 +28,21 @@ class HoverEnv(gym.Env):
         self.mass_mean, self.mass_std = mass_mean, mass_std
         self.mass_min, self.mass_max = 0.01, 1.0
         self.delay_mean, self.delay_std = delay_mean, delay_std
-        self.delay_min, self.delay_max = 0, 10
+        self.delay_min, self.delay_max = 0, 0
         self.model_delay_alpha = model_delay_alpha
         self.decay_mean, self.decay_std = decay_mean, decay_std
-        self.decay_min, self.decay_max = 0.0, 0.5
+        self.decay_min, self.decay_max = 0.0, 0.0
         self.disturb_mean, self.disturb_std = 0.0, 1.0 * disturb_uncertainty_rate
         self.disturb_period = disturb_period
-        self.action_noise_std, self.obs_noise_std = 0.05, 0.05
+        self.action_noise_std, self.obs_noise_std = 0.00, 0.00
 
         self.res_dyn_scale = res_dyn_scale / (2**dim)
         self.res_dyn_mlp = ResDynMLP(input_dim=dim*3+res_dyn_param_dim, output_dim=dim).to(self.device)
         self.res_dyn_param_mean, self.res_dyn_param_std = 0.0, res_dyn_param_std
         self.res_dyn_param_min, self.res_dyn_param_max = -1.0, 1.0
         self.res_dyn_param_dim = res_dyn_param_dim
+
+        self.traj_scale = 0.0
 
         self.tau = 1.0/30.0  # seconds between state updates
         self.force_scale = 1.0
@@ -60,6 +62,9 @@ class HoverEnv(gym.Env):
         self.ood_mode = ood_mode
         self.expert_mode = expert_mode
         self.state_dim = 4*dim+2*dim*self.obs_traj_len
+        self.expert_dim = 1
+        self.adapt_dim = 1
+        self.adapt_horizon = 1
         if expert_mode:
             self.state_dim += (res_dyn_param_dim+dim*2+1)
         self.action_dim = dim
@@ -84,7 +89,7 @@ class HoverEnv(gym.Env):
         x = torch.zeros((self.env_num, self.dim, self.max_steps+self.obs_traj_len), device=self.device)
         v = torch.zeros((self.env_num, self.dim, self.max_steps+self.obs_traj_len), device=self.device)
         for i in np.arange(0,2,1):
-            A = torch.rand((self.env_num,self.dim, 1), device=self.device)*(2.0**(-i))
+            A = torch.rand((self.env_num,self.dim, 1), device=self.device)*(2.0**(-i)) * self.traj_scale
             w = base_w*(2**i)
             phase = torch.rand((self.env_num,self.dim, 1), device=self.device)*(2*np.pi)
             x += A*torch.cos(t*w+phase)
@@ -145,6 +150,7 @@ class HoverEnv(gym.Env):
         self.force -= self.decay_force
         self.res_dyn_force = self.res_dyn_mlp(torch.cat([self.x, self.v*0.3, action, self.res_dyn_param], dim=-1)) * self.res_dyn_scale
         self.force += self.res_dyn_force
+        self.force -= self.mass * 9.81
         
         self.x += self.v * self.tau
         self.v += self.force / self.mass * self.tau
@@ -163,6 +169,10 @@ class HoverEnv(gym.Env):
         info = {
             'mass': self.mass, 
             'disturb': self.disturb,
+            'e': (self.mass - self.mass_mean) / self.mass_std, 
+            'err_x': torch.norm(self.x - self.traj_x[...,self.step_cnt-1], dim=-1),
+            'err_v': torch.norm(self.v - self.traj_v[...,self.step_cnt-1], dim=-1),
+            'adapt_obs': torch.zeros((self.env_num, self.dim), device=self.device)
         }
         next_obs = self._get_obs()
         # add gaussian noise to next_obs
@@ -176,7 +186,7 @@ class HoverEnv(gym.Env):
         self.force_history = [torch.zeros((self.env_num, self.dim), device=self.device)] * self.delay_max
         self.force = torch.zeros((self.env_num, self.dim), device=self.device)
         self.traj_x, self.traj_v = self._generate_traj()
-        return self._get_obs()
+        return self._get_obs(), {'e': (self.mass-self.mass_mean)/self.mass_std}
 
     def _get_obs(self):
         future_traj_x = self.traj_x[..., self.step_cnt:self.step_cnt+self.obs_traj_len]
@@ -189,6 +199,9 @@ class HoverEnv(gym.Env):
 
     def _set_disturb(self):
         self.disturb = torch.randn((self.env_num,self.dim), device=self.device) * self.disturb_std + self.disturb_mean
+
+    def get_env_params(self):
+        return None
 
 class ResDynMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
