@@ -584,7 +584,7 @@ def playground():
     # for PID
     vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_noobj.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_track_robust.pt', map_location='cpu')
     policy = loaded_agent['actor']
     compressor = loaded_agent['compressor']
 
