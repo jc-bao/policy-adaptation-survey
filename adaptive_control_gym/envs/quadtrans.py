@@ -255,8 +255,8 @@ class QuadTransEnv(gym.Env):
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1 # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1 # for 0.1
         # panelty for large delta control
-        reward -= torch.clip(torch.abs(self.delta_row[:,0]), 0.0, np.pi/2)*0.6
-        reward -= torch.clip(torch.abs(self.delta_pitch[:,0]), 0.0, np.pi/2)*0.6
+        reward -= torch.clip(torch.abs(self.delta_row[:,0]), 0.0, np.pi/2)*0.4
+        reward -= torch.clip(torch.abs(self.delta_pitch[:,0]), 0.0, np.pi/2)*0.4
         return reward
 
     def substep(self, thrust, ctl_row, ctl_pitch):
@@ -355,7 +355,7 @@ class QuadTransEnv(gym.Env):
         z_hat_obj_target[self.mass_obj[:,0]==0] = torch.tensor([0.0, 0.0, -1.0], device=self.device)
         # z_hat_obj_target = torch.where(z_hat_obj_target[:, [2]] > 0, -z_hat_obj_target, z_hat_obj_target)
         xyz_drone_target = self.xyz_obj - z_hat_obj_target * self.length_rope
-        xyz_drone_target = torch.where(self.mass_obj[:,0]==0, self.xyz_target - z_hat_obj_target * self.length_rope, xyz_drone_target)
+        xyz_drone_target = torch.where(self.mass_obj[:,[0]]==0, self.xyz_target - z_hat_obj_target * self.length_rope, xyz_drone_target)
         total_force_drone = total_force_obj_projected - force_gravity_drone - force_drag_drone - (self.xyz_drone - xyz_drone_target) * 1.0 - self.vxyz_drone * 0.3
         total_force_drone_projected = torch.einsum('bij,bj->bi', torch.inverse(rotmat_drone), total_force_drone)[..., [2]]
         self.thrust_pid = torch.clip(total_force_drone_projected, self.thrust_min, self.thrust_max)
@@ -584,7 +584,7 @@ def playground():
     # for PID
     vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_track_robust.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_expert0.4.pt', map_location='cpu')
     policy = loaded_agent['actor']
     compressor = loaded_agent['compressor']
 
