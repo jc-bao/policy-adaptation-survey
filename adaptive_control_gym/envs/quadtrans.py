@@ -421,7 +421,7 @@ class QuadTransEnv(gym.Env):
             if len(param.shape) == 1:
                 param = param.unsqueeze(-1)
             param_mean, param_std = getattr(self, f'{key}_mean'), getattr(self, f'{key}_std')
-            e_list.append(param - param_mean / param_std)
+            e_list.append((param - param_mean) / param_std)
         e = torch.cat(e_list, dim=-1)
         return {
             'e': e,
@@ -584,7 +584,7 @@ def playground():
     # for PID
     vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_0.4.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_noobj.pt', map_location='cpu')
     policy = loaded_agent['actor']
     compressor = loaded_agent['compressor']
 
@@ -607,10 +607,10 @@ def playground():
             #     ctl_row = -angle
             #     ctl_pitch = 0.0
             # ============= PID control =============
-            if t % env.substep_num == 0:
-                thrust = env.thrust_pid[vis_env_id]
-                ctl_row = env.ctl_row_pid[vis_env_id]
-                ctl_pitch = env.ctl_pitch_pid[vis_env_id]
+            # if t % env.substep_num == 0:
+            #     thrust = env.thrust_pid[vis_env_id]
+            #     ctl_row = env.ctl_row_pid[vis_env_id]
+            #     ctl_pitch = env.ctl_pitch_pid[vis_env_id]
                 # total_force = -rope_force + env.mass_drone[vis_env_id]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.drone2goal[vis_env_id] * 1.0 - env.vxyz_drone[vis_env_id] * 0.2
                 # total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
                 # thrust = total_force_projected
@@ -624,11 +624,11 @@ def playground():
             #     ctl_row = np.random.uniform(-np.pi/3, np.pi/3)
             #     ctl_pitch = np.random.uniform(-np.pi/3, np.pi/3)
             # ============= neural control =============
-            # if t % env.substep_num == 0:
-            #     action = policy(env._get_obs(), compressor(env._get_info()['e']))
-            #     thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
-            #     ctl_row = action[vis_env_id, 1].item() * env.ctl_row_std + env.ctl_row_mean
-            #     ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
+            if t % env.substep_num == 0:
+                action = policy(env._get_obs(), compressor(env._get_info()['e']))
+                thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
+                ctl_row = action[vis_env_id, 1].item() * env.ctl_row_std + env.ctl_row_mean
+                ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
             thrust = torch.tensor([thrust], dtype=torch.float32)
             ctl_row = torch.tensor([ctl_row], dtype=torch.float32)
             ctl_pitch = torch.tensor([ctl_pitch], dtype=torch.float32)
