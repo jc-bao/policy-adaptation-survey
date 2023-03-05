@@ -36,12 +36,12 @@ class QuadTransEnv(gym.Env):
         )
 
         # object related parameters
-        self.mass_obj_min, self.mass_obj_max = 0.01, 0.02 # kg
+        self.mass_obj_min, self.mass_obj_max = 0.00, 0.00 # 0.01, 0.02 # kg
         self.mass_obj_min, self.mass_obj_max = torch.tensor([self.mass_obj_min]).to(self.device), torch.tensor([self.mass_obj_max]).to(self.device)
         self.mass_obj_mean, self.mass_obj_std = (self.mass_obj_min + self.mass_obj_max)/2, (self.mass_obj_max - self.mass_obj_min)/2
         self.mass_obj_std[self.mass_obj_std == 0.0] = 1.0
 
-        self.length_rope_min, self.length_rope_max = 0.1, 0.3
+        self.length_rope_min, self.length_rope_max = 0.2, 0.2 # 0.1, 0.3
         self.length_rope_min, self.length_rope_max = torch.tensor([self.length_rope_min]).to(self.device), torch.tensor([self.length_rope_max]).to(self.device)
         self.length_rope_mean, self.length_rope_std = (self.length_rope_min + self.length_rope_max)/2, (self.length_rope_max - self.length_rope_min)/2
         self.length_rope_std[self.length_rope_std == 0.0] = 1.0
@@ -106,12 +106,12 @@ class QuadTransEnv(gym.Env):
         self.damping_rate_obj_min, self.damping_rate_obj_max = torch.tensor(self.damping_rate_obj_min).to(self.device), torch.tensor([self.damping_rate_obj_max]).to(self.device)
         self.damping_rate_obj_mean, self.damping_rate_obj_std = (self.damping_rate_obj_min + self.damping_rate_obj_max)/2, (self.damping_rate_obj_max - self.damping_rate_obj_min)/2
         # TBD
-        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.4, 0.6
+        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.05, 0.1
         self.attitude_pid_p_min, self.attitude_pid_p_max = torch.tensor([self.attitude_pid_p_min]).to(self.device), torch.tensor([self.attitude_pid_p_max]).to(self.device)
         self.attitude_pid_p_mean, self.attitude_pid_p_std = (self.attitude_pid_p_min + self.attitude_pid_p_max)/2, (self.attitude_pid_p_max - self.attitude_pid_p_min)/2
         self.attitude_pid_p_std[self.attitude_pid_p_std == 0.0] = 1.0
 
-        self.thrust_pid_p_min, self.thrust_pid_p_max = 0.5, 0.7
+        self.thrust_pid_p_min, self.thrust_pid_p_max = 0.4, 0.6
         self.thrust_pid_p_min, self.thrust_pid_p_max = torch.tensor([self.thrust_pid_p_min]).to(self.device), torch.tensor([self.thrust_pid_p_max]).to(self.device)
         self.thrust_pid_p_mean, self.thrust_pid_p_std = (self.thrust_pid_p_min + self.thrust_pid_p_max)/2, (self.thrust_pid_p_max - self.thrust_pid_p_min)/2
         self.thrust_pid_p_std[self.thrust_pid_p_std == 0.0] = 1.0
@@ -255,8 +255,8 @@ class QuadTransEnv(gym.Env):
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1 # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1 # for 0.1
         # panelty for large delta control
-        reward -= torch.clip(torch.abs(self.delta_row[:,0]), 0.0, np.pi/2)*0.4
-        reward -= torch.clip(torch.abs(self.delta_pitch[:,0]), 0.0, np.pi/2)*0.4
+        reward -= torch.clip(torch.abs(self.delta_row[:,0]), 0.0, np.pi/2)*0.1
+        reward -= torch.clip(torch.abs(self.delta_pitch[:,0]), 0.0, np.pi/2)*0.1
         return reward
 
     def substep(self, thrust, ctl_row, ctl_pitch):
@@ -584,7 +584,7 @@ def playground():
     # for PID
     vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_expert.pt', map_location='cpu')
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_expert0.2.pt', map_location='cpu')
     policy = loaded_agent['actor']
     compressor = loaded_agent['compressor']
 
