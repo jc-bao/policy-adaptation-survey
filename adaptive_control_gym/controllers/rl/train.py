@@ -27,7 +27,7 @@ class Args:
 def train(args:Args)->None:
     env_num = 1024
     total_steps = 0.5e7
-    adapt_steps = 0 #0.5e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
+    adapt_steps = 0.5e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
     
@@ -45,7 +45,7 @@ def train(args:Args)->None:
         compressor_dim=args.compressor_dim, search_dim=args.search_dim,
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_RMA.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_track_expert.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act.load_state_dict(loaded_agent['actor'].state_dict())
     # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
     # agent.adaptor.load_state_dict(loaded_agent['adaptor'].state_dict())

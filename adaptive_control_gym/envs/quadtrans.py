@@ -89,12 +89,12 @@ class QuadTransEnv(gym.Env):
         self.action_mean, self.action_std = (self.action_min + self.action_max)/2, (self.action_max - self.action_min)/2
         self.thrust_min, self.thrust_max = 0.0, 0.6 # N
         self.thrust_mean, self.thrust_std = (self.thrust_min + self.thrust_max)/2, (self.thrust_max - self.thrust_min)/2
-        self.ctl_row_min, self.ctl_row_max = -np.pi/3, np.pi/3 # rad
-        self.ctl_row_mean, self.ctl_row_std = (self.ctl_row_min + self.ctl_row_max)/2, (self.ctl_row_max - self.ctl_row_min)/2
+        self.ctl_roll_min, self.ctl_roll_max = -np.pi/3, np.pi/3 # rad
+        self.ctl_roll_mean, self.ctl_roll_std = (self.ctl_roll_min + self.ctl_roll_max)/2, (self.ctl_roll_max - self.ctl_roll_min)/2
         self.ctl_pitch_min, self.ctl_pitch_max = -np.pi/3, np.pi/3 # rad
         self.ctl_pitch_mean, self.ctl_pitch_std = (self.ctl_pitch_min + self.ctl_pitch_max)/2, (self.ctl_pitch_max - self.ctl_pitch_min)/2
-        self.ctl_row_rate_min, self.ctl_row_rate_max = -20, 20 # rad/s
-        self.ctl_row_rate_mean, self.ctl_row_rate_std = (self.ctl_row_rate_min + self.ctl_row_rate_max)/2, (self.ctl_row_rate_max - self.ctl_row_rate_min)/2
+        self.ctl_roll_rate_min, self.ctl_roll_rate_max = -20, 20 # rad/s
+        self.ctl_roll_rate_mean, self.ctl_roll_rate_std = (self.ctl_roll_rate_min + self.ctl_roll_rate_max)/2, (self.ctl_roll_rate_max - self.ctl_roll_rate_min)/2
         self.ctl_pitch_rate_min, self.ctl_pitch_rate_max = -20, 20 # rad/s
         self.ctl_pitch_rate_mean, self.ctl_pitch_rate_std = (self.ctl_pitch_rate_min + self.ctl_pitch_rate_max)/2, (self.ctl_pitch_rate_max - self.ctl_pitch_rate_min)/2
         # TBD
@@ -119,9 +119,10 @@ class QuadTransEnv(gym.Env):
         # RMA related parameters
         self.rma_params = ['mass_obj', 'length_rope', 'mass_drone', 'damping_rate_drone', 'damping_rate_obj', 'attitude_pid_p', 'thrust_pid_p']
         self.expert_dim = 1 + 1 + 1 + 1 + 1 + 1 + 1
-        self.adapt_dim = 1
-        self.adapt_horizon = 1
         self.obs_traj_len = 5
+        self.adapt_horizon = 3
+        self.adapt_store_len = self.adapt_horizon + 5
+        self.adapt_dim = self.adapt_horizon * 30
 
         # RL parameters
         self.state_dim = 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 5 * 6
@@ -151,8 +152,16 @@ class QuadTransEnv(gym.Env):
         self.damping_rate_obj = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
         self.attitude_pid_p = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
         self.thrust_pid_p = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_thrust = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_roll = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_pitch = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
 
         # TODO 1d adapt vs robust, PID
+        self.ctl_thrust_his = torch.zeros((self.adapt_store_len, self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_roll_his = torch.zeros((self.adapt_store_len, self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_pitch_his = torch.zeros((self.adapt_store_len, self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.xyz_drone_his = torch.zeros((self.adapt_store_len, self.env_num, 3), device=self.device, dtype=torch.float32)
+        self.xyz_obj_his = torch.zeros((self.adapt_store_len, self.env_num, 3), device=self.device, dtype=torch.float32)
     
     def sample_params(self, key):
         param_max = self.__dict__[key + '_max']
@@ -186,50 +195,67 @@ class QuadTransEnv(gym.Env):
 
         # PID expert information, mainly for reference
         self.thrust_pid = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
-        self.ctl_row_pid = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_roll_pid = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
         self.ctl_pitch_pid = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
-        self.ctl_row_rate_pid = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_roll_rate_pid = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
         self.ctl_pitch_rate_pid = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
 
         # for delay
+        self.ctl_thrust = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_roll = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_pitch = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
         self.ctl_thrust_old = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
-        self.ctl_row_old = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_roll_old = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
         self.ctl_pitch_old = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
 
         # for reward
-        self.delta_row = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.delta_roll = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
         self.delta_pitch = torch.zeros((self.env_num, 1), device=self.device, dtype=torch.float32)
+
+        # for adapt
+        self.ctl_thrust_his = torch.zeros((self.adapt_store_len, self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_roll_his = torch.zeros((self.adapt_store_len, self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.ctl_pitch_his = torch.zeros((self.adapt_store_len, self.env_num, 1), device=self.device, dtype=torch.float32)
+        self.xyz_drone_his = torch.zeros((self.adapt_store_len, self.env_num, 3), device=self.device, dtype=torch.float32)
+        self.xyz_obj_his = torch.zeros((self.adapt_store_len, self.env_num, 3), device=self.device, dtype=torch.float32)
 
         return self._get_obs(), self._get_info()
 
     def step(self, action):
         '''
         action: (env_num, action_dim)
-            action=[thrust, ctl_row, ctl_pitch]
+            action=[thrust, ctl_roll, ctl_pitch]
         '''
-        # convert action to thrust, ctl_row, ctl_pitch
-        ctl_thrust = (action[:, [0]]-self.action_mean)/self.action_std * self.thrust_std + self.thrust_mean
-        ctl_row = (action[:, [1]]-self.action_mean)/self.action_std * self.ctl_row_std + self.ctl_row_rate_mean
-        ctl_pitch = (action[:, [2]]-self.action_mean)/self.action_std * self.ctl_pitch_std + self.ctl_pitch_rate_mean
+        # convert action to thrust, ctl_roll, ctl_pitch
+        self.ctl_thrust = (action[:, [0]]-self.action_mean)/self.action_std * self.thrust_std + self.thrust_mean
+        self.ctl_roll = (action[:, [1]]-self.action_mean)/self.action_std * self.ctl_roll_std + self.ctl_roll_rate_mean
+        self.ctl_pitch = (action[:, [2]]-self.action_mean)/self.action_std * self.ctl_pitch_std + self.ctl_pitch_rate_mean
 
         # calculate delta angle
         max_angle_change = np.pi/2
-        self.delta_row = torch.clip(ctl_row - self.rpy_drone[..., [0]], -max_angle_change, max_angle_change)
-        self.delta_pitch = torch.clip(ctl_pitch - self.rpy_drone[..., [1]], -max_angle_change, max_angle_change)
-        ctl_row = self.rpy_drone[..., [0]] + self.delta_row
-        ctl_pitch = self.rpy_drone[..., [1]] + self.delta_pitch
+        self.delta_roll = torch.clip(self.ctl_roll - self.rpy_drone[..., [0]], -max_angle_change, max_angle_change)
+        self.delta_pitch = torch.clip(self.ctl_pitch - self.rpy_drone[..., [1]], -max_angle_change, max_angle_change)
+        self.ctl_roll = self.rpy_drone[..., [0]] + self.delta_roll
+        self.ctl_pitch = self.rpy_drone[..., [1]] + self.delta_pitch
         # ===================== velocity control =====================
-        # self.delta_row = ctl_row * self.dt * self.substep_num
+        # self.delta_roll = ctl_roll * self.dt * self.substep_num
         # self.delta_pitch = ctl_pitch * self.dt * self.substep_num
 
         for i in range(self.substep_num):
             if (i * self.dt) < self.communication_delay:
-                debug_info = self.substep(self.ctl_thrust_old, self.ctl_row_old, self.ctl_pitch_old)
+                debug_info = self.substep(self.ctl_thrust_old, self.ctl_roll_old, self.ctl_pitch_old)
             else:
-                debug_info = self.substep(ctl_thrust, ctl_row, ctl_pitch)
-        self.ctl_row_old = ctl_row
-        self.ctl_pitch_old = ctl_pitch
-        self.ctl_thrust_old = ctl_thrust
+                debug_info = self.substep(self.ctl_thrust, self.ctl_roll, self.ctl_pitch)
+        
+        # save parameters
+        self.ctl_roll_old = self.ctl_roll
+        self.ctl_pitch_old = self.ctl_pitch
+        self.ctl_thrust_old = self.ctl_thrust
+        self.ctl_thrust_his[self.step_cnt%self.adapt_store_len] = self.ctl_thrust
+        self.ctl_roll_his[self.step_cnt%self.adapt_store_len] = self.ctl_roll
+        self.ctl_pitch_his[self.step_cnt%self.adapt_store_len] = self.ctl_pitch
+        self.xyz_drone_his[self.step_cnt%self.adapt_store_len] = self.xyz_drone
+        self.xyz_obj_his[self.step_cnt%self.adapt_store_len] = self.xyz_obj
         
         reward = self._get_reward()
 
@@ -255,11 +281,11 @@ class QuadTransEnv(gym.Env):
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1 # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1 # for 0.1
         # panelty for large delta control
-        reward -= torch.clip(torch.abs(self.delta_row[:,0]), 0.0, np.pi/2)*0.1
+        reward -= torch.clip(torch.abs(self.delta_roll[:,0]), 0.0, np.pi/2)*0.1
         reward -= torch.clip(torch.abs(self.delta_pitch[:,0]), 0.0, np.pi/2)*0.1
         return reward
 
-    def substep(self, thrust, ctl_row, ctl_pitch):
+    def substep(self, thrust, ctl_roll, ctl_pitch):
         # analysis two point mass system dynamics which connected with a rope
         # thrust force
         self.thrust = thrust * self.thrust_pid_p + self.thrust * (1-self.thrust_pid_p)
@@ -318,7 +344,7 @@ class QuadTransEnv(gym.Env):
         self.vxyz_drone[reach_z_bound, 2] = - self.vxyz_drone[reach_z_bound, 2]
 
         # =================== angular rate control ===================
-        # self.vrpy_drone[:, [0]] = ctl_row_rate * self.attitude_pid_p + self.vrpy_drone[:, [0]] * (1-self.attitude_pid_p)
+        # self.vrpy_drone[:, [0]] = ctl_roll_rate * self.attitude_pid_p + self.vrpy_drone[:, [0]] * (1-self.attitude_pid_p)
         # self.vrpy_drone[:, [1]] = ctl_pitch_rate * self.attitude_pid_p + self.vrpy_drone[:, [1]] * (1-self.attitude_pid_p)
         # self.rpy_drone[:, [0]] = torch.clip(self.vrpy_drone[:, [0]] * self.dt + self.rpy_drone[:, [0]], -np.pi/3, np.pi/3)
         # self.rpy_drone[:, [1]] = torch.clip(self.vrpy_drone[:, [1]] * self.dt + self.rpy_drone[:, [1]], -np.pi/3, np.pi/3)
@@ -328,7 +354,7 @@ class QuadTransEnv(gym.Env):
         # self.vrpy_drone[reach_p_bound, 1] = 0.0
         # reach_r_bound = torch.abs(self.rpy_drone[:, 0]) >= np.pi/3
         # =================== attitude control ===================
-        self.rpy_drone[:, [0]] = ctl_row * self.attitude_pid_p + self.rpy_drone[:, [0]] * (1-self.attitude_pid_p)
+        self.rpy_drone[:, [0]] = ctl_roll * self.attitude_pid_p + self.rpy_drone[:, [0]] * (1-self.attitude_pid_p)
         self.rpy_drone[:, [1]] = ctl_pitch * self.attitude_pid_p + self.rpy_drone[:, [1]] * (1-self.attitude_pid_p)
 
         self.tp_obj = self.tp_obj + self.vtp_obj * self.dt
@@ -359,9 +385,9 @@ class QuadTransEnv(gym.Env):
         total_force_drone = total_force_obj_projected - force_gravity_drone - force_drag_drone - (self.xyz_drone - xyz_drone_target) * 1.0 - self.vxyz_drone * 0.3
         total_force_drone_projected = torch.einsum('bij,bj->bi', torch.inverse(rotmat_drone), total_force_drone)[..., [2]]
         self.thrust_pid = torch.clip(total_force_drone_projected, self.thrust_min, self.thrust_max)
-        self.ctl_row_pid = torch.atan2(-total_force_drone[..., [1]], torch.sqrt(total_force_drone[..., [0]]**2 + total_force_drone[..., [2]]**2))
+        self.ctl_roll_pid = torch.atan2(-total_force_drone[..., [1]], torch.sqrt(total_force_drone[..., [0]]**2 + total_force_drone[..., [2]]**2))
         self.ctl_pitch_pid = torch.atan2(total_force_drone[..., [0]], total_force_drone[..., [2]])
-        self.ctl_row_rate_pid = (self.ctl_row_pid - self.rpy_drone[:, [0]])/(self.dt * self.substep_num)
+        self.ctl_roll_rate_pid = (self.ctl_roll_pid - self.rpy_drone[:, [0]])/(self.dt * self.substep_num)
         self.ctl_pitch_rate_pid = self.ctl_pitch_pid - self.rpy_drone[:, [1]]/(self.dt * self.substep_num) 
 
         return {
@@ -415,6 +441,7 @@ class QuadTransEnv(gym.Env):
         return obs
 
     def _get_info(self):
+        # expert info
         e_list = []
         for key in self.rma_params:
             param = getattr(self, key)
@@ -423,9 +450,34 @@ class QuadTransEnv(gym.Env):
             param_mean, param_std = getattr(self, f'{key}_mean'), getattr(self, f'{key}_std')
             e_list.append((param - param_mean) / param_std)
         e = torch.cat(e_list, dim=-1)
+
+        # adapt info
+        adapt_obs_idx = torch.arange(self.step_cnt - self.adapt_horizon, self.step_cnt, device=self.device) % self.adapt_horizon
+        thrust = self.ctl_thrust_his[adapt_obs_idx]
+        roll = self.ctl_roll_his[adapt_obs_idx]
+        pitch = self.ctl_pitch_his[adapt_obs_idx]
+        d_thrust = self.ctl_thrust_his[adapt_obs_idx] - self.ctl_thrust_his[adapt_obs_idx-1]
+        d_roll = self.ctl_roll_his[adapt_obs_idx] - self.ctl_roll_his[adapt_obs_idx-1]
+        d_pitch = self.ctl_pitch_his[adapt_obs_idx] - self.ctl_pitch_his[adapt_obs_idx-1]
+        xyz_drone = self.xyz_drone_his[adapt_obs_idx]
+        xyz_obj = self.xyz_obj_his[adapt_obs_idx]
+        d_xyz_drone = self.xyz_drone_his[adapt_obs_idx] - self.xyz_drone_his[adapt_obs_idx-1]
+        d_xyz_obj = self.xyz_obj_his[adapt_obs_idx] - self.xyz_obj_his[adapt_obs_idx-1]
+        dd_xyz_drone = self.xyz_drone_his[adapt_obs_idx] - 2 * self.xyz_drone_his[adapt_obs_idx-1] + self.xyz_drone_his[adapt_obs_idx-2]
+        dd_xyz_obj = self.xyz_obj_his[adapt_obs_idx] - 2 * self.xyz_obj_his[adapt_obs_idx-1] + self.xyz_obj_his[adapt_obs_idx-2]
+        ddd_xyz_drone = self.xyz_drone_his[adapt_obs_idx] - 3 * self.xyz_drone_his[adapt_obs_idx-1] + 3 * self.xyz_drone_his[adapt_obs_idx-2] - self.xyz_drone_his[adapt_obs_idx-3]
+        ddd_xyz_obj = self.xyz_obj_his[adapt_obs_idx] - 3 * self.xyz_obj_his[adapt_obs_idx-1] + 3 * self.xyz_obj_his[adapt_obs_idx-2] - self.xyz_obj_his[adapt_obs_idx-3]
+        adapt_obs = torch.concat(
+            [
+                thrust, roll, pitch, d_thrust, d_roll, d_pitch, # dim=6
+                xyz_drone, xyz_obj, d_xyz_drone, d_xyz_obj, dd_xyz_drone, dd_xyz_obj, ddd_xyz_drone, ddd_xyz_obj # dim=6*4=24
+            ],
+            dim=-1
+        ).permute(1,0,2).reshape(self.env_num, -1)
+
         return {
             'e': e,
-            'adapt_obs': torch.zeros((self.env_num, 1), device=self.device),
+            'adapt_obs': adapt_obs,
             'err_x': torch.norm(self.obj2goal, dim=-1),
             'err_v': torch.norm(self.vxyz_obj-self.vxyz_target, dim=-1),
         }
@@ -551,15 +603,15 @@ def playground():
     vis["obj_axes"].set_object(g.StlMeshGeometry.from_file('../assets/axes.stl'), material=g.MeshLambertMaterial(color=0x00FF00))
     # set target model as a sphere
     vis["target"].set_object(g.Sphere(0.01), material=g.MeshLambertMaterial(color=0xff0000))
-    # create arrow for visualize the trajectory
+    # create arroll for visualize the trajectory
     for i in range(env.traj_x.shape[-1]):
-        vis[f"traj_x{i}"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0xf000ff))
+        vis[f"traj_x{i}"].set_object(g.StlMeshGeometry.from_file('../assets/arroll.stl'), material=g.MeshLambertMaterial(color=0xf000ff))
     # set force as a cylinder and a cone
     vis_force_list = ["force_thrust_drone", "force_drag_drone", "force_gravity_drone", "force_rope_drone", "force_rope_obj", "force_drag_obj", "force_gravity_obj", "total_force_drone"]
     for key in vis_force_list:
-        vis[key].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=np.random.randint(0xffffff)))
+        vis[key].set_object(g.StlMeshGeometry.from_file('../assets/arroll.stl'), material=g.MeshLambertMaterial(color=np.random.randint(0xffffff)))
     def vis_vector(obj, origin, vec, scale = 2.0):
-        # visualize the force with arrow    
+        # visualize the force with arroll    
         vec_norm = np.linalg.norm(vec)
         if vec_norm == 0:
             return
@@ -582,7 +634,7 @@ def playground():
         for i in range(traj_x.shape[-1]):
             vis_vector(vis_input[f'traj_x{i}'], traj_x[:, i], traj_v[:, i], scale=0.5)
     # for PID
-    vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
+    vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arroll.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
     loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_expert0.2.pt', map_location='cpu')
     policy = loaded_agent['actor']
@@ -601,38 +653,38 @@ def playground():
             # thrust = env.mass_drone*env.g / torch.cos(torch.norm(env.rpy_drone[0], dim=-1)) - rope_force_projected
             # angle = 0.0
             # if env.step_cnt%20 < 10:
-            #     ctl_row = angle
+            #     ctl_roll = angle
             #     ctl_pitch = 0.0
             # else:
-            #     ctl_row = -angle
+            #     ctl_roll = -angle
             #     ctl_pitch = 0.0
             # ============= PID control =============
             # if t % env.substep_num == 0:
             #     thrust = env.thrust_pid[vis_env_id]
-            #     ctl_row = env.ctl_row_pid[vis_env_id]
+            #     ctl_roll = env.ctl_roll_pid[vis_env_id]
             #     ctl_pitch = env.ctl_pitch_pid[vis_env_id]
                 # total_force = -rope_force + env.mass_drone[vis_env_id]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.drone2goal[vis_env_id] * 1.0 - env.vxyz_drone[vis_env_id] * 0.2
                 # total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
                 # thrust = total_force_projected
                 # total_force_normed = total_force / torch.norm(total_force)
-                # ctl_row = torch.atan2(-total_force_normed[1], torch.sqrt(total_force_normed[vis_env_id]**2 + total_force_normed[2]**2))
+                # ctl_roll = torch.atan2(-total_force_normed[1], torch.sqrt(total_force_normed[vis_env_id]**2 + total_force_normed[2]**2))
                 # ctl_pitch = torch.atan2(total_force_normed[vis_env_id], total_force_normed[2])
                 # vis_vector(vis["force_pid"], env.xyz_drone[vis_env_id].numpy(), total_force.numpy())
             # ============= random control =============
             # if t % 10 == 0:
             #     thrust = np.random.uniform(0.0, 0.8)
-            #     ctl_row = np.random.uniform(-np.pi/3, np.pi/3)
+            #     ctl_roll = np.random.uniform(-np.pi/3, np.pi/3)
             #     ctl_pitch = np.random.uniform(-np.pi/3, np.pi/3)
             # ============= neural control =============
             if t % env.substep_num == 0:
                 action = policy(env._get_obs(), compressor(env._get_info()['e']))
                 thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
-                ctl_row = action[vis_env_id, 1].item() * env.ctl_row_std + env.ctl_row_mean
+                ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
                 ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
             thrust = torch.tensor([thrust], dtype=torch.float32)
-            ctl_row = torch.tensor([ctl_row], dtype=torch.float32)
+            ctl_roll = torch.tensor([ctl_roll], dtype=torch.float32)
             ctl_pitch = torch.tensor([ctl_pitch], dtype=torch.float32)
-            debug_info = env.substep(thrust, ctl_row, ctl_pitch)
+            debug_info = env.substep(thrust, ctl_roll, ctl_pitch)
             rope_force = debug_info['force_rope_drone'][vis_env_id]
             rotmat_drone = debug_info['rotmat_drone'][vis_env_id]
             # visualize the drone
