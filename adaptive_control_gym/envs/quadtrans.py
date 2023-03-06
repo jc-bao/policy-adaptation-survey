@@ -73,7 +73,7 @@ class QuadTransEnv(gym.Env):
         self.vxyz_drone_min, self.vxyz_drone_max = torch.tensor(self.vxyz_drone_min, dtype=torch.float32).to(self.device), torch.tensor(self.vxyz_drone_max, dtype=torch.float32).to(self.device)
         self.vxyz_drone_mean, self.vxyz_drone_std = (self.vxyz_drone_min + self.vxyz_drone_max)/2, (self.vxyz_drone_max - self.vxyz_drone_min)/2
 
-        self.rpy_drone_min, self.rpy_drone_max = np.array([-np.pi, -np.pi, 0.0])/3, np.array([np.pi, np.pi, 0.0])/3
+        self.rpy_drone_min, self.rpy_drone_max = np.array([-np.pi, -np.pi, 0.0])/6, np.array([np.pi, np.pi, 0.0])/6
         self.rpy_drone_min, self.rpy_drone_max = torch.tensor(self.rpy_drone_min, dtype=torch.float32).to(self.device), torch.tensor(self.rpy_drone_max, dtype=torch.float32).to(self.device)
         self.rpy_drone_mean, self.rpy_drone_std = (self.rpy_drone_min + self.rpy_drone_max)/2, (self.rpy_drone_max - self.rpy_drone_min)/2
         self.rpy_drone_std[2] = 1.0
@@ -89,9 +89,9 @@ class QuadTransEnv(gym.Env):
         self.action_mean, self.action_std = (self.action_min + self.action_max)/2, (self.action_max - self.action_min)/2
         self.thrust_min, self.thrust_max = 0.0, 0.6 # N
         self.thrust_mean, self.thrust_std = (self.thrust_min + self.thrust_max)/2, (self.thrust_max - self.thrust_min)/2
-        self.ctl_roll_min, self.ctl_roll_max = -np.pi/3, np.pi/3 # rad
+        self.ctl_roll_min, self.ctl_roll_max = -np.pi/6, np.pi/6 # rad
         self.ctl_roll_mean, self.ctl_roll_std = (self.ctl_roll_min + self.ctl_roll_max)/2, (self.ctl_roll_max - self.ctl_roll_min)/2
-        self.ctl_pitch_min, self.ctl_pitch_max = -np.pi/3, np.pi/3 # rad
+        self.ctl_pitch_min, self.ctl_pitch_max = -np.pi/6, np.pi/6 # rad
         self.ctl_pitch_mean, self.ctl_pitch_std = (self.ctl_pitch_min + self.ctl_pitch_max)/2, (self.ctl_pitch_max - self.ctl_pitch_min)/2
         self.ctl_roll_rate_min, self.ctl_roll_rate_max = -20, 20 # rad/s
         self.ctl_roll_rate_mean, self.ctl_roll_rate_std = (self.ctl_roll_rate_min + self.ctl_roll_rate_max)/2, (self.ctl_roll_rate_max - self.ctl_roll_rate_min)/2
@@ -106,7 +106,7 @@ class QuadTransEnv(gym.Env):
         self.damping_rate_obj_min, self.damping_rate_obj_max = torch.tensor(self.damping_rate_obj_min).to(self.device), torch.tensor([self.damping_rate_obj_max]).to(self.device)
         self.damping_rate_obj_mean, self.damping_rate_obj_std = (self.damping_rate_obj_min + self.damping_rate_obj_max)/2, (self.damping_rate_obj_max - self.damping_rate_obj_min)/2
         # TBD
-        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.15, 0.25
+        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.05, 0.15
         self.attitude_pid_p_min, self.attitude_pid_p_max = torch.tensor([self.attitude_pid_p_min]).to(self.device), torch.tensor([self.attitude_pid_p_max]).to(self.device)
         self.attitude_pid_p_mean, self.attitude_pid_p_std = (self.attitude_pid_p_min + self.attitude_pid_p_max)/2, (self.attitude_pid_p_max - self.attitude_pid_p_min)/2
         self.attitude_pid_p_std[self.attitude_pid_p_std == 0.0] = 1.0
@@ -173,12 +173,12 @@ class QuadTransEnv(gym.Env):
         # sample parameters uniformly using pytorch
         for key in self.state_params:
             self.__dict__[key] = self.sample_params(key)
-        self.xyz_drone *= 0.0
-        self.vxyz_drone *= 0.0
-        self.rpy_drone *= 0.0
-        self.vrpy_drone *= 0.0
-        self.tp_obj *= 0.0
-        self.vtp_obj *= 0.0
+        self.xyz_drone *= 1.0
+        self.vxyz_drone *= 1.0
+        self.rpy_drone *= 0.2
+        self.vrpy_drone *= 0.2
+        self.tp_obj *= 0.2
+        self.vtp_obj *= 0.2
 
         self.traj_x, self.traj_v = self._generate_traj()
 
@@ -441,6 +441,7 @@ class QuadTransEnv(gym.Env):
         future_traj_v = self.traj_v[self.step_cnt:self.step_cnt+self.obs_traj_len].reshape(self.env_num, -1)
         # tp_obj_normed = (self.tp_obj - self.tp_obj_mean) / self.tp_obj_std
         # vtp_obj_normed = (self.vtp_obj - self.vtp_obj_mean) / self.vtp_obj_std
+        # ic(xyz_drone_normed, xyz_obj_normed, xyz_target_normed, vxyz_drone_normed, vxyz_obj_normed, rpy_drone_normed, self.obj2goal, self.vxyz_obj - self.vxyz_target, future_traj_x, future_traj_v)
         obs = torch.cat([xyz_drone_normed, xyz_obj_normed, xyz_target_normed, vxyz_drone_normed, vxyz_obj_normed, rpy_drone_normed, self.obj2goal, self.vxyz_obj - self.vxyz_target, future_traj_x, future_traj_v], dim=1)
         return obs
 
@@ -653,7 +654,7 @@ def playground():
         rot_mat[:3, :3] *= vec_norm*scale
         obj.set_transform(tf.translation_matrix(origin) @ rot_mat)
     def vis_traj(vis_input, traj_x, traj_v):
-        for i in range(traj_x.shape[-1]):
+        for i in range(traj_x.shape[0]):
             vis_vector(vis_input[f'traj_x{i}'], traj_x[i], traj_v[i], scale=0.5)
     # for PID
     vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
