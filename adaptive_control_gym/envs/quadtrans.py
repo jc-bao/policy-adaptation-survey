@@ -106,7 +106,7 @@ class QuadTransEnv(gym.Env):
         self.damping_rate_obj_min, self.damping_rate_obj_max = torch.tensor(self.damping_rate_obj_min).to(self.device), torch.tensor([self.damping_rate_obj_max]).to(self.device)
         self.damping_rate_obj_mean, self.damping_rate_obj_std = (self.damping_rate_obj_min + self.damping_rate_obj_max)/2, (self.damping_rate_obj_max - self.damping_rate_obj_min)/2
         # TBD
-        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.05, 0.1
+        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.08, 0.16
         self.attitude_pid_p_min, self.attitude_pid_p_max = torch.tensor([self.attitude_pid_p_min]).to(self.device), torch.tensor([self.attitude_pid_p_max]).to(self.device)
         self.attitude_pid_p_mean, self.attitude_pid_p_std = (self.attitude_pid_p_min + self.attitude_pid_p_max)/2, (self.attitude_pid_p_max - self.attitude_pid_p_min)/2
         self.attitude_pid_p_std[self.attitude_pid_p_std == 0.0] = 1.0
@@ -173,10 +173,12 @@ class QuadTransEnv(gym.Env):
         # sample parameters uniformly using pytorch
         for key in self.state_params:
             self.__dict__[key] = self.sample_params(key)
-        self.rpy_drone *= 0.2
-        self.vrpy_drone *= 0.1
-        self.tp_obj *= 0.2
-        self.vtp_obj *= 0.1
+        self.xyz_drone *= 0.0
+        self.vxyz_drone *= 0.0
+        self.rpy_drone *= 0.0
+        self.vrpy_drone *= 0.0
+        self.tp_obj *= 0.0
+        self.vtp_obj *= 0.0
 
         self.traj_x, self.traj_v = self._generate_traj()
 
@@ -186,7 +188,7 @@ class QuadTransEnv(gym.Env):
         self.vxyz_target = self.traj_v[..., self.step_cnt]
 
         # phisical parameters
-        self.thrust = torch.ones((self.env_num, 1), device=self.device, dtype=torch.float32) * 0.5
+        self.thrust = torch.ones((self.env_num, 1), device=self.device, dtype=torch.float32) * 0.027 * 9.81
         self.vxyz_obj = self.vxyz_drone + self.get_obj_rel_vel(self.tp_obj, self.vtp_obj, self.length_rope)
         self.xyz_obj = self.xyz_drone + self.get_obj_disp(self.tp_obj, self.length_rope)
         self.obj2goal = self.xyz_obj - self.xyz_target
@@ -303,6 +305,8 @@ class QuadTransEnv(gym.Env):
         self.vxyz_obj = self.vxyz_drone + vxyz_obj_rel
         force_drag_drone = -self.damping_rate_drone * self.vxyz_drone
         force_drag_obj = -self.damping_rate_obj * self.vxyz_obj
+        # set force_drag_obj to zero when the object mass is zero
+        force_drag_obj = force_drag_obj * (self.mass_obj > 0).float()
         # analysis the center of mass of the two point mass system
         acc_com = (force_thrust + force_gravity_drone + force_gravity_obj + force_drag_drone + force_drag_obj) / (self.mass_drone + self.mass_obj)
         # calculate the acceleration of the object with respect to center of mass
@@ -582,7 +586,10 @@ def playground():
     import meshcat.transformations as tf
     import time
 
-    env = QuadTransEnv(env_num=3, gpu_id=-1)
+    env = QuadTransEnv(env_num=1, gpu_id=-1)
+    env.mass_drone_min[:], env.mass_drone_max[:] = 0.027, 0.027
+    env.damping_rate_drone_min[:], env.damping_rate_drone_max[:] = 0.00, 0.00
+    env.max_steps = 40
     env.reset()
     vis_env_id = 0
 
@@ -603,15 +610,15 @@ def playground():
     vis["obj_axes"].set_object(g.StlMeshGeometry.from_file('../assets/axes.stl'), material=g.MeshLambertMaterial(color=0x00FF00))
     # set target model as a sphere
     vis["target"].set_object(g.Sphere(0.01), material=g.MeshLambertMaterial(color=0xff0000))
-    # create arroll for visualize the trajectory
+    # create arrow for visualize the trajectory
     for i in range(env.traj_x.shape[-1]):
-        vis[f"traj_x{i}"].set_object(g.StlMeshGeometry.from_file('../assets/arroll.stl'), material=g.MeshLambertMaterial(color=0xf000ff))
+        vis[f"traj_x{i}"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0xf000ff))
     # set force as a cylinder and a cone
     vis_force_list = ["force_thrust_drone", "force_drag_drone", "force_gravity_drone", "force_rope_drone", "force_rope_obj", "force_drag_obj", "force_gravity_obj", "total_force_drone"]
     for key in vis_force_list:
-        vis[key].set_object(g.StlMeshGeometry.from_file('../assets/arroll.stl'), material=g.MeshLambertMaterial(color=np.random.randint(0xffffff)))
+        vis[key].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=np.random.randint(0xffffff)))
     def vis_vector(obj, origin, vec, scale = 2.0):
-        # visualize the force with arroll    
+        # visualize the force with arrow    
         vec_norm = np.linalg.norm(vec)
         if vec_norm == 0:
             return
@@ -634,7 +641,7 @@ def playground():
         for i in range(traj_x.shape[-1]):
             vis_vector(vis_input[f'traj_x{i}'], traj_x[:, i], traj_v[:, i], scale=0.5)
     # for PID
-    vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arroll.stl'), material=g.MeshLambertMaterial(color=0x000fff))
+    vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
     loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_expert0.2.pt', map_location='cpu')
     policy = loaded_agent['actor']
@@ -646,7 +653,9 @@ def playground():
     rotmat_drone = torch.eye(3, device=env.device)
     rope_force = torch.zeros(3, device=env.device)
     vis_traj(vis, env.traj_x[vis_env_id], env.traj_v[vis_env_id])
-    while True:
+    xyz_drone_his = np.zeros((env.max_steps, 3))
+    rpy_drone_his = np.zeros((env.max_steps, 3))
+    for step in range(env.max_steps):
         for t in range(env.substep_num):
             # ============= z-axis control =============
             # rope_force_projected = (torch.inverse(rotmat_drone) @ rope_force)[2].item()
@@ -676,11 +685,23 @@ def playground():
             #     ctl_roll = np.random.uniform(-np.pi/3, np.pi/3)
             #     ctl_pitch = np.random.uniform(-np.pi/3, np.pi/3)
             # ============= neural control =============
+            # if t % env.substep_num == 0:
+            #     action = policy(env._get_obs(), compressor(env._get_info()['e']))
+            #     thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
+            #     ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
+            #     ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
+            # ============= debug control =============
             if t % env.substep_num == 0:
-                action = policy(env._get_obs(), compressor(env._get_info()['e']))
-                thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
-                ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
-                ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
+                roll = env.rpy_drone[vis_env_id, 0].item()
+                pitch = env.rpy_drone[vis_env_id, 1].item()
+                thrust = 0.027*9.81 / np.cos(np.sqrt(pitch**2+roll**2))
+                if env.step_cnt%40 < 10:
+                    ctl_pitch = np.pi/24
+                elif env.step_cnt%40 < 30:
+                    ctl_pitch = -np.pi/24
+                else:
+                    ctl_pitch = np.pi/24
+                ctl_roll = ctl_pitch
             thrust = torch.tensor([thrust], dtype=torch.float32)
             ctl_roll = torch.tensor([ctl_roll], dtype=torch.float32)
             ctl_pitch = torch.tensor([ctl_pitch], dtype=torch.float32)
@@ -711,6 +732,10 @@ def playground():
                 else:
                     raise "unknown key: {}".format(key)
                 vis_vector(obj=vis[key], origin=origin, vec=debug_info[key][vis_env_id].numpy(), scale=2.0)
+            # record drone xyz
+            xyz_drone_his[env.step_cnt] = env.xyz_drone[vis_env_id].numpy()
+            # record drone rpy
+            rpy_drone_his[env.step_cnt] = env.rpy_drone[vis_env_id].numpy()
             time.sleep(env.dt)
         env.step_cnt += 1
         env.xyz_target = env.traj_x[..., env.step_cnt]
@@ -718,6 +743,16 @@ def playground():
         if env.step_cnt == env.max_steps:
             env.reset()
             vis_traj(vis, env.traj_x[vis_env_id], env.traj_v[vis_env_id])
+    # plot the trajectory xyz in three subplot
+    fig, axs = plt.subplots(6, 1)
+    axs[0].plot(xyz_drone_his[:, 0])
+    axs[1].plot(xyz_drone_his[:, 1])
+    axs[2].plot(xyz_drone_his[:, 2])
+    axs[3].plot(rpy_drone_his[:, 0])
+    axs[4].plot(rpy_drone_his[:, 1])
+    axs[5].plot(rpy_drone_his[:, 2])
+    # save the plot
+    plt.savefig('results/traj.png')
         
 if __name__ == '__main__':
     playground()
