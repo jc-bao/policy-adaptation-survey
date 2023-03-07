@@ -342,19 +342,23 @@ class QuadTransEnv(gym.Env):
         self.xyz_drone = torch.clip(self.xyz_drone + self.vxyz_drone * self.dt, -5, 5)
         self.vxyz_drone = torch.clip(self.vxyz_drone + acc_drone * self.dt, -30, 30)
         reach_x_bound = torch.abs(self.xyz_drone[:, 0]) >= 5
-        self.vxyz_drone[reach_x_bound, 0] = - self.vxyz_drone[reach_x_bound, 0]
+        self.vxyz_drone[reach_x_bound, 0] = 0.0
         reach_y_bound = torch.abs(self.xyz_drone[:, 1]) >= 5
-        self.vxyz_drone[reach_y_bound, 1] = - self.vxyz_drone[reach_y_bound, 1]
+        self.vxyz_drone[reach_y_bound, 1] = 0.0
         reach_z_bound = torch.abs(self.xyz_drone[:, 2]) >= 5
-        self.vxyz_drone[reach_z_bound, 2] = - self.vxyz_drone[reach_z_bound, 2]
+        self.vxyz_drone[reach_z_bound, 2] = 0.0
 
         # =================== angular rate control ===================
-        ctl_roll_acc = torch.clip((ctl_roll - self.rpy_drone[:, [0]])*30.0 - self.vrpy_drone[:, [0]] * 5.0, -1.5, 1.5)
-        ctl_pitch_acc = torch.clip((ctl_pitch - self.rpy_drone[:, [1]])*30.0 - self.vrpy_drone[:, [1]] * 5.0, -1.5, 1.5)
+        ctl_roll_acc = torch.clip((ctl_roll - self.rpy_drone[:, [0]])*60 - self.vrpy_drone[:, [0]] * 7, -100.0, 100.0)
+        ctl_pitch_acc = torch.clip((ctl_pitch - self.rpy_drone[:, [1]])*60 - self.vrpy_drone[:, [1]] * 7, -100.0, 100.0)
         self.vrpy_drone[:, [0]] = ctl_roll_acc * self.dt + self.vrpy_drone[:, [0]]
         self.vrpy_drone[:, [1]] = ctl_pitch_acc * self.dt + self.vrpy_drone[:, [1]]
-        self.rpy_drone[:, [0]] = torch.clip(self.vrpy_drone[:, [0]] * self.dt + self.rpy_drone[:, [0]], -np.pi/3, np.pi/3)
-        self.rpy_drone[:, [1]] = torch.clip(self.vrpy_drone[:, [1]] * self.dt + self.rpy_drone[:, [1]], -np.pi/3, np.pi/3)
+        self.rpy_drone[:, [0]] = torch.clip(self.vrpy_drone[:, [0]] * self.dt + self.rpy_drone[:, [0]], -np.pi/4, np.pi/4)
+        self.rpy_drone[:, [1]] = torch.clip(self.vrpy_drone[:, [1]] * self.dt + self.rpy_drone[:, [1]], -np.pi/4, np.pi/4)
+        roll_hit_bound = torch.abs(self.rpy_drone[:, 0]) >= np.pi/4
+        self.vrpy_drone[roll_hit_bound, 0] = 0.0
+        pitch_hit_bound = torch.abs(self.rpy_drone[:, 1]) >= np.pi/4
+        self.vrpy_drone[pitch_hit_bound, 1] = 0.0
         # =================== attitude control ===================
         # self.rpy_drone[:, [0]] = ctl_roll * self.attitude_pid_p + self.rpy_drone[:, [0]] * (1-self.attitude_pid_p)
         # self.rpy_drone[:, [1]] = ctl_pitch * self.attitude_pid_p + self.rpy_drone[:, [1]] * (1-self.attitude_pid_p)
@@ -376,7 +380,7 @@ class QuadTransEnv(gym.Env):
         self.drone2goal[..., [-1]] -= self.length_rope
 
         # PID control expert information
-        total_force_obj = - force_gravity_obj - force_drag_obj - self.obj2goal * 1.5 - (self.vxyz_obj - self.vxyz_target) * 0.3
+        total_force_obj = - force_gravity_obj - force_drag_obj - self.obj2goal * 1.0 - (self.vxyz_obj - self.vxyz_target) * 0.3
         total_force_obj[self.mass_obj[:,0]==0,:] = 0.0
         total_force_obj_projected = torch.einsum('bi,bi->b', z_hat_obj, total_force_obj).unsqueeze(-1) * z_hat_obj
         z_hat_obj_target = - total_force_obj / torch.norm(total_force_obj, dim=-1, keepdim=True)
@@ -595,7 +599,7 @@ def playground():
 
     env = QuadTransEnv(env_num=1, gpu_id=-1)
     env.mass_drone_min[:], env.mass_drone_max[:] = 0.027, 0.027
-    env.mass_obj_min[:], env.mass_obj_max[:] = 0.01, 0.01
+    env.mass_obj_min[:], env.mass_obj_max[:] = 0.00, 0.00
     env.damping_rate_drone_min[:], env.damping_rate_drone_max[:] = 0.00, 0.00
     # env.max_steps = 40
     env.reset()
@@ -663,7 +667,8 @@ def playground():
     vis_traj(vis, env.traj_x[:, vis_env_id], env.traj_v[:, vis_env_id])
     xyz_drone_his = np.zeros((env.max_steps, 3))
     rpy_drone_his = np.zeros((env.max_steps, 3))
-    for step in range(env.max_steps):
+    action_his = np.zeros((env.max_steps, 3))
+    for step in range(env.max_steps-1):
         for t in range(env.substep_num):
             # ============= z-axis control =============
             # rope_force_projected = (torch.inverse(rotmat_drone) @ rope_force)[2].item()
@@ -745,6 +750,7 @@ def playground():
             xyz_drone_his[env.step_cnt] = env.xyz_drone[vis_env_id].numpy()
             # record drone rpy
             rpy_drone_his[env.step_cnt] = env.rpy_drone[vis_env_id].numpy()
+            action_his[env.step_cnt] = np.array([thrust.item(), ctl_roll.item(), ctl_pitch.item()])
             # DEBUG
             time.sleep(env.dt)
         env.step_cnt += 1
@@ -762,7 +768,9 @@ def playground():
     axs[2].plot(xyz_drone_his[:, 2], label='z')
     axs[2].plot(env.traj_x[:,vis_env_id,2]+0.2, label='z_ref', linestyle='--')
     axs[3].plot(rpy_drone_his[:, 0], label='roll')
+    axs[3].plot(action_his[:, 1], label='roll_ctl', linestyle='--')
     axs[4].plot(rpy_drone_his[:, 1], label='pitch')
+    axs[4].plot(action_his[:, 2], label='pitch_ctl', linestyle='--')
     axs[5].plot(rpy_drone_his[:, 2], label='yaw')
     for i in range(6):
         axs[i].grid()
