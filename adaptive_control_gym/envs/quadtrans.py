@@ -174,12 +174,12 @@ class QuadTransEnv(gym.Env):
         for key in self.state_params:
             self.__dict__[key] = self.sample_params(key)
         # DEBUG
-        self.xyz_drone *= 0.0
-        self.vxyz_drone *= 0.0
-        self.rpy_drone *= 0.0
-        self.vrpy_drone *= 0.0
-        self.tp_obj *= 0.0
-        self.vtp_obj *= 0.0
+        self.xyz_drone *= 1.0
+        self.vxyz_drone *= 1.0
+        self.rpy_drone *= 0.2
+        self.vrpy_drone *= 0.2
+        self.tp_obj *= 0.2
+        self.vtp_obj *= 0.2
 
         self.traj_x, self.traj_v = self._generate_traj()
 
@@ -746,7 +746,7 @@ def playground():
             # record drone rpy
             rpy_drone_his[env.step_cnt] = env.rpy_drone[vis_env_id].numpy()
             # DEBUG
-            # time.sleep(env.dt)
+            time.sleep(env.dt)
         env.step_cnt += 1
         env.xyz_target = env.traj_x[env.step_cnt]
         env.vxyz_target = env.traj_v[env.step_cnt]
