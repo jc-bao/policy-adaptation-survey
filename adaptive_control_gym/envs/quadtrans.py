@@ -676,10 +676,10 @@ def playground():
             #     ctl_roll = -angle
             #     ctl_pitch = 0.0
             # ============= PID control =============
-            # if t % env.substep_num == 0:
-            #     thrust = env.thrust_pid[vis_env_id]
-            #     ctl_roll = env.ctl_roll_pid[vis_env_id]
-            #     ctl_pitch = env.ctl_pitch_pid[vis_env_id]
+            if t % env.substep_num == 0:
+                thrust = env.thrust_pid[vis_env_id]
+                ctl_roll = env.ctl_roll_pid[vis_env_id]
+                ctl_pitch = env.ctl_pitch_pid[vis_env_id]
                 # total_force = -rope_force + env.mass_drone[vis_env_id]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.drone2goal[vis_env_id] * 1.0 - env.vxyz_drone[vis_env_id] * 0.2
                 # total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
                 # thrust = total_force_projected
@@ -693,24 +693,24 @@ def playground():
             #     ctl_roll = np.random.uniform(-np.pi/3, np.pi/3)
             #     ctl_pitch = np.random.uniform(-np.pi/3, np.pi/3)
             # ============= neural control =============
-            if t % env.substep_num == 0:
-                obs = env._get_obs()
-                action = policy(obs, compressor(env._get_info()['e']))
-                thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
-                ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
-                ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
+            # if t % env.substep_num == 0:
+            #     obs = env._get_obs()
+            #     action = policy(obs, compressor(env._get_info()['e']))
+            #     thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
+            #     ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
+            #     ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
             # ============= debug control =============
-            if t % env.substep_num == 0:
-                roll = env.rpy_drone[vis_env_id, 0].item()
-                pitch = env.rpy_drone[vis_env_id, 1].item()
-                thrust = (0.027+0.01)*9.81 / np.cos(np.sqrt(pitch**2+roll**2))
-                if env.step_cnt%40 < 10:
-                    ctl_pitch = np.pi/24
-                elif env.step_cnt%40 < 30:
-                    ctl_pitch = -np.pi/24
-                else:
-                    ctl_pitch = np.pi/24
-                ctl_roll = ctl_pitch
+            # if t % env.substep_num == 0:
+            #     roll = env.rpy_drone[vis_env_id, 0].item()
+            #     pitch = env.rpy_drone[vis_env_id, 1].item()
+            #     thrust = (0.027+0.01)*9.81 / np.cos(np.sqrt(pitch**2+roll**2))
+            #     if env.step_cnt%40 < 10:
+            #         ctl_pitch = np.pi/24
+            #     elif env.step_cnt%40 < 30:
+            #         ctl_pitch = -np.pi/24
+            #     else:
+            #         ctl_pitch = np.pi/24
+            #     ctl_roll = ctl_pitch
             thrust = torch.tensor([thrust], dtype=torch.float32)
             ctl_roll = torch.tensor([ctl_roll], dtype=torch.float32)
             ctl_pitch = torch.tensor([ctl_pitch], dtype=torch.float32)
