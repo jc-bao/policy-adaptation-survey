@@ -106,7 +106,7 @@ class QuadTransEnv(gym.Env):
         self.damping_rate_obj_min, self.damping_rate_obj_max = torch.tensor(self.damping_rate_obj_min).to(self.device), torch.tensor([self.damping_rate_obj_max]).to(self.device)
         self.damping_rate_obj_mean, self.damping_rate_obj_std = (self.damping_rate_obj_min + self.damping_rate_obj_max)/2, (self.damping_rate_obj_max - self.damping_rate_obj_min)/2
         # TBD
-        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.05, 0.10
+        self.attitude_pid_p_min, self.attitude_pid_p_max = 0.4, 0.5
         self.attitude_pid_p_min, self.attitude_pid_p_max = torch.tensor([self.attitude_pid_p_min]).to(self.device), torch.tensor([self.attitude_pid_p_max]).to(self.device)
         self.attitude_pid_p_mean, self.attitude_pid_p_std = (self.attitude_pid_p_min + self.attitude_pid_p_max)/2, (self.attitude_pid_p_max - self.attitude_pid_p_min)/2
         self.attitude_pid_p_std[self.attitude_pid_p_std == 0.0] = 1.0
@@ -349,19 +349,19 @@ class QuadTransEnv(gym.Env):
         self.vxyz_drone[reach_z_bound, 2] = 0.0
 
         # =================== angular rate control ===================
-        ctl_roll_acc = torch.clip((ctl_roll - self.rpy_drone[:, [0]])*60 - self.vrpy_drone[:, [0]] * 7, -100.0, 100.0)
-        ctl_pitch_acc = torch.clip((ctl_pitch - self.rpy_drone[:, [1]])*60 - self.vrpy_drone[:, [1]] * 7, -100.0, 100.0)
-        self.vrpy_drone[:, [0]] = ctl_roll_acc * self.dt + self.vrpy_drone[:, [0]]
-        self.vrpy_drone[:, [1]] = ctl_pitch_acc * self.dt + self.vrpy_drone[:, [1]]
-        self.rpy_drone[:, [0]] = torch.clip(self.vrpy_drone[:, [0]] * self.dt + self.rpy_drone[:, [0]], -np.pi/4, np.pi/4)
-        self.rpy_drone[:, [1]] = torch.clip(self.vrpy_drone[:, [1]] * self.dt + self.rpy_drone[:, [1]], -np.pi/4, np.pi/4)
-        roll_hit_bound = torch.abs(self.rpy_drone[:, 0]) >= np.pi/4
-        self.vrpy_drone[roll_hit_bound, 0] = 0.0
-        pitch_hit_bound = torch.abs(self.rpy_drone[:, 1]) >= np.pi/4
-        self.vrpy_drone[pitch_hit_bound, 1] = 0.0
+        # ctl_roll_acc = torch.clip((ctl_roll - self.rpy_drone[:, [0]])*60 - self.vrpy_drone[:, [0]] * 7, -100.0, 100.0)
+        # ctl_pitch_acc = torch.clip((ctl_pitch - self.rpy_drone[:, [1]])*60 - self.vrpy_drone[:, [1]] * 7, -100.0, 100.0)
+        # self.vrpy_drone[:, [0]] = ctl_roll_acc * self.dt + self.vrpy_drone[:, [0]]
+        # self.vrpy_drone[:, [1]] = ctl_pitch_acc * self.dt + self.vrpy_drone[:, [1]]
+        # self.rpy_drone[:, [0]] = torch.clip(self.vrpy_drone[:, [0]] * self.dt + self.rpy_drone[:, [0]], -np.pi/4, np.pi/4)
+        # self.rpy_drone[:, [1]] = torch.clip(self.vrpy_drone[:, [1]] * self.dt + self.rpy_drone[:, [1]], -np.pi/4, np.pi/4)
+        # roll_hit_bound = torch.abs(self.rpy_drone[:, 0]) >= np.pi/4
+        # self.vrpy_drone[roll_hit_bound, 0] = 0.0
+        # pitch_hit_bound = torch.abs(self.rpy_drone[:, 1]) >= np.pi/4
+        # self.vrpy_drone[pitch_hit_bound, 1] = 0.0
         # =================== attitude control ===================
-        # self.rpy_drone[:, [0]] = ctl_roll * self.attitude_pid_p + self.rpy_drone[:, [0]] * (1-self.attitude_pid_p)
-        # self.rpy_drone[:, [1]] = ctl_pitch * self.attitude_pid_p + self.rpy_drone[:, [1]] * (1-self.attitude_pid_p)
+        self.rpy_drone[:, [0]] = ctl_roll * self.attitude_pid_p + self.rpy_drone[:, [0]] * (1-self.attitude_pid_p)
+        self.rpy_drone[:, [1]] = ctl_pitch * self.attitude_pid_p + self.rpy_drone[:, [1]] * (1-self.attitude_pid_p)
 
         self.tp_obj = self.tp_obj + self.vtp_obj * self.dt
         self.tp_obj[:, 0] = (self.tp_obj[:, 0] + np.pi) % (2*np.pi) - np.pi
@@ -681,10 +681,10 @@ def playground():
             #     ctl_roll = -angle
             #     ctl_pitch = 0.0
             # ============= PID control =============
-            if t % env.substep_num == 0:
-                thrust = env.thrust_pid[vis_env_id]
-                ctl_roll = env.ctl_roll_pid[vis_env_id]
-                ctl_pitch = env.ctl_pitch_pid[vis_env_id]
+            # if t % env.substep_num == 0:
+            #     thrust = env.thrust_pid[vis_env_id]
+            #     ctl_roll = env.ctl_roll_pid[vis_env_id]
+            #     ctl_pitch = env.ctl_pitch_pid[vis_env_id]
                 # total_force = -rope_force + env.mass_drone[vis_env_id]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.drone2goal[vis_env_id] * 1.0 - env.vxyz_drone[vis_env_id] * 0.2
                 # total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
                 # thrust = total_force_projected
@@ -698,12 +698,12 @@ def playground():
             #     ctl_roll = np.random.uniform(-np.pi/3, np.pi/3)
             #     ctl_pitch = np.random.uniform(-np.pi/3, np.pi/3)
             # ============= neural control =============
-            # if t % env.substep_num == 0:
-            #     obs = env._get_obs()
-            #     action = policy(obs, compressor(env._get_info()['e']))
-            #     thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
-            #     ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
-            #     ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
+            if t % env.substep_num == 0:
+                obs = env._get_obs()
+                action = policy(obs, compressor(env._get_info()['e']))
+                thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
+                ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
+                ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
             # ============= debug control =============
             # if t % env.substep_num == 0:
             #     roll = env.rpy_drone[vis_env_id, 0].item()
