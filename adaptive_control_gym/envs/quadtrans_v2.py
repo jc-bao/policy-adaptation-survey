@@ -246,7 +246,7 @@ def main():
     omega_target = torch.tensor([[[0.5, 0.0, 0.0]]])
     thrust = torch.ones((1, 1, 1))*0.037*9.81
     action = torch.cat([thrust, omega_target], dim=-1)
-    for i in range(1):
+    for i in range(3):
         state, rew, done, info = env.step(action)
     env.close()
 
