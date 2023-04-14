@@ -69,6 +69,7 @@ class QuadTransEnv(gym.Env):
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
 
     def step(self, action):
+
         return self.observation_space.sample(), 0, False, {}
     
     def ctlstep(self, omega_target:torch.Tensor, thrust:torch.Tensor):
@@ -104,7 +105,6 @@ class QuadTransEnv(gym.Env):
         rope_vel = torch.sum(vxyz_obj2hook * xyz_obj2hook_normed, dim=-1, keepdim=True) * xyz_obj2hook_normed
         mass_joint = self.mass_drones * self.mass_obj.unsqueeze(1) / (self.mass_drones + self.mass_obj.unsqueeze(1))
         rope_force_drones = mass_joint * ((self.rope_wn ** 2) * rope_disp + 2 * self.rope_zeta * self.rope_wn * rope_vel)
-        rope_force_drones *= 0.0
         # total force
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # total moment
