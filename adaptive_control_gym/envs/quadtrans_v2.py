@@ -112,9 +112,9 @@ class QuadTransEnv(gym.Env):
             last_error=zeros
         )
         self.attitude_controller = PIDController(
-            kp=ones*20.0,
+            kp=ones*30.0,
             ki=ones*0.0,
-            kd=ones*0.0,
+            kd=ones*8.0,
             ki_max=ones*100.0,
             integral=zeros,
             last_error=zeros
@@ -181,8 +181,6 @@ class QuadTransEnv(gym.Env):
         rope_force_drones = mass_joint * \
             ((self.rope_wn ** 2) * rope_disp + 2 *
              self.rope_zeta * self.rope_wn * rope_vel)
-        # DEBUG
-        rope_force_drones *= 0.0
         # total force
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # total moment
@@ -244,6 +242,7 @@ class QuadTransEnv(gym.Env):
         target_force_obj = self.mass_obj * \
                 self.objpos_controller.update(
                 delta_pos, self.step_dt) - self.mass_obj * self.g
+        ic(delta_pos, target_force_obj, self.mass_obj * self.objpos_controller.update(delta_pos, self.step_dt))
         xyz_obj2drone = self.xyz_obj - self.xyz_drones
         z_hat_obj = xyz_obj2drone / \
                 torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
@@ -252,14 +251,12 @@ class QuadTransEnv(gym.Env):
             target_force_obj * z_hat_obj, dim=-1) * z_hat_obj
 
         # Drone-level controller
-        xyz_drone_target = self.xyz_obj + target_force_obj / \
-                torch.norm(pos_target, dim=-1, keepdim=True) * \
-                self.rope_length - self.hook_disp
-        # DEBUG
-        delta_pos_drones = pos_target.unsqueeze(1) - self.xyz_drones
-        # DEBUG
+        xyz_drone_target = (self.xyz_obj + target_force_obj / \
+                torch.norm(target_force_obj, dim=-1, keepdim=True) * \
+                self.rope_length) - self.hook_disp
+        delta_pos_drones = xyz_drone_target - self.xyz_drones
         target_force_drone = self.mass_drones*self.pos_controller.update(
-            delta_pos_drones, self.step_dt) - self.mass_drones * self.g + target_force_obj_projected * 0.0
+            delta_pos_drones, self.step_dt) - (self.mass_drones) * self.g + target_force_obj_projected
         rotmat_drone = geom.quat2rotmat(self.quat_drones)
         thrust_desired = (rotmat_drone@target_force_drone.unsqueeze(-1)).squeeze(-1)
         thrust = thrust_desired[..., 2]
@@ -274,7 +271,7 @@ class QuadTransEnv(gym.Env):
         #     quat_target, geom.quat_inv(self.quat_drones))
         # rot_err = quat_error[..., :3]
 
-        # DEBUG
+        ic(desired_rotvec.shape, thrust_desired.shape)
         rot_err = torch.cross(
             desired_rotvec, thrust_desired/torch.norm(thrust_desired, dim=-1,keepdim=True), dim=-1)
         rpy_rate_target = self.attitude_controller.update(
