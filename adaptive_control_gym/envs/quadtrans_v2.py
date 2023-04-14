@@ -37,8 +37,8 @@ class QuadTransEnv(gym.Env):
         self.J_drones[:, :, 0, 0] = 1.7e-5
         self.J_drones[:, :, 1, 1] = 1.7e-5
         self.J_drones[:, :, 2, 2] = 3.0e-5
-        self.hangging_disp = torch.zeros((self.env_num, self.drone_num, 3), device=self.device)
-        self.hangging_disp[:, :, 2] = -0.05
+        self.hook_disp = torch.zeros((self.env_num, self.drone_num, 3), device=self.device)
+        self.hook_disp[:, :, 2] = -0.05
         self.mass_obj = torch.ones((self.env_num, 3), device=self.device) * 0.01
         self.rope_length = torch.ones((self.env_num, self.drone_num), device=self.device) * 0.2
         self.rope_zeta = torch.ones((self.env_num, self.drone_num), device=self.device) * 0.7
@@ -65,6 +65,7 @@ class QuadTransEnv(gym.Env):
     def simstep(self, torque:torch.Tensor, thrust:torch.Tensor):
         # state variables
         rotmat_drone = quat2rotmat(self.quat_drones)
+        xyz_hook = self.xyz_drones + (rotmat_drone @ self.hook_disp.unsqueeze(-1)).squeeze(-1)
 
         # analysis the force of the drone
         # gravity
@@ -74,16 +75,18 @@ class QuadTransEnv(gym.Env):
         thrust_drones[:, :, 2] = thrust
         thrust_drones = (rotmat_drone @ thrust_drones.unsqueeze(-1)).squeeze(-1)
         # rope force
-        xyz_obj2drone = self.xyz_drones - self.xyz_obj.unsqueeze(1)
-        xyz_obj2drone_normed = xyz_obj2drone / torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
-        rope_disp = xyz_obj2drone - self.rope_length * xyz_obj2drone_normed
-        vxyz_obj2drone = self.vxyz_obj - self.vxyz_drones
-        vxyz_obj2drone_projected = torch.sum(vxyz_obj2drone * xyz_obj2drone_normed, dim=-1, keepdim=True) * xyz_obj2drone_normed
-        rope_force_drones = self.mass_obj * (self.rope_wn ** 2) * rope_disp + 2 * self.rope_zeta * self.rope_wn * vxyz_obj2drone_projected
+        xyz_obj2hook = self.xyz_obj.unsqueeze(1) - xyz_hook
+        xyz_obj2hook_normed = xyz_obj2hook / torch.norm(xyz_obj2hook, dim=-1, keepdim=True)
+        rope_disp = xyz_obj2hook - self.rope_length * xyz_obj2hook_normed
+        vxyz_hook = self.vxyz_drones + torch.cross(self.omega_drones, self.hook_disp, dim=-1)
+        vxyz_obj2hook = self.vxyz_obj - vxyz_hook
+        rope_vel = torch.sum(vxyz_obj2hook * xyz_obj2hook_normed, dim=-1, keepdim=True) * xyz_obj2hook_normed
+        mass_joint = self.mass_drones * self.mass_obj.unsqueeze(1) / (self.mass_drones + self.mass_obj.unsqueeze(1))
+        rope_force_drones = mass_joint * ((self.rope_wn ** 2) * rope_disp + 2 * self.rope_zeta * self.rope_wn * rope_vel)
         # total force
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # total moment
-        moment_drones = torque + torch.cross(self.hangging_disp, rope_force_drones, dim=-1)
+        moment_drones = torque + torch.cross(self.hook_disp, rope_force_drones, dim=-1)
 
         # analysis the force of the object
         # gravity
@@ -116,6 +119,10 @@ class QuadTransEnv(gym.Env):
             'moment_drones': moment_drones,
             'force_obj': force_obj,
             'rope_force_drones': rope_force_drones,
+            'gravity_drones': gravity_drones,
+            'thrust_drones': thrust_drones,
+            'rope_disp': rope_disp,
+            'rope_vel': rope_vel,
         }
 
 
@@ -130,7 +137,7 @@ class QuadTransEnv(gym.Env):
 
 class Logger:
     def __init__(self) -> None:
-        self.log_items = ['xyz_drone', 'vxyz_drone', 'quat_drone', 'omega_drone', 'xyz_obj', 'vxyz_obj', 'force_drones', 'moment_drones', 'force_obj', 'rope_force_drones']
+        self.log_items = ['xyz_drone', 'vxyz_drone', 'quat_drone', 'omega_drone', 'xyz_obj', 'vxyz_obj', 'force_drones', 'moment_drones', 'force_obj', 'rope_force_drones', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel']
         self.log_dict = {item: [] for item in self.log_items}
 
     def log(self, state):
@@ -146,7 +153,7 @@ class Logger:
         sns.set_theme()
         # create figure
         fig, axs = plt.subplots(len(self.log_items), 1,
-                                figsize=(10, 3*len(self.log_items)))
+                                figsize=(10, 4*len(self.log_items)))
         # plot
         x_time = np.arange(len(self.log_dict[self.log_items[0]])) * 4e-4
         for i, item in enumerate(self.log_items):
@@ -159,7 +166,7 @@ def main():
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1)
     env.reset()
     logger = Logger()
-    for i in range(100):
+    for i in range(1000):
         state = env.simstep(torch.zeros((1, 3)), torch.zeros((1, 1)))
         logger.log(state)
     logger.plot('results/test.png')
