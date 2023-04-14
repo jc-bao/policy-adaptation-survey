@@ -240,25 +240,26 @@ class QuadTransEnv(gym.Env):
         # Object-level controller
         delta_pos = torch.clip(pos_target - self.xyz_obj, -1.0, 1.0)
         force_obj_pid = self.mass_obj * \
-                self.objpos_controller.update(
+            self.objpos_controller.update(
                 delta_pos, self.step_dt)
         target_force_obj = force_obj_pid - self.mass_obj * self.g
         xyz_obj2drone = self.xyz_obj - self.xyz_drones
         z_hat_obj = xyz_obj2drone / \
-                torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
+            torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
         # TODO distribute the force to multiple drones
         target_force_obj_projected = torch.sum(
             target_force_obj * z_hat_obj, dim=-1) * z_hat_obj
 
         # Drone-level controller
-        xyz_drone_target = (self.xyz_obj + target_force_obj / \
-                torch.norm(target_force_obj, dim=-1, keepdim=True) * \
-                self.rope_length) - self.hook_disp
+        xyz_drone_target = (self.xyz_obj + target_force_obj /
+                            torch.norm(target_force_obj, dim=-1, keepdim=True) *
+                            self.rope_length) - self.hook_disp
         delta_pos_drones = xyz_drone_target - self.xyz_drones
         target_force_drone = self.mass_drones*self.pos_controller.update(
             delta_pos_drones, self.step_dt) - (self.mass_drones) * self.g + target_force_obj_projected
         rotmat_drone = geom.quat2rotmat(self.quat_drones)
-        thrust_desired = (rotmat_drone@target_force_drone.unsqueeze(-1)).squeeze(-1)
+        thrust_desired = (
+            rotmat_drone@target_force_drone.unsqueeze(-1)).squeeze(-1)
         thrust = thrust_desired[..., 2]
         desired_rotvec = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
@@ -272,7 +273,7 @@ class QuadTransEnv(gym.Env):
         # rot_err = quat_error[..., :3]
 
         rot_err = torch.cross(
-            desired_rotvec, thrust_desired/torch.norm(thrust_desired, dim=-1,keepdim=True), dim=-1)
+            desired_rotvec, thrust_desired/torch.norm(thrust_desired, dim=-1, keepdim=True), dim=-1)
         rpy_rate_target = self.attitude_controller.update(
             rot_err, self.step_dt)
 
