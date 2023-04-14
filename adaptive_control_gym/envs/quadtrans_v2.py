@@ -94,9 +94,9 @@ class QuadTransEnv(gym.Env):
         ones = torch.ones([self.env_num, 3])
         zeros = torch.zeros([self.env_num, 3])
         self.objpos_controller = PIDController(
-            kp=ones*10.0,
+            kp=ones*16.0,
             ki=ones*0.0,
-            kd=ones*12.0,
+            kd=ones*8.0,
             ki_max=ones*100.0,
             integral=zeros,
             last_error=zeros
@@ -112,9 +112,9 @@ class QuadTransEnv(gym.Env):
             last_error=zeros
         )
         self.attitude_controller = PIDController(
-            kp=ones*30.0,
+            kp=ones*20.0,
             ki=ones*0.0,
-            kd=ones*8.0,
+            kd=ones*0.0,
             ki_max=ones*100.0,
             integral=zeros,
             last_error=zeros
@@ -239,10 +239,10 @@ class QuadTransEnv(gym.Env):
 
         # Object-level controller
         delta_pos = torch.clip(pos_target - self.xyz_obj, -1.0, 1.0)
-        target_force_obj = self.mass_obj * \
+        force_obj_pid = self.mass_obj * \
                 self.objpos_controller.update(
-                delta_pos, self.step_dt) - self.mass_obj * self.g
-        ic(delta_pos, target_force_obj, self.mass_obj * self.objpos_controller.update(delta_pos, self.step_dt))
+                delta_pos, self.step_dt)
+        target_force_obj = force_obj_pid - self.mass_obj * self.g
         xyz_obj2drone = self.xyz_obj - self.xyz_drones
         z_hat_obj = xyz_obj2drone / \
                 torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
@@ -271,7 +271,6 @@ class QuadTransEnv(gym.Env):
         #     quat_target, geom.quat_inv(self.quat_drones))
         # rot_err = quat_error[..., :3]
 
-        ic(desired_rotvec.shape, thrust_desired.shape)
         rot_err = torch.cross(
             desired_rotvec, thrust_desired/torch.norm(thrust_desired, dim=-1,keepdim=True), dim=-1)
         rpy_rate_target = self.attitude_controller.update(
