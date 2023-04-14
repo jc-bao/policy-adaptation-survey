@@ -10,6 +10,7 @@ from adaptive_control_gym.utils.geom import quat2rotmat, integrate_quat
 class QuadTransEnv(gym.Env):
     def __init__(self, env_num:int=1024, drone_num:int=1, gpu_id:int=0, seed:int=0, **kwargs) -> None:
         super().__init__()
+        self.logger = Logger(enable=True)
 
         # set simulator parameters
         self.seed = seed
@@ -54,11 +55,12 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj = torch.zeros((self.env_num, 3), device=self.device)
         self.xyz_obj[..., 2] = -0.25
         self.vxyz_obj = torch.zeros((self.env_num, 3), device=self.device)
+        self.steps = 0
 
         # controller variables
-        self.KP = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([32e2, 32e2, 16e2], device=self.device)
+        self.KP = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([4e2, 4e2, 1e2], device=self.device)
         self.KI = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([1e3, 1e3, 3e2], device=self.device)
-        self.KD = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([1.0, 1.0, 0.0], device=self.device)
+        self.KD = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([0.0, 0.0, 0.0], device=self.device)
         self.KI_MAX = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([1e4, 1e4, 1e4], device=self.device)
         self.atti_rate_controller = PIDController(
             kp = self.KP, ki = self.KI, kd = self.KD, ki_max = self.KI_MAX, 
@@ -69,8 +71,19 @@ class QuadTransEnv(gym.Env):
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
 
     def step(self, action):
+        thrust = action[..., 0]
+        omega_target = action[..., 1:]
 
-        return self.observation_space.sample(), 0, False, {}
+        for _ in range(self.step_substeps):
+            state = self.ctlstep(omega_target, thrust)
+        self.steps += 1
+
+        # compute reward
+        reward = -torch.norm(self.xyz_obj - self.xyz_targets, dim=-1).mean(dim=-1)
+        done = (self.steps >= self.max_steps)
+        info = {}
+
+        return state, reward, done, info
     
     def ctlstep(self, omega_target:torch.Tensor, thrust:torch.Tensor):
         # run lower level attitude rate PID controller
@@ -130,7 +143,7 @@ class QuadTransEnv(gym.Env):
         self.vxyz_obj = self.vxyz_obj + self.sim_dt * force_obj / self.mass_obj
         self.xyz_obj = self.xyz_obj + self.sim_dt * self.vxyz_obj
 
-        return {
+        state = {
             'xyz_drone': self.xyz_drones,
             'vxyz_drone': self.vxyz_drones,
             'quat_drone': self.quat_drones,
@@ -147,6 +160,10 @@ class QuadTransEnv(gym.Env):
             'rope_vel': rope_vel,
             'torque': torque,
         }
+        
+        self.logger.log(state)
+
+        return state
 
 
     def reset(self):
@@ -156,7 +173,7 @@ class QuadTransEnv(gym.Env):
         pass
 
     def close(self):
-        pass
+        self.logger.plot('results/test.png')
 
 class PIDController:
     """PID controller for attitude rate control
@@ -186,11 +203,14 @@ class PIDController:
         return self.kp * error + self.ki * self.integral + self.kd * derivative
 
 class Logger:
-    def __init__(self) -> None:
+    def __init__(self, enable = True) -> None:
+        self.enable = enable
         self.log_items = ['xyz_drone', 'vxyz_drone', 'quat_drone', 'omega_drone', 'xyz_obj', 'vxyz_obj', 'force_drones', 'moment_drones', 'force_obj', 'rope_force_drones', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'torque']
         self.log_dict = {item: [] for item in self.log_items}
 
     def log(self, state):
+        if not self.enable:
+            return 
         for item in self.log_items:
             value = state[item][0].cpu().numpy()
             if len(value.shape) > 1:
@@ -199,6 +219,8 @@ class Logger:
             self.log_dict[item].append(value)
 
     def plot(self, filename):
+        if not self.enable:
+            return
         # set seaborn theme
         sns.set_theme()
         # create figure
@@ -221,17 +243,11 @@ class Logger:
 def main():
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1)
     env.reset()
-    logger = Logger()
-    omega_target = torch.tensor([[10.0, 0.0, 0.0]])
-    thrust = torch.ones((1, 1))*0.027*9.81
-    for i in range(100):
-        omega_error = omega_target - env.omega_drones
-        torque = (env.J_drones @ env.atti_rate_controller.update(omega_error, env.ctl_dt).unsqueeze(-1)).squeeze(-1)
-        thrust, torque = torch.clip(thrust, 0.0, env.max_thrust), torch.clip(
-        torque, -env.max_torque, env.max_torque)
-        state = env.simstep(torque, thrust)
-        logger.log(state)
-    logger.plot('results/test.png')
+    omega_target = torch.tensor([[[0.5, 0.0, 0.0]]])
+    thrust = torch.ones((1, 1, 1))*0.037*9.81
+    action = torch.cat([thrust, omega_target], dim=-1)
+    for i in range(1):
+        state, rew, done, info = env.step(action)
     env.close()
 
 if __name__ == '__main__':
