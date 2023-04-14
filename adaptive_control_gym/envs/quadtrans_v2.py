@@ -104,9 +104,9 @@ class QuadTransEnv(gym.Env):
         ones = torch.ones([self.env_num, self.drone_num, 3])
         zeros = torch.zeros([self.env_num, self.drone_num, 3])
         self.pos_controller = PIDController(
-            kp=ones*12.0,
-            ki=ones*0.3,
-            kd=ones*0.0,
+            kp=ones*30.0,
+            ki=ones*0.0,
+            kd=ones*8.0,
             ki_max=ones*100.0,
             integral=zeros,
             last_error=zeros
@@ -236,51 +236,51 @@ class QuadTransEnv(gym.Env):
 
         return state
 
-    def pos_policy(self, pos_target: torch.Tensor):
+    def policy_pos(self, pos_target: torch.Tensor):
         # run lower level position PID controller
 
         # Object-level controller
         delta_pos = torch.clip(pos_target - self.xyz_obj, -1.0, 1.0)
         target_force_obj = self.mass_obj * \
-            self.objpos_controller.update(
+                self.objpos_controller.update(
                 delta_pos, self.step_dt) - self.mass_obj * self.g
         xyz_obj2drone = self.xyz_obj - self.xyz_drones
         z_hat_obj = xyz_obj2drone / \
-            torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
+                torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
         # TODO distribute the force to multiple drones
         target_force_obj_projected = torch.sum(
             target_force_obj * z_hat_obj, dim=-1) * z_hat_obj
 
         # Drone-level controller
         xyz_drone_target = self.xyz_obj + target_force_obj / \
-            torch.norm(pos_target, dim=-1, keepdim=True) * \
-            self.rope_length - self.hook_disp
+                torch.norm(pos_target, dim=-1, keepdim=True) * \
+                self.rope_length - self.hook_disp
         # DEBUG
-        delta_pos_drones = pos_target - self.xyz_drones
+        delta_pos_drones = pos_target.unsqueeze(1) - self.xyz_drones
         # DEBUG
         target_force_drone = self.mass_drones*self.pos_controller.update(
             delta_pos_drones, self.step_dt) - self.mass_drones * self.g + target_force_obj_projected * 0.0
         rotmat_drone = geom.quat2rotmat(self.quat_drones)
-        thrust_desired = torch.sum(target_force_drone*rotmat_drone, dim=-1)
+        thrust_desired = (rotmat_drone@target_force_drone.unsqueeze(-1)).squeeze(-1)
         thrust = thrust_desired[..., 2]
         desired_rotvec = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
         desired_rotvec[:, :, 2] = 1.0
 
         # DEBUG
-        rpy_target = torch.tensor([[[1.0, 0.0, 0.0]]], device=self.device)
-        quat_target = geom.rpy2quat(rpy_target)
-        quat_error = geom.quat_mul(
-            quat_target, geom.quat_inv(self.quat_drones))
-        rot_err = quat_error[..., :3]
+        # rpy_target = torch.tensor([[[1.0, 0.0, 0.0]]], device=self.device)
+        # quat_target = geom.rpy2quat(rpy_target)
+        # quat_error = geom.quat_mul(
+        #     quat_target, geom.quat_inv(self.quat_drones))
+        # rot_err = quat_error[..., :3]
+
         # DEBUG
-        # rot_err = torch.sum(
-        #     desired_rotvec * thrust_desired/torch.norm(thrust_desired, dim=-1,keepdim=True), dim=-1)
+        rot_err = torch.cross(
+            desired_rotvec, thrust_desired/torch.norm(thrust_desired, dim=-1,keepdim=True), dim=-1)
         rpy_rate_target = self.attitude_controller.update(
             rot_err, self.step_dt)
 
-        action = torch.cat([thrust.unsqueeze(-1), rpy_rate_target], dim=-1)
-        return action
+        return torch.cat([thrust.unsqueeze(-1), rpy_rate_target], dim=-1)
 
     def reset(self):
         pass
@@ -402,8 +402,8 @@ def main():
     env.reset()
 
     target_pos = torch.tensor([[0.0, 0.0, 0.5]], device=env.device)
-    for i in range(5):
-        action = env.pos_policy(target_pos)
+    for i in range(30):
+        action = env.policy_pos(target_pos)
         state, rew, done, info = env.step(action)
     env.close()
 
