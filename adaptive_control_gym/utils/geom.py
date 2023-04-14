@@ -78,17 +78,17 @@ def quat_mul(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
 
 def integrate_quat(quat, omega, dt):
     # integrate quaternion with angular velocity
-    # quat: (batch_size, 4) with w, x, y, z
+    # quat: (batch_size, 4) with x, y, z, w
     # omega: (batch_size, 3) with x, y, z
     # dt: (batch_size, 1)
-    # quat: (batch_size, 4) with w, x, y, z
+    # quat: (batch_size, 4) with x, y, z, w
 
     bs = quat.shape[:-1]
-    w, x, y, z = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
+    x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
     wx, wy, wz = omega[..., 0], omega[..., 1], omega[..., 2]
     q = torch.zeros([*bs, 4], device=quat.device)
-    q[..., 0] = w + 0.5 * dt * (-wx * x - wy * y - wz * z)
-    q[..., 1] = x + 0.5 * dt * (wx * w + wy * z - wz * y)
-    q[..., 2] = y + 0.5 * dt * (-wx * z + wy * w + wz * x)
-    q[..., 3] = z + 0.5 * dt * (wx * y - wy * x + wz * w)
+    q[..., 0] = x + 0.5 * dt * (w * wx + y * wz - z * wy)
+    q[..., 1] = y + 0.5 * dt * (w * wy - x * wz + z * wx)
+    q[..., 2] = z + 0.5 * dt * (w * wz + x * wy - y * wx)
+    q[..., 3] = w + 0.5 * dt * (-x * wx - y * wy - z * wz)
     return q

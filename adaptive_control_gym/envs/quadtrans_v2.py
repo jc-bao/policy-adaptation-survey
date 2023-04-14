@@ -42,7 +42,7 @@ class QuadTransEnv(gym.Env):
         self.mass_obj = torch.ones((self.env_num, 3), device=self.device) * 0.01
         self.rope_length = torch.ones((self.env_num, self.drone_num), device=self.device) * 0.2
         self.rope_zeta = torch.ones((self.env_num, self.drone_num), device=self.device) * 0.7
-        self.rope_wn = torch.ones((self.env_num, self.drone_num), device=self.device) * 100.0
+        self.rope_wn = torch.ones((self.env_num, self.drone_num), device=self.device) * 1000.0
 
         # state variables
         self.xyz_drones = torch.zeros((self.env_num, self.drone_num, 3), device=self.device)
@@ -157,8 +157,14 @@ class Logger:
         # plot
         x_time = np.arange(len(self.log_dict[self.log_items[0]])) * 4e-4
         for i, item in enumerate(self.log_items):
-            axs[i].plot(x_time, self.log_dict[item])
+            if len(self.log_dict[item][0]) > 1:
+                # plot each dimension
+                for j in range(len(self.log_dict[item][0])):
+                    axs[i].plot(x_time, np.array(self.log_dict[item])[:, j], label=f'{item}_{j}')
+            else:
+                axs[i].plot(x_time, self.log_dict[item])
             axs[i].set_title(item)
+            axs[i].legend()
         # save
         fig.savefig(filename)
 
@@ -166,8 +172,10 @@ def main():
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1)
     env.reset()
     logger = Logger()
-    for i in range(1000):
-        state = env.simstep(torch.zeros((1, 3)), torch.zeros((1, 1)))
+    for i in range(100):
+        torque = torch.tensor([[0.00, 0.0, 0.0]], dtype=torch.float32)
+        thrust = torch.ones((1, 1))*0.037*9.81
+        state = env.simstep(torque, thrust)
         logger.log(state)
     logger.plot('results/test.png')
     env.close()
