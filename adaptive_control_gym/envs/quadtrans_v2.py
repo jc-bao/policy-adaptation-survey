@@ -16,7 +16,7 @@ class QuadTransEnv(gym.Env):
     def __init__(self, env_num: int = 1024, drone_num: int = 1, gpu_id: int = 0, seed: int = 0, **kwargs) -> None:
         super().__init__()
         self.logger = Logger(enable=True)
-        self.visualizer = MeshVisulizer(enable=True)
+        self.visualizer = MeshVisulizer(enable=False)
 
         # set simulator parameters
         self.seed = seed
@@ -57,7 +57,7 @@ class QuadTransEnv(gym.Env):
         self.rope_zeta = torch.ones(
             (self.env_num, self.drone_num), device=self.device) * 0.7
         self.rope_wn = torch.ones(
-            (self.env_num, self.drone_num), device=self.device) * 1000.0
+            (self.env_num, self.drone_num), device=self.device) * 100.0
 
         # state variables
         self.xyz_drones = torch.zeros(
@@ -398,7 +398,7 @@ def main():
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1)
     env.reset()
 
-    target_pos = torch.tensor([[0.0, 0.0, 0.5]], device=env.device)
+    target_pos = torch.tensor([[0.5, 0.0, 0.0]], device=env.device)
     for i in range(30):
         action = env.policy_pos(target_pos)
         state, rew, done, info = env.step(action)
