@@ -16,7 +16,7 @@ class QuadTransEnv(gym.Env):
     def __init__(self, env_num: int = 1024, drone_num: int = 1, gpu_id: int = 0, seed: int = 0, **kwargs) -> None:
         super().__init__()
         self.logger = Logger(enable=True)
-        self.visualizer = MeshVisulizer(enable=False)
+        self.visualizer = MeshVisulizer(enable=True)
 
         # set simulator parameters
         self.seed = seed
