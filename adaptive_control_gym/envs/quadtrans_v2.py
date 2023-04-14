@@ -55,12 +55,33 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj[..., 2] = -0.25
         self.vxyz_obj = torch.zeros((self.env_num, 3), device=self.device)
 
+        # controller variables
+        self.KP = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([32e2, 32e2, 16e2], device=self.device)
+        self.KI = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([1e3, 1e3, 3e2], device=self.device)
+        self.KD = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([1.0, 1.0, 0.0], device=self.device)
+        self.KI_MAX = torch.ones((self.env_num, self.drone_num, 3), device=self.device) * torch.tensor([1e4, 1e4, 1e4], device=self.device)
+        self.atti_rate_controller = PIDController(
+            kp = self.KP, ki = self.KI, kd = self.KD, ki_max = self.KI_MAX, 
+            integral = torch.zeros((self.env_num, self.drone_num, 3), device=self.device),
+            last_error = torch.zeros((self.env_num, self.drone_num, 3), device=self.device)
+        )
+        self.max_thrust = 0.60
+        self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
 
     def step(self, action):
         return self.observation_space.sample(), 0, False, {}
     
-    def ctlstep(self, vrpy_target:torch.Tensor, thrust:torch.Tensor):
-        raise NotImplementedError
+    def ctlstep(self, omega_target:torch.Tensor, thrust:torch.Tensor):
+        # run lower level attitude rate PID controller
+        self.omega_target = omega_target
+        omega_error = omega_target - self.omega_drones
+        torque = (self.J_drones @ self.atti_rate_controller.update(omega_error, self.ctl_dt).unsqueeze(-1)).squeeze(-1)
+        thrust, torque = torch.clip(thrust, 0.0, self.max_thrust), torch.clip(
+            torque, -self.max_torque, self.max_torque)
+        for _ in range(self.ctl_substeps):
+            state = self.simstep(torque, thrust)
+        return state
+
     
     def simstep(self, torque:torch.Tensor, thrust:torch.Tensor):
         # state variables
@@ -83,6 +104,7 @@ class QuadTransEnv(gym.Env):
         rope_vel = torch.sum(vxyz_obj2hook * xyz_obj2hook_normed, dim=-1, keepdim=True) * xyz_obj2hook_normed
         mass_joint = self.mass_drones * self.mass_obj.unsqueeze(1) / (self.mass_drones + self.mass_obj.unsqueeze(1))
         rope_force_drones = mass_joint * ((self.rope_wn ** 2) * rope_disp + 2 * self.rope_zeta * self.rope_wn * rope_vel)
+        rope_force_drones *= 0.0
         # total force
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # total moment
@@ -123,6 +145,7 @@ class QuadTransEnv(gym.Env):
             'thrust_drones': thrust_drones,
             'rope_disp': rope_disp,
             'rope_vel': rope_vel,
+            'torque': torque,
         }
 
 
@@ -135,9 +158,36 @@ class QuadTransEnv(gym.Env):
     def close(self):
         pass
 
+class PIDController:
+    """PID controller for attitude rate control
+
+    Returns:
+        _type_: _description_
+    """
+
+    def __init__(self, kp, ki, kd, ki_max, integral, last_error):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.ki_max = ki_max
+        self.integral = integral
+        self.last_error = last_error
+        self.reset()
+
+    def reset(self):
+        self.integral *= 0.0
+        self.last_error *= 0.0
+
+    def update(self, error, dt):
+        self.integral += error * dt
+        self.integral = torch.clip(self.integral, -self.ki_max, self.ki_max)
+        derivative = (error - self.last_error) / dt
+        self.last_error = error
+        return self.kp * error + self.ki * self.integral + self.kd * derivative
+
 class Logger:
     def __init__(self) -> None:
-        self.log_items = ['xyz_drone', 'vxyz_drone', 'quat_drone', 'omega_drone', 'xyz_obj', 'vxyz_obj', 'force_drones', 'moment_drones', 'force_obj', 'rope_force_drones', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel']
+        self.log_items = ['xyz_drone', 'vxyz_drone', 'quat_drone', 'omega_drone', 'xyz_obj', 'vxyz_obj', 'force_drones', 'moment_drones', 'force_obj', 'rope_force_drones', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'torque']
         self.log_dict = {item: [] for item in self.log_items}
 
     def log(self, state):
@@ -172,9 +222,13 @@ def main():
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1)
     env.reset()
     logger = Logger()
+    omega_target = torch.tensor([[10.0, 0.0, 0.0]])
+    thrust = torch.ones((1, 1))*0.027*9.81
     for i in range(100):
-        torque = torch.tensor([[0.00, 0.0, 0.0]], dtype=torch.float32)
-        thrust = torch.ones((1, 1))*0.037*9.81
+        omega_error = omega_target - env.omega_drones
+        torque = (env.J_drones @ env.atti_rate_controller.update(omega_error, env.ctl_dt).unsqueeze(-1)).squeeze(-1)
+        thrust, torque = torch.clip(thrust, 0.0, env.max_thrust), torch.clip(
+        torque, -env.max_torque, env.max_torque)
         state = env.simstep(torque, thrust)
         logger.log(state)
     logger.plot('results/test.png')
