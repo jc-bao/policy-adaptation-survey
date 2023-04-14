@@ -48,17 +48,18 @@ def quat2rotmat(quat: torch.Tensor) -> torch.Tensor:
     # convert quaternion to rotation matrix with torch
     # quat: (batch_size, 4)
     # rotmat: (batch_size, 3, 3)
-    x, y, z, w = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-    rotmat = torch.zeros(quat.shape[0], 3, 3, device=quat.device)
-    rotmat[:, 0, 0] = 1 - 2 * y**2 - 2 * z**2
-    rotmat[:, 0, 1] = 2 * x * y - 2 * z * w
-    rotmat[:, 0, 2] = 2 * x * z + 2 * y * w
-    rotmat[:, 1, 0] = 2 * x * y + 2 * z * w
-    rotmat[:, 1, 1] = 1 - 2 * x**2 - 2 * z**2
-    rotmat[:, 1, 2] = 2 * y * z - 2 * x * w
-    rotmat[:, 2, 0] = 2 * x * z - 2 * y * w
-    rotmat[:, 2, 1] = 2 * y * z + 2 * x * w
-    rotmat[:, 2, 2] = 1 - 2 * x**2 - 2 * y**2
+    bs = quat.shape[:-1]
+    x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
+    rotmat = torch.zeros([*bs, 3, 3], device=quat.device)
+    rotmat[..., 0, 0] = 1 - 2 * y**2 - 2 * z**2
+    rotmat[..., 0, 1] = 2 * x * y - 2 * z * w
+    rotmat[..., 0, 2] = 2 * x * z + 2 * y * w
+    rotmat[..., 1, 0] = 2 * x * y + 2 * z * w
+    rotmat[..., 1, 1] = 1 - 2 * x**2 - 2 * z**2
+    rotmat[..., 1, 2] = 2 * y * z - 2 * x * w
+    rotmat[..., 2, 0] = 2 * x * z - 2 * y * w
+    rotmat[..., 2, 1] = 2 * y * z + 2 * x * w
+    rotmat[..., 2, 2] = 1 - 2 * x**2 - 2 * y**2
     return rotmat
 
 def quat_mul(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
@@ -73,4 +74,21 @@ def quat_mul(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
     q[:, 1] = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
     q[:, 2] = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
     q[:, 3] = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    return q
+
+def integrate_quat(quat, omega, dt):
+    # integrate quaternion with angular velocity
+    # quat: (batch_size, 4) with w, x, y, z
+    # omega: (batch_size, 3) with x, y, z
+    # dt: (batch_size, 1)
+    # quat: (batch_size, 4) with w, x, y, z
+
+    bs = quat.shape[:-1]
+    w, x, y, z = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
+    wx, wy, wz = omega[..., 0], omega[..., 1], omega[..., 2]
+    q = torch.zeros([*bs, 4], device=quat.device)
+    q[..., 0] = w + 0.5 * dt * (-wx * x - wy * y - wz * z)
+    q[..., 1] = x + 0.5 * dt * (wx * w + wy * z - wz * y)
+    q[..., 2] = y + 0.5 * dt * (-wx * z + wy * w + wz * x)
+    q[..., 3] = z + 0.5 * dt * (wx * y - wy * x + wz * w)
     return q
