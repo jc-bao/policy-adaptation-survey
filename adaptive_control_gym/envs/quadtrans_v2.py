@@ -112,6 +112,10 @@ class QuadTransEnv(gym.Env):
             'omega_drone': self.omega_drones,
             'xyz_obj': self.xyz_obj,
             'vxyz_obj': self.vxyz_obj,
+            'force_drones': force_drones,
+            'moment_drones': moment_drones,
+            'force_obj': force_obj,
+            'rope_force_drones': rope_force_drones,
         }
 
 
@@ -126,7 +130,7 @@ class QuadTransEnv(gym.Env):
 
 class Logger:
     def __init__(self) -> None:
-        self.log_items = ['xyz_drone', 'vxyz_drone', 'quat_drone', 'omega_drone', 'xyz_obj', 'vxyz_obj']
+        self.log_items = ['xyz_drone', 'vxyz_drone', 'quat_drone', 'omega_drone', 'xyz_obj', 'vxyz_obj', 'force_drones', 'moment_drones', 'force_obj', 'rope_force_drones']
         self.log_dict = {item: [] for item in self.log_items}
 
     def log(self, state):
