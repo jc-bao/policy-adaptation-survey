@@ -169,7 +169,9 @@ class QuadTransEnv(gym.Env):
         xyz_obj2hook = self.xyz_obj.unsqueeze(1) - xyz_hook
         xyz_obj2hook_normed = xyz_obj2hook / \
             torch.norm(xyz_obj2hook, dim=-1, keepdim=True)
-        rope_disp = xyz_obj2hook - self.rope_length * xyz_obj2hook_normed
+        rope_origin = self.rope_length * xyz_obj2hook_normed
+        rope_disp = xyz_obj2hook - rope_origin
+        loose_rope = torch.norm(xyz_obj2hook, dim=-1) < self.rope_length
         vxyz_hook = self.vxyz_drones + \
             torch.cross(self.omega_drones, self.hook_disp, dim=-1)
         vxyz_obj2hook = self.vxyz_obj - vxyz_hook
@@ -181,6 +183,7 @@ class QuadTransEnv(gym.Env):
         rope_force_drones = mass_joint * \
             ((self.rope_wn ** 2) * rope_disp + 2 *
              self.rope_zeta * self.rope_wn * rope_vel)
+        rope_force_drones[loose_rope] *= 0.0
         # total force
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # total moment
