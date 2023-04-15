@@ -404,7 +404,7 @@ def main():
 
     target_pos = torch.tensor([[0.5, 0.5, 0.5]], device=env.device)
     # time.sleep(4)
-    for i in range(30):
+    for i in range(80):
         action = env.policy_pos(target_pos)
         state, rew, done, info = env.step(action)
     env.close()
