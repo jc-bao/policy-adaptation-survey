@@ -46,7 +46,7 @@ def quat2rpy(quat: torch.Tensor) -> torch.Tensor:
 
 def quat2rotmat(quat: torch.Tensor) -> torch.Tensor:
     # convert quaternion to rotation matrix with torch
-    # quat: (batch_size, 4)
+    # quat: (batch_size, 4) x,y,z,w
     # rotmat: (batch_size, 3, 3)
     bs = quat.shape[:-1]
     x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]

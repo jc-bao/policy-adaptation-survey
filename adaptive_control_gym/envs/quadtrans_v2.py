@@ -13,10 +13,10 @@ from adaptive_control_gym.utils import geom
 
 
 class QuadTransEnv(gym.Env):
-    def __init__(self, env_num: int = 1024, drone_num: int = 1, gpu_id: int = 0, seed: int = 0, **kwargs) -> None:
+    def __init__(self, env_num: int = 1024, drone_num: int = 1, gpu_id: int = 0, seed: int = 0, enable_log:bool=False, enable_vis:bool=False, **kwargs) -> None:
         super().__init__()
-        self.logger = Logger(enable=True)
-        self.visualizer = MeshVisulizer(enable=False)
+        self.logger = Logger(enable=enable_log)
+        self.visualizer = MeshVisulizer(enable=enable_vis)
 
         # set simulator parameters
         self.seed = seed
@@ -57,7 +57,7 @@ class QuadTransEnv(gym.Env):
         self.rope_zeta = torch.ones(
             (self.env_num, self.drone_num), device=self.device) * 0.7
         self.rope_wn = torch.ones(
-            (self.env_num, self.drone_num), device=self.device) * 100.0
+            (self.env_num, self.drone_num), device=self.device) * 1000.0
 
         # state variables
         self.xyz_drones = torch.zeros(
@@ -94,9 +94,9 @@ class QuadTransEnv(gym.Env):
         ones = torch.ones([self.env_num, 3])
         zeros = torch.zeros([self.env_num, 3])
         self.objpos_controller = PIDController(
-            kp=ones*16.0,
+            kp=ones*8.0,
             ki=ones*0.0,
-            kd=ones*8.0,
+            kd=ones*3.0,
             ki_max=ones*100.0,
             integral=zeros,
             last_error=zeros
@@ -104,9 +104,9 @@ class QuadTransEnv(gym.Env):
         ones = torch.ones([self.env_num, self.drone_num, 3])
         zeros = torch.zeros([self.env_num, self.drone_num, 3])
         self.pos_controller = PIDController(
-            kp=ones*30.0,
+            kp=ones*16.0,
             ki=ones*0.0,
-            kd=ones*8.0,
+            kd=ones*6.0,
             ki_max=ones*100.0,
             integral=zeros,
             last_error=zeros
@@ -254,13 +254,17 @@ class QuadTransEnv(gym.Env):
         xyz_drone_target = (self.xyz_obj + target_force_obj /
                             torch.norm(target_force_obj, dim=-1, keepdim=True) *
                             self.rope_length) - self.hook_disp
+        # DEBUG 
+        # xyz_drone_target = pos_target.unsqueeze(1)
+        # DEBUG
+        # target_force_obj_projected = (-self.mass_obj * self.g).unsqueeze(1)
         delta_pos_drones = xyz_drone_target - self.xyz_drones
         target_force_drone = self.mass_drones*self.pos_controller.update(
             delta_pos_drones, self.step_dt) - (self.mass_drones) * self.g + target_force_obj_projected
         rotmat_drone = geom.quat2rotmat(self.quat_drones)
         thrust_desired = (
-            rotmat_drone@target_force_drone.unsqueeze(-1)).squeeze(-1)
-        thrust = thrust_desired[..., 2]
+            torch.inverse(rotmat_drone)@target_force_drone.unsqueeze(-1)).squeeze(-1)
+        thrust = torch.norm(thrust_desired, dim=-1)
         desired_rotvec = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
         desired_rotvec[:, :, 2] = 1.0
@@ -395,15 +399,15 @@ def main():
     torch.set_printoptions(precision=2)
 
     # setup environment
-    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1)
+    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1, enable_log=True, enable_vis=False)
     env.reset()
 
-    target_pos = torch.tensor([[0.5, 0.0, 0.0]], device=env.device)
+    target_pos = torch.tensor([[0.5, 0.5, 0.5]], device=env.device)
+    # time.sleep(4)
     for i in range(30):
         action = env.policy_pos(target_pos)
         state, rew, done, info = env.step(action)
     env.close()
-
 
 if __name__ == '__main__':
     main()
