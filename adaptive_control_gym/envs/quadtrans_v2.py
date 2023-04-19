@@ -211,7 +211,8 @@ class QuadTransEnv(gym.Env):
             self.quat_drones, self.vrpy_drones, self.sim_dt)
 
         # object
-        self.vxyz_obj = self.vxyz_obj + self.sim_dt * force_obj / self.mass_obj
+        axyz_obj = force_obj / self.mass_obj
+        self.vxyz_obj = self.vxyz_obj + self.sim_dt * axyz_obj
         self.xyz_obj = self.xyz_obj + self.sim_dt * self.vxyz_obj
 
         state = {
@@ -226,6 +227,7 @@ class QuadTransEnv(gym.Env):
             'moment_drones': moment_drones,
             'force_obj': force_obj,
             'rope_force_drones': rope_force_drones,
+            'rope_force_obj': rope_force_obj, 
             'gravity_drones': gravity_drones,
             'thrust_drones': thrust_drones,
             'rope_disp': rope_disp,
@@ -329,7 +331,7 @@ class Logger:
     def __init__(self, enable=True) -> None:
         self.enable = enable
         self.log_items = ['xyz_drones', 'vxyz_drones', 'rpy_drones', 'quat_drones', 'vrpy_drones', 'xyz_obj', 'vxyz_obj', 'force_drones',
-                          'moment_drones', 'force_obj', 'rope_force_drones', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'torque']
+                          'moment_drones', 'force_obj', 'rope_force_drones', 'rope_force_obj', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'torque']
         self.log_dict = {item: [] for item in self.log_items}
 
     def log(self, state):
@@ -418,14 +420,14 @@ def main():
 
     target_pos = torch.tensor([[0.5, 0.5, 0.5]], device=env.device)
 
-    for i in range(5):
+    for i in range(3):
         # policy1: PID
         # action = env.policy_pos(target_pos)
 
         # policy2: manual
         total_gravity = env.g * (env.mass_drones + env.mass_obj)
         vrpy_target = torch.zeros([1,1,3])
-        vrpy_target[..., 0] = 3.0
+        vrpy_target[..., 0] = 1.0
         action = torch.cat([-total_gravity[..., [2]], vrpy_target], dim=-1)
 
         state, rew, done, info = env.step(action)
