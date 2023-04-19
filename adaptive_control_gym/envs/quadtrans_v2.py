@@ -47,7 +47,7 @@ class QuadTransEnv(gym.Env):
             (self.env_num, self.drone_num, 3, 3), device=self.device)
         self.J_drones[:, :, 0, 0] = 1.7e-5
         self.J_drones[:, :, 1, 1] = 1.7e-5
-        self.J_drones[:, :, 2, 2] = 3.0e-5
+        self.J_drones[:, :, 2, 2] = 2.98e-5
         self.hook_disp = torch.zeros(
             (self.env_num, self.drone_num, 3), device=self.device)
         self.hook_disp[:, :, 2] = -0.05
@@ -215,11 +215,11 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj = self.xyz_obj + self.sim_dt * self.vxyz_obj
 
         state = {
-            'xyz_drone': self.xyz_drones,
-            'vxyz_drone': self.vxyz_drones,
-            'quat_drone': self.quat_drones,
-            'rpy_drone': geom.quat2rpy(self.quat_drones),
-            'vrpy_drone': self.vrpy_drones,
+            'xyz_drones': self.xyz_drones,
+            'vxyz_drones': self.vxyz_drones,
+            'quat_drones': self.quat_drones,
+            'rpy_drones': geom.quat2rpy(self.quat_drones),
+            'vrpy_drones': self.vrpy_drones,
             'xyz_obj': self.xyz_obj,
             'vxyz_obj': self.vxyz_obj,
             'force_drones': force_drones,
@@ -328,7 +328,7 @@ class PIDController:
 class Logger:
     def __init__(self, enable=True) -> None:
         self.enable = enable
-        self.log_items = ['xyz_drone', 'vxyz_drone', 'rpy_drone', 'quat_drone', 'vrpy_drone', 'xyz_obj', 'vxyz_obj', 'force_drones',
+        self.log_items = ['xyz_drones', 'vxyz_drones', 'rpy_drones', 'quat_drones', 'vrpy_drones', 'xyz_obj', 'vxyz_obj', 'force_drones',
                           'moment_drones', 'force_obj', 'rope_force_drones', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'torque']
         self.log_dict = {item: [] for item in self.log_items}
 
@@ -375,8 +375,6 @@ class Logger:
                     save_dict[item+'_'+str(i)] = self.log_dict[item][:, i]
         df = pd.DataFrame(save_dict)
         df.to_csv(filename+'.csv', index=False)
-
-
 
 class MeshVisulizer:
     def __init__(self, enable=True) -> None:
