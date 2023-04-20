@@ -145,7 +145,6 @@ class QuadTransEnv(gym.Env):
         vrpy_error = vrpy_target - self.vrpy_drones
         torque = (self.J_drones @ self.attirate_controller.update(vrpy_error,
                   self.ctl_dt).unsqueeze(-1)).squeeze(-1)
-        ic(vrpy_error[0,0,0], torque[0,0,0])
         thrust, torque = torch.clip(thrust, 0.0, self.max_thrust), torch.clip(
             torque, -self.max_torque, self.max_torque)
         for _ in range(self.ctl_substeps):
@@ -324,7 +323,6 @@ class PIDController:
 
     def update(self, error, dt):
         self.integral += error * dt
-        ic(self.integral[0,0])
         self.integral = torch.clip(self.integral, -self.ki_max, self.ki_max)
         derivative = (error - self.last_error) / dt
         self.last_error = error
