@@ -29,7 +29,7 @@ class QuadTransEnv(gym.Env):
         self.drone_num = drone_num
         self.ctl_dt = self.sim_dt * self.ctl_substeps
         self.step_substeps = 50
-        self.max_steps = 250
+        self.max_steps = 50
         self.step_dt = self.ctl_dt * self.step_substeps
         self.gpu_id = gpu_id
         self.device = torch.device(
@@ -54,17 +54,12 @@ class QuadTransEnv(gym.Env):
         # TODO make action support multi-agent
         action = action.unsqueeze(1)
         thrust = (action[..., 0] + 1.0) * 0.5 * self.max_thrust
-        # DEBUG change back to attitude rate controller
-        torque = action[..., 1:] * self.max_torque
-        # vrp_target = action[..., 1:] * self.max_vrp
-        # vrpy_target = torch.cat([vrp_target, torch.zeros(
-        #     [*vrp_target.shape[:-1], 1], device=self.device)], dim=-1)
+        vrp_target = action[..., 1:] * self.max_vrp
+        vrpy_target = torch.cat([vrp_target, torch.zeros(
+            [*vrp_target.shape[:-1], 1], device=self.device)], dim=-1)
 
-        # DEBUG directly control torque
-        for _ in range(self.ctl_substeps):
-            self.ctlstep(torque, thrust)
-        # for _ in range(self.step_substeps):
-        #     self.ctlstep(vrpy_target, thrust)
+        for _ in range(self.step_substeps):
+            self.ctlstep(vrpy_target, thrust)
 
         reward = self._get_reward()
         # calculate done
@@ -84,9 +79,8 @@ class QuadTransEnv(gym.Env):
     def _get_reward(self):
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
-        err_v = torch.norm((self.vxyz_obj - self.vxyz_obj_target), dim=1)
-        # DEBUG remove err_x turn
-        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 * 0.0 - \
+        err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1)
+        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
@@ -98,9 +92,9 @@ class QuadTransEnv(gym.Env):
             self.xyz_obj,
             self.vxyz_obj,
             self.xyz_drones.reshape(self.env_num, -1),
-            self.vxyz_drones.reshape(self.env_num, -1),
+            self.vxyz_drones.reshape(self.env_num, -1) / 2.0,
             self.quat_drones.reshape(self.env_num, -1),
-            self.vrpy_drones.reshape(self.env_num, -1),
+            self.vrpy_drones.reshape(self.env_num, -1) / 15.0,
             self.xyz_obj_target,
             self.vxyz_obj_target
         ], dim=-1)
@@ -180,9 +174,12 @@ class QuadTransEnv(gym.Env):
         # drone
         self.vxyz_drones = self.vxyz_drones + \
             self.sim_dt * force_drones / self.mass_drones
+        self.vxyz_drones = torch.clip(self.vxyz_drones, -5, 5)
         self.xyz_drones = self.xyz_drones + self.sim_dt * self.vxyz_drones
+        self.xyz_drones = torch.clip(self.xyz_drones, -2, 2)
         self.vrpy_drones = self.vrpy_drones + self.sim_dt * \
             (torch.inverse(self.J_drones) @ moment_drones.unsqueeze(-1)).squeeze(-1)
+        self.vrpy_drones = torch.clip(self.vrpy_drones, -50, 50)
         # integrate the quaternion
         self.quat_drones = geom.integrate_quat(
             self.quat_drones, self.vrpy_drones, self.sim_dt)
@@ -246,10 +243,6 @@ class QuadTransEnv(gym.Env):
         xyz_drone_target = (self.xyz_obj + target_force_obj /
                             torch.norm(target_force_obj, dim=-1, keepdim=True) *
                             self.rope_length) - self.hook_disp
-        # DEBUG
-        # xyz_drone_target = pos_target.unsqueeze(1)
-        # DEBUG
-        # target_force_obj_projected = (-self.mass_obj * self.g).unsqueeze(1)
         delta_pos_drones = xyz_drone_target - self.xyz_drones
         target_force_drone = self.mass_drones*self.pos_controller.update(
             delta_pos_drones, self.step_dt) - (self.mass_drones) * self.g + target_force_obj_projected
@@ -260,13 +253,6 @@ class QuadTransEnv(gym.Env):
         desired_rotvec = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
         desired_rotvec[:, :, 2] = 1.0
-
-        # DEBUG
-        # rpy_target = torch.tensor([[[1.0, 0.0, 0.0]]], device=self.device)
-        # quat_target = geom.rpy2quat(rpy_target)
-        # quat_error = geom.quat_mul(
-        #     quat_target, geom.quat_inv(self.quat_drones))
-        # rot_err = quat_error[..., :3]
 
         rot_err = torch.cross(
             desired_rotvec, thrust_desired/torch.norm(thrust_desired, dim=-1, keepdim=True), dim=-1)
@@ -490,7 +476,7 @@ class MeshVisulizer:
         # update object
         xyz_obj = state['xyz_obj'][0].cpu().numpy()
         self.vis["obj"].set_transform(tf.translation_matrix(xyz_obj))
-        time.sleep(4e-4*10)
+        time.sleep(4e-4)
 
 
 def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path=None):
@@ -512,13 +498,14 @@ def main():
     torch.set_printoptions(precision=2, sci_mode=True)
 
     # setup environment
-    env_num = 1
-    env = QuadTransEnv(env_num=env_num, drone_num=1, gpu_id=-1, enable_log=True, enable_vis=True)
+    env_num = 1024
+    env = QuadTransEnv(env_num=env_num, drone_num=1, gpu_id=0, enable_log=True, enable_vis=False)
     env.reset()
 
     target_pos = torch.tensor([[0.5, 0.5, 0.5]], device=env.device)
 
-    for i in range(8):
+    all_obs = torch.zeros([env.max_steps, env_num, env.state_dim], device=env.device)
+    for i in range(env.max_steps):
         # policy1: PID
         # action = env.policy_pos(target_pos)
 
@@ -532,11 +519,10 @@ def main():
         # action = torch.cat([-total_gravity[..., [2]], vrp_target], dim=-1)
 
         # policy3: manual
-        action = torch.rand([env_num, 1, 4], device=env.device) * 2 - 1
-
+        action = torch.rand([env_num, 1, env.action_dim], device=env.device) * 2 - 1
         obs, rew, done, info = env.step(action.squeeze(1))
-        # print NaN in obs
-        ic(obs[torch.isnan(obs)])
+        all_obs[i] = obs
+    ic(all_obs.mean(dim=[0,1]))
     env.close(savepath='results/test')
 
 
