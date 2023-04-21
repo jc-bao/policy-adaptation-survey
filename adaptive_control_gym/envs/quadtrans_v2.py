@@ -174,9 +174,9 @@ class QuadTransEnv(gym.Env):
         # drone
         self.vxyz_drones = self.vxyz_drones + \
             self.sim_dt * force_drones / self.mass_drones
-        self.vxyz_drones = torch.clip(self.vxyz_drones, -5, 5)
+        self.vxyz_drones = torch.clip(self.vxyz_drones, -10, 10)
         self.xyz_drones = self.xyz_drones + self.sim_dt * self.vxyz_drones
-        self.xyz_drones = torch.clip(self.xyz_drones, -2, 2)
+        self.xyz_drones = torch.clip(self.xyz_drones, -5, 5)
         self.vrpy_drones = self.vrpy_drones + self.sim_dt * \
             (torch.inverse(self.J_drones) @ moment_drones.unsqueeze(-1)).squeeze(-1)
         self.vrpy_drones = torch.clip(self.vrpy_drones, -50, 50)
@@ -314,7 +314,7 @@ class QuadTransEnv(gym.Env):
             (self.env_num, self.drone_num, 3), device=self.device)
         self.hook_disp[:, :, 2] = -0.05
         self.mass_obj = torch.ones(
-            (self.env_num, 3), device=self.device) * 0.01
+            (self.env_num, 3), device=self.device) * 0.00001
         self.rope_length = torch.ones(
             (self.env_num, self.drone_num, 1), device=self.device) * 0.2
         self.rope_zeta = torch.ones(
@@ -330,7 +330,7 @@ class QuadTransEnv(gym.Env):
             [self.env_num, self.drone_num, 3], device=self.device)
         self.attirate_controller = PIDController(
             kp=ones * torch.tensor([4e2, 4e2, 1e2], device=self.device),
-            ki=ones * torch.tensor([4e4, 4e4, 2e4], device=self.device),
+            ki=ones * torch.tensor([4e4, 4e4, 2e4], device=self.device)*0.0,
             kd=zeros,
             ki_max=ones * torch.tensor([1e-1, 1e-1, 1e-1], device=self.device),
             integral=zeros, last_error=zeros
@@ -499,27 +499,28 @@ def main():
 
     # setup environment
     env_num = 1
-    env = QuadTransEnv(env_num=env_num, drone_num=1, gpu_id=0, enable_log=True, enable_vis=True)
+    env = QuadTransEnv(env_num=env_num, drone_num=1, gpu_id=-1, enable_log=True, enable_vis=False)
     env.reset()
 
     target_pos = torch.tensor([[0.5, 0.5, 0.5]], device=env.device)
 
     all_obs = torch.zeros([env.max_steps, env_num, env.state_dim], device=env.device)
-    for i in range(env.max_steps):
+    for i in range(16):
         # policy1: PID
         # action = env.policy_pos(target_pos)
 
         # policy2: manual
-        # total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
-        # vrp_target = torch.zeros([1024, 1, 2], device=env.device)
-        # if i < 10:
-        #     vrp_target[..., 0] = 1.5
-        # elif i < 20:
-        #     vrp_target[..., 0] = -1.5
-        # action = torch.cat([-total_gravity[..., [2]], vrp_target], dim=-1)
+        total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
+        vrp_target = torch.zeros([env.env_num, 1, 2], device=env.device)
+        if i%8 < 4:
+            vrp_target[..., 0] = 10
+        else:
+            vrp_target[..., 0] = -10
+        action = torch.cat([-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
 
-        # policy3: manual
-        action = torch.rand([env_num, 1, env.action_dim], device=env.device) * 2 - 1
+        # policy3: random
+        # action = torch.rand([env_num, 1, env.action_dim], device=env.device) * 2 - 1
+
         obs, rew, done, info = env.step(action.squeeze(1))
         all_obs[i] = obs
     ic(all_obs.mean(dim=[0,1]))
