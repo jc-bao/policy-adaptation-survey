@@ -9,7 +9,9 @@ import meshcat.geometry as g
 import meshcat.transformations as tf
 import time
 import pandas as pd
+import os
 
+import adaptive_control_gym
 from adaptive_control_gym.utils import geom
 
 
@@ -38,6 +40,11 @@ class QuadTransEnv(gym.Env):
         # set torch default float precision
         torch.set_default_dtype(torch.float32)
 
+        # set RL parameters
+        self.state_dim = 3 + 3 + (3 + 3 + 4 + 3) * self.drone_num + 3 + 3
+        self.expert_dim = 1
+        self.adapt_dim = 1
+
         # state variables, physical parameters
         self.reset()
 
@@ -46,21 +53,24 @@ class QuadTransEnv(gym.Env):
         vrpy_target = action[..., 1:]
 
         for _ in range(self.step_substeps):
-            state = self.ctlstep(vrpy_target, thrust)
+            self.ctlstep(vrpy_target, thrust)
+
+        reward = self._get_reward()
+        # calculate done
         self.step_cnt += 1
+        single_done = (self.step_cnt >= self.max_steps)
+        done = torch.ones((self.env_num), device=self.device) * single_done
+        if single_done:
+            self.reset()
+        next_obs = self._get_obs()
+        next_info = self._get_info()
 
-        # compute reward
-        reward = -torch.norm(self.xyz_obj -
-                             self.xyz_target, dim=-1).mean(dim=-1) + 1.0
-        done = (self.step_cnt >= self.max_steps)
-        info = {}
-
-        return state, reward, done, info
+        return next_obs, reward, done, next_info
 
     def _get_reward(self):
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_drones, dim=1)
-        err_v = torch.norm((self.vxyz_obj - self.vxyz_target), dim=1)
+        err_v = torch.norm((self.vxyz_obj - self.vxyz_obj_target), dim=1)
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
@@ -76,8 +86,8 @@ class QuadTransEnv(gym.Env):
             self.vxyz_drones.reshape(self.env_num, -1),
             self.quat_drones.reshape(self.env_num, -1),
             self.vrpy_drones.reshape(self.env_num, -1),
-            self.xyz_target,
-            self.vxyz_target
+            self.xyz_obj_target,
+            self.vxyz_obj_target
         ], dim=-1)
         return obs
 
@@ -165,6 +175,7 @@ class QuadTransEnv(gym.Env):
         self.vxyz_obj = self.vxyz_obj + self.sim_dt * axyz_obj
         self.xyz_obj = self.xyz_obj + self.sim_dt * self.vxyz_obj
 
+        # log and visualize for debug purpose
         if self.logger.enable or self.visualizer.enable:
             state = {
                 'xyz_drones': self.xyz_drones,
@@ -173,7 +184,9 @@ class QuadTransEnv(gym.Env):
                 'rpy_drones': geom.quat2rpy(self.quat_drones),
                 'vrpy_drones': self.vrpy_drones,
                 'xyz_obj': self.xyz_obj,
+                'xyz_obj_err': self.xyz_obj - self.xyz_obj_target,
                 'vxyz_obj': self.vxyz_obj,
+                'vxyz_obj_err': self.vxyz_obj - self.vxyz_obj_target,
                 'force_drones': force_drones,
                 'moment_drones': moment_drones,
                 'force_obj': force_obj,
@@ -254,9 +267,9 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj = torch.rand(
             [self.env_num, 3], device=self.device) * 2.0 - 1.0
         # sample goal position
-        self.xyz_target = torch.rand(
+        self.xyz_obj_target = torch.rand(
             [self.env_num, 3], device=self.device) * 2.0 - 1.0
-        self.vxyz_target = torch.zeros(
+        self.vxyz_obj_target = torch.zeros(
             [self.env_num, 3], device=self.device)
         # sample drone initial position
         thetas = torch.rand([self.env_num, self.drone_num],
@@ -338,8 +351,8 @@ class QuadTransEnv(gym.Env):
     def render(self, mode='human'):
         pass
 
-    def close(self):
-        self.logger.plot('results/test')
+    def close(self, savepath):
+        self.logger.plot(savepath)
 
 
 class PIDController:
@@ -373,8 +386,8 @@ class PIDController:
 class Logger:
     def __init__(self, enable=True) -> None:
         self.enable = enable
-        self.log_items = ['xyz_drones', 'vxyz_drones', 'rpy_drones', 'quat_drones', 'vrpy_drones', 'xyz_obj', 'vxyz_obj', 'force_drones',
-                          'moment_drones', 'force_obj', 'rope_force_drones', 'rope_force_obj', 'gravity_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'torque']
+        self.log_items = ['xyz_drones', 'vxyz_drones', 'rpy_drones', 'quat_drones', 'vrpy_drones', 'xyz_obj', 'xyz_obj_err', 'vxyz_obj',
+                          'vxyz_obj_err', 'rope_force_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'xyz_obj_target', 'vxyz_obj_target']
         self.log_dict = {item: [] for item in self.log_items}
 
     def log(self, state):
@@ -455,8 +468,17 @@ class MeshVisulizer:
 
 
 def test(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path=None):
+    # make sure the incorperated logger is enabled
+    env.logger.enable = True
     state, info = env.reset()
     total_steps = env.max_steps * 5.0
+    for _ in range(total_steps):
+        act = policy(state, None)
+        state, rew, done, info = env.step(act)
+    if save_path == None:
+        package_path = os.path.dirname(adaptive_control_gym.__file__)
+        savepath = f"{package_path}/../results/test"
+    env.close(savepath)
 
 
 def main():
