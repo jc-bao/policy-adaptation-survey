@@ -8,7 +8,7 @@ import tyro
 
 install()
 
-from adaptive_control_gym.envs import QuadTransEnv, test_quadtrans
+from adaptive_control_gym.envs import QuadTransEnv, test_env
 from adaptive_control_gym.controllers import PPO
 
 @dataclass
@@ -17,8 +17,8 @@ class Args:
     program:str='tmp'
     seed:int=1
     gpu_id:int=0
-    act_expert_mode:int=1
-    cri_expert_mode:int=1
+    act_expert_mode:int=0
+    cri_expert_mode:int=0
     exp_name:str= ''
     compressor_dim: int = 4
     search_dim: int = 0
@@ -165,7 +165,7 @@ def train(args:Args)->None:
             'adapt_err_x_initial': adapt_err_x_initial,
             'adapt_err_x_end': adapt_err_x_end,
         }, path)
-    test_quadtrans(QuadTransEnv(env_num=1, gpu_id =-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim), agent.act.cpu(), agent.adaptor.cpu(), compressor = agent.compressor.cpu(), save_path=plt_path)
+    test_env(QuadTransEnv(env_num=1, gpu_id =-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim), agent.act.cpu(), agent.adaptor.cpu(), compressor = agent.compressor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
         wandb.save(path, base_path="../../../results/rl", policy="now")

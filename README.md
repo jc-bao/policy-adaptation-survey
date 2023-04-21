@@ -18,6 +18,14 @@
 |PPO-RMA|PPO|
 |-|-|
 |![](https://p.ipic.vip/10inmo.gif)|![](https://p.ipic.vip/5kqz95.gif)|
+
+## Train
+
+```shell
+cd controller/rl
+python train.py
+```
+
 ## Policy
 
 * Classic
