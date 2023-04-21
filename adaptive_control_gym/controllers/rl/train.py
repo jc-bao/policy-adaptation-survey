@@ -26,7 +26,7 @@ class Args:
 
 def train(args:Args)->None:
     env_num = 1024
-    total_steps = 2.0e7
+    total_steps = 0.5e7
     adapt_steps = 0.5e7 if ((args.act_expert_mode>0)|(args.cri_expert_mode>0)) else 0
     eval_freq = 4
     curri_thereshold = 10.0
@@ -64,7 +64,7 @@ def train(args:Args)->None:
             agent.last_state, agent.last_info = env.reset()
             w, env_params = get_optimal_w(env, agent, args.search_dim)
             # train
-            explore_steps = env.max_steps
+            explore_steps = int(env.max_steps * np.clip(i_ep / 20, 0.1, 1))
             total_steps += explore_steps * env_num
             states, actions, logprobs, rewards, undones, infos = agent.explore_env(env, explore_steps, use_adaptor=False, w=w)
             agent.last_info['e'] = torch.concat([agent.last_info['e'], w], dim=-1)

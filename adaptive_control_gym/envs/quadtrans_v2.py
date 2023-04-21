@@ -483,7 +483,7 @@ def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path
     # make sure the incorperated logger is enabled
     env.logger.enable = True
     state, info = env.reset()
-    total_steps = env.max_steps * 2.0
+    total_steps = env.max_steps * 2
     for _ in range(total_steps):
         act = policy(state, None)
         state, rew, done, info = env.step(act)
@@ -498,8 +498,8 @@ def main():
     torch.set_printoptions(precision=2, sci_mode=True)
 
     # setup environment
-    env_num = 1024
-    env = QuadTransEnv(env_num=env_num, drone_num=1, gpu_id=0, enable_log=True, enable_vis=False)
+    env_num = 1
+    env = QuadTransEnv(env_num=env_num, drone_num=1, gpu_id=0, enable_log=True, enable_vis=True)
     env.reset()
 
     target_pos = torch.tensor([[0.5, 0.5, 0.5]], device=env.device)
