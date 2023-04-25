@@ -197,9 +197,9 @@ class QuadTransEnv(gym.Env):
             cos_err_div2 < np.cos(self.max_angle/2)).float()
         self.quat_drones[..., 3] = hit_angle_limit_mask * np.cos(
             self.max_angle/2) + (1 - hit_angle_limit_mask) * self.quat_drones[..., 3]
-        self.quat_drones[..., :3] = hit_angle_limit_mask * self.quat_drones[..., :3] / torch.norm(
-            self.quat_drones[..., :3], dim=-1, keepdim=True) * np.sin(self.max_angle/2) + (1 - hit_angle_limit_mask) * self.quat_drones[..., :3]
-        self.vrpy_drones = (1 - hit_angle_limit_mask) * self.vrpy_drones
+        self.quat_drones[..., :3] = hit_angle_limit_mask.unsqueeze(-1) * self.quat_drones[..., :3] / torch.norm(
+            self.quat_drones[..., :3], dim=-1, keepdim=True) * np.sin(self.max_angle/2) + (1 - hit_angle_limit_mask.unsqueeze(-1)) * self.quat_drones[..., :3]
+        self.vrpy_drones = (1 - hit_angle_limit_mask.unsqueeze(-1)) * self.vrpy_drones
 
         # object
         axyz_obj = force_obj / self.mass_obj
@@ -446,7 +446,7 @@ class L1AdpativeController:
         x_hat_dot = self.B * (u + self.sigma_hat) + self.As * (self.x_hat - x)
         self.x_hat += x_hat_dot * self.dt
         self.sigma_hat = - 1.0 / self.B * 1/self.Phi * \
-            np.exp(self.As*self.dt) * (self.x_hat - x)
+            torch.exp(self.As*self.dt) * (self.x_hat - x)
         self.u_ad = self.u_ad * self.alpha + \
             (-self.sigma_hat) * (1 - self.alpha)
         u_b = self.kp * (x_desired - x)
