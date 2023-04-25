@@ -112,10 +112,12 @@ class QuadTransEnv(gym.Env):
         # run lower level attitude rate PID controller
         self.vrpy_target = vrpy_target
         self.vrpy_err = vrpy_target - self.vrpy_drones
-        torque = (self.J_drones @ self.attirate_controller.update(self.vrpy_err,
-                  self.ctl_dt).unsqueeze(-1)).squeeze(-1)
+        # torque = (self.J_drones @ self.attirate_controller.update(self.vrpy_err,
+                #   self.ctl_dt).unsqueeze(-1)).squeeze(-1)
+        torque = (self.J_drones @ self.attirate_controller.update(self.vrpy_drones, self.vrpy_target, self.u_attirate).unsqueeze(-1)).squeeze(-1)
         thrust, torque = torch.clip(thrust, 0.0, self.max_thrust), torch.clip(
             torque, -self.max_torque, self.max_torque)
+        self.u_attirate = (torch.inverse(self.J_drones) @ torque.unsqueeze(-1)).squeeze(-1)
         for _ in range(self.ctl_substeps):
             state = self.simstep(torque, thrust)
         return state
@@ -312,9 +314,9 @@ class QuadTransEnv(gym.Env):
         self.J_drones[:, :, 2, 2] = 2.98e-5
         self.hook_disp = torch.zeros(
             (self.env_num, self.drone_num, 3), device=self.device)
-        self.hook_disp[:, :, 2] = -0.05
+        self.hook_disp[:, :, 2] = -0.03
         self.mass_obj = torch.ones(
-            (self.env_num, 3), device=self.device) * 0.00001
+            (self.env_num, 3), device=self.device) * 0.01
         self.rope_length = torch.ones(
             (self.env_num, self.drone_num, 1), device=self.device) * 0.2
         self.rope_zeta = torch.ones(
@@ -328,12 +330,23 @@ class QuadTransEnv(gym.Env):
                           device=self.device)
         zeros = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
-        self.attirate_controller = PIDController(
-            kp=ones * torch.tensor([4e2, 4e2, 1e2], device=self.device),
-            ki=ones * torch.tensor([4e4, 4e4, 2e4], device=self.device)*0.0,
-            kd=zeros,
-            ki_max=ones * torch.tensor([1e-1, 1e-1, 1e-1], device=self.device),
-            integral=zeros, last_error=zeros
+        # self.attirate_controller = PIDController(
+        #     kp=ones * torch.tensor([4e2, 4e2, 1e2], device=self.device),
+        #     ki=ones * torch.tensor([4e4, 4e4, 2e4], device=self.device),
+        #     kd=zeros,
+        #     ki_max=ones * torch.tensor([1e-1, 1e-1, 1e-1], device=self.device),
+        #     integral=zeros, last_error=zeros
+        # )
+        self.u_attirate = zeros
+        self.attirate_controller = L1AdpativeController(
+            kp = ones * (100.0),
+            As = ones * (-10.0), 
+            B = ones * 1.0,
+            sigma_hat=zeros, 
+            x_hat = zeros,
+            u_ad = zeros, 
+            filter_co = ones * 1000.0,
+            dt = self.ctl_dt
         )
         ones = torch.ones([self.env_num, 3], device=self.device)
         zeros = torch.zeros([self.env_num, 3], device=self.device)
@@ -393,7 +406,32 @@ class PIDController:
         derivative = (error - self.last_error) / dt
         self.last_error = error
         return self.kp * error + self.ki * self.integral + self.kd * derivative
+        
+class L1AdpativeController:
+    def __init__(self, kp, As, B, sigma_hat, x_hat, u_ad, filter_co, dt):
+        self.kp = kp
+        self.As = As
+        self.B = B
+        self.dt = dt
+        self.sigma_hat = sigma_hat
+        self.x_hat = x_hat
+        self.u_ad = u_ad
 
+        self.Phi = 1.0/As*(torch.exp(As*dt) - 1)
+        self.alpha = torch.exp(-dt * filter_co)
+
+    def reset(self):
+        self.x_hat *= 0.0
+        self.sigma_hat *= 0.0
+        self.u_ad *= 0.0
+
+    def update(self, x, x_desired, u):
+        x_hat_dot = self.B * (u + self.sigma_hat) + self.As *(self.x_hat - x)
+        self.x_hat += x_hat_dot * self.dt
+        self.sigma_hat = - 1.0 / self.B * 1/self.Phi * np.exp(self.As*self.dt) * (self.x_hat - x)
+        self.u_ad = self.u_ad * self.alpha + (-self.sigma_hat) * (1 - self.alpha)
+        u_b = self.kp * (x_desired - x)
+        return u_b + self.u_ad
 
 class Logger:
     def __init__(self, enable=True) -> None:
@@ -510,16 +548,16 @@ def main():
         # action = env.policy_pos(target_pos)
 
         # policy2: manual
-        total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
-        vrp_target = torch.zeros([env.env_num, 1, 2], device=env.device)
-        if i%8 < 4:
-            vrp_target[..., 0] = 10
-        else:
-            vrp_target[..., 0] = -10
-        action = torch.cat([-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
+        # total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
+        # vrp_target = torch.zeros([env.env_num, 1, 2], device=env.device)
+        # if i%2 < 1:
+        #     vrp_target[..., 0] = 10
+        # else:
+        #     vrp_target[..., 0] = -10
+        # action = torch.cat([-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
 
         # policy3: random
-        # action = torch.rand([env_num, 1, env.action_dim], device=env.device) * 2 - 1
+        action = torch.rand([env_num, 1, env.action_dim], device=env.device) * 2 - 1
 
         obs, rew, done, info = env.step(action.squeeze(1))
         all_obs[i] = obs
