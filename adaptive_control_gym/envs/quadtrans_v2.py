@@ -369,8 +369,8 @@ class QuadTransEnv(gym.Env):
             integral=zeros, last_error=zeros
         )
         # thrust limits
-        self.max_thrust = 0.60
-        self.max_vrp = 20.0
+        self.max_thrust = 0.80
+        self.max_vrp = 12.0
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
 
     def render(self, mode='human'):
