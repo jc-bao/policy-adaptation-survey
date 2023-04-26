@@ -176,7 +176,7 @@ class QuadTransEnv(gym.Env):
         # rope force
         rope_force_obj = -torch.sum(rope_force_drones, dim=1)
         # total force
-        force_obj = gravity_obj + rope_force_obj - self.vxyz_obj * 0.05 # TODO set as parameter
+        force_obj = gravity_obj + rope_force_obj - self.vxyz_obj * 0.01 # TODO set as parameter
 
         # update the state variables
         # drone
@@ -457,7 +457,7 @@ class Logger:
     def __init__(self, enable=True) -> None:
         self.enable = enable
         self.log_items = ['xyz_drones', 'vxyz_drones', 'rpy_drones', 'quat_drones', 'xyz_obj', 'xyz_obj_err', 'vxyz_obj',
-                          'vxyz_obj_err', 'vrpy_drones', 'vrpy_target', 'vrpy_err', 'rope_force_drones', 'thrust_drones', 'rope_disp', 'rope_vel', 'xyz_obj_target', 'vxyz_obj_target']
+                          'vxyz_obj_err', 'vrpy_drones', 'vrpy_target', 'vrpy_err', 'rope_force_drones', 'thrust_drones', 'torque', 'rope_disp', 'rope_vel', 'xyz_obj_target', 'vxyz_obj_target']
         self.log_dict = {item: [] for item in self.log_items}
 
     def log(self, state):
@@ -534,21 +534,21 @@ class MeshVisulizer:
         # update object
         xyz_obj = state['xyz_obj'][0].cpu().numpy()
         self.vis["obj"].set_transform(tf.translation_matrix(xyz_obj))
-        time.sleep(4e-4*2.0)
+        time.sleep(4e-4)
 
 
 def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path=None):
     # make sure the incorperated logger is enabled
     env.logger.enable = True
     state, info = env.reset()
-    total_steps = env.max_steps * 2
+    total_steps = env.max_steps
     for _ in range(total_steps):
         act = policy(state, None)
         state, rew, done, info = env.step(act)
     if save_path == None:
         package_path = os.path.dirname(adaptive_control_gym.__file__)
-        savepath = f"{package_path}/../results/test"
-    env.close(savepath)
+        save_path = f"{package_path}/../results/test"
+    env.close(save_path)
 
 
 def main():
@@ -589,4 +589,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_transportation.pt', map_location='cpu')
+    policy = loaded_agent['actor']
+    test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1, enable_log=True, enable_vis=True), policy, save_path='results/test')
