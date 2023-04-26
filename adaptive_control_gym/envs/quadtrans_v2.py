@@ -55,8 +55,12 @@ class QuadTransEnv(gym.Env):
         action = action.unsqueeze(1)
         thrust = (action[..., 0] + 1.0) * 0.5 * self.max_thrust
         vrp_target = action[..., 1:] * self.max_vrp
-        vrpy_target = torch.cat([vrp_target, torch.zeros(
-            [*vrp_target.shape[:-1], 1], device=self.device)], dim=-1)
+
+        rpy_drones = geom.quat2rpy(self.quat_drones)
+        yaw_drones = rpy_drones[..., [2]]
+        vy_target = - yaw_drones * 10.0
+
+        vrpy_target = torch.cat([vrp_target, vy_target], dim=-1)
 
         for _ in range(self.step_substeps):
             self.ctlstep(vrpy_target, thrust)
@@ -116,8 +120,7 @@ class QuadTransEnv(gym.Env):
         #   self.ctl_dt).unsqueeze(-1)).squeeze(-1)
         torque = (self.J_drones @ self.attirate_controller.update(self.vrpy_drones,
                   self.vrpy_target, self.u_attirate).unsqueeze(-1)).squeeze(-1)
-        thrust, torque = torch.clip(thrust, 0.0, self.max_thrust), torch.clip(
-            torque, -self.max_torque, self.max_torque)
+        thrust = torch.clip(thrust, 0.0, self.max_thrust)
         self.u_attirate = (torch.inverse(self.J_drones) @
                            torque.unsqueeze(-1)).squeeze(-1)
         for _ in range(self.ctl_substeps):
@@ -163,7 +166,12 @@ class QuadTransEnv(gym.Env):
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # TODO set as parameter
         dist2center = torch.norm(self.xyz_drones, dim=-1, keepdim=True)
-        force_drones -= 0.1 * (self.xyz_drones - self.xyz_drones / dist2center) * (dist2center > 3.0).float()  
+        force_drones -= 0.1 * (self.xyz_drones - self.xyz_drones / dist2center) * (dist2center > 3.0).float()
+        # translate torque to drone local frame
+        torque_drones = (torch.transpose(rotmat_drone, -1, -2) @ torque.unsqueeze(-1)).squeeze(-1)
+        torque_drones = torch.clip(
+            torque_drones, -self.max_torque, self.max_torque)
+        torque = (rotmat_drone @ torque_drones.unsqueeze(-1)).squeeze(-1)
         # total moment
         rope_torque = torch.cross(self.hook_disp, rope_force_drones, dim=-1)
         moment_drones = torque + rope_torque + \
@@ -570,17 +578,17 @@ def main():
         # action = env.policy_pos(target_pos)
 
         # policy2: manual
-        # total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
-        # vrp_target = torch.zeros([env.env_num, 1, 2], device=env.device)
-        # if i%2 < 1:
-        #     vrp_target[..., 0] = 10
-        # else:
-        #     vrp_target[..., 0] = -10
-        # action = torch.cat([-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
+        total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
+        vrp_target = torch.zeros([env.env_num, 1, 2], device=env.device)
+        if i%2 < 1:
+            vrp_target[..., :2] = 5
+        else:
+            vrp_target[..., :2] = -5
+        action = torch.cat([-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
 
         # policy3: random
-        action = torch.rand([env_num, 1, env.action_dim],
-                            device=env.device) * 2 - 1
+        # action = torch.rand([env_num, 1, env.action_dim],
+        #                     device=env.device) * 2 - 1
 
         obs, rew, done, info = env.step(action.squeeze(1))
         all_obs[i] = obs
@@ -589,7 +597,7 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_transportation.pt', map_location='cpu')
-    policy = loaded_agent['actor']
-    test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1, enable_log=True, enable_vis=True), policy, save_path='results/test')
+    main()
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_transportation.pt', map_location='cpu')
+    # policy = loaded_agent['actor']
+    # test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1, enable_log=True, enable_vis=True), policy, save_path='results/test')
