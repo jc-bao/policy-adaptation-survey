@@ -58,7 +58,7 @@ class QuadTransEnv(gym.Env):
 
         rpy_drones = geom.quat2rpy(self.quat_drones)
         yaw_drones = rpy_drones[..., [2]]
-        vy_target = - yaw_drones * 10.0
+        vy_target = - yaw_drones * 20.0
 
         vrpy_target = torch.cat([vrp_target, vy_target], dim=-1)
 
