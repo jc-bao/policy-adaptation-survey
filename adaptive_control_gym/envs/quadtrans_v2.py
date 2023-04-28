@@ -56,9 +56,6 @@ class QuadTransEnv(gym.Env):
         thrust = (action[..., 0] + 1.0) * 0.5 * self.max_thrust
         vrp_target = action[..., 1:] * self.max_vrp
 
-        # DEBUG
-        vrp_target[..., 1] *= 0.0
-
         rpy_drones = geom.quat2rpy(self.quat_drones)
         yaw_drones = rpy_drones[..., [2]]
         vy_target = - yaw_drones * 10.0
@@ -328,12 +325,6 @@ class QuadTransEnv(gym.Env):
         self.vrpy_drones = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
 
-        # DEBUG
-        self.xyz_obj[..., 0] *= 0.0
-        self.xyz_drones[..., 0] *= 0.0
-        self.xyz_obj_target[..., 0] *= 0.0
-
-
     def sample_physical_params(self):
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
@@ -546,7 +537,7 @@ class MeshVisulizer:
         # update drone
         xyz_drone = state['xyz_drones'][0, 0].cpu().numpy()
         quat_drone = state['quat_drones'][0, 0].cpu().numpy()
-        quat_drone = np.array([*quat_drone[:3], quat_drone[0]])
+        quat_drone = np.array([quat_drone[3], *quat_drone[:3]])
         self.vis["drone"].set_transform(tf.translation_matrix(
             xyz_drone).dot(tf.quaternion_matrix(quat_drone)))
         # update object
@@ -610,7 +601,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-    '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_transportationd2d.pt', map_location='cpu')
+    '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_transportation.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True), policy, save_path='results/test')
