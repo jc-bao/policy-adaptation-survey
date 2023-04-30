@@ -56,18 +56,14 @@ class QuadTransEnv(gym.Env):
         thrust = (action[..., 0] + 1.0) * 0.5 * self.max_thrust
         vrp_target = action[..., 1:] * self.max_vrp
 
-        rpy_drones = geom.quat2rpy(self.quat_drones)
-        yaw_drones = rpy_drones[..., [2]]
-        vy_target = - yaw_drones * 20.0
-
-        vrpy_target = torch.cat([vrp_target, vy_target], dim=-1)
-
         for _ in range(self.step_substeps):
-            self.ctlstep(vrpy_target, thrust)
+            self.ctlstep(vrp_target, thrust)
 
         reward = self._get_reward()
         # calculate done
         self.step_cnt += 1
+        self.xyz_obj_target = self.xyz_traj[self.step_cnt]
+        self.vxyz_obj_target = self.vxyz_traj[self.step_cnt]
         single_done = (self.step_cnt >= self.max_steps)
         done = torch.ones((self.env_num), device=self.device) * single_done
         if single_done:
@@ -112,7 +108,11 @@ class QuadTransEnv(gym.Env):
             'err_v': torch.norm((self.vxyz_obj - self.vxyz_obj_target), dim=1),
         }
 
-    def ctlstep(self, vrpy_target: torch.Tensor, thrust: torch.Tensor):
+    def ctlstep(self, vrp_target: torch.Tensor, thrust: torch.Tensor):
+        rpy_drones = geom.quat2rpy(self.quat_drones)
+        yaw_drones = rpy_drones[..., [2]]
+        vy_target = - yaw_drones * 15.0
+        vrpy_target = torch.cat([vrp_target, vy_target], dim=-1)
         # run lower level attitude rate PID controller
         self.vrpy_target = vrpy_target
         self.vrpy_err = vrpy_target - self.vrpy_drones
@@ -298,11 +298,11 @@ class QuadTransEnv(gym.Env):
         # sample object initial position
         self.xyz_obj = torch.rand(
             [self.env_num, 3], device=self.device) * 2.0 - 1.0
+        # sample target trajectory
+        self.xyz_traj, self.vxyz_traj = self._generate_traj()
         # sample goal position
-        self.xyz_obj_target = torch.rand(
-            [self.env_num, 3], device=self.device) * 2.0 - 1.0
-        self.vxyz_obj_target = torch.zeros(
-            [self.env_num, 3], device=self.device)
+        self.xyz_obj_target = self.xyz_traj[0]
+        self.vxyz_obj_target = self.vxyz_traj[0]
         # sample drone initial position
         thetas = torch.rand([self.env_num, self.drone_num],
                             device=self.device) * 2 * np.pi * 0.0
@@ -324,6 +324,26 @@ class QuadTransEnv(gym.Env):
         # reset drone initial angular velocity
         self.vrpy_drones = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
+        
+    def _generate_traj(self):
+        traj_len = self.max_steps * 2
+        delta_t = self.step_dt
+        base_w = 2 * np.pi / (40.0 * delta_t)
+        t = torch.arange(0, traj_len, 1, device=self.device) * delta_t
+        t = torch.tile(t.unsqueeze(-1).unsqueeze(-1), (1, self.env_num, 3))
+        x = torch.zeros((traj_len, self.env_num, 3), device=self.device)
+        v = torch.zeros((traj_len, self.env_num, 3), device=self.device)
+        for i in np.arange(0,2,1):
+            # DEBUG
+            A = 0.5*torch.tile(((torch.rand((1, self.env_num, 3), device=self.device)*0.3+0.7)*(2.0**(-i))), (traj_len,1,1))
+
+            w = base_w*(2**i)
+
+            phase = torch.tile(torch.rand((1, self.env_num, 3), device=self.device)*(2*np.pi), (traj_len,1,1))
+
+            x += A*torch.cos(t*w+phase)
+            v -= w*A*torch.sin(t*w+phase)
+        return x, v
 
     def sample_physical_params(self):
         self.g = torch.zeros(3, device=self.device)
@@ -530,6 +550,8 @@ class MeshVisulizer:
             g.StlMeshGeometry.from_file('../assets/crazyflie2.stl'))
         # set object model as a sphere
         self.vis["obj"].set_object(g.Sphere(0.01))
+        # set target object model as a red sphere
+        self.vis["obj_target"].set_object(g.Sphere(0.01), material=g.MeshLambertMaterial(color=0xff0000))
 
     def update(self, state):
         if not self.enable:
@@ -543,6 +565,9 @@ class MeshVisulizer:
         # update object
         xyz_obj = state['xyz_obj'][0].cpu().numpy()
         self.vis["obj"].set_transform(tf.translation_matrix(xyz_obj))
+        # update target object
+        xyz_obj_target = state['xyz_obj_target'][0].cpu().numpy()
+        self.vis["obj_target"].set_transform(tf.translation_matrix(xyz_obj_target))
         time.sleep(4e-4)
 
 
@@ -601,7 +626,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-    '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_transportation.pt', map_location='cpu')
+    '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True), policy, save_path='results/test')
