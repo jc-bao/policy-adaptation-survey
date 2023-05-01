@@ -352,26 +352,30 @@ class QuadTransEnv(gym.Env):
         return x, v
 
     def sample_physical_params(self):
+        def sample_uni(size):
+            if size == 0:
+                return (torch.rand(
+            (self.env_num, self.drone_num), device=self.device)*2.0-1.0)
+            else:
+                return (torch.rand(
+            (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0)
+
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
-        self.mass_drones = torch.ones(
-            (self.env_num, self.drone_num, 3), device=self.device) * 0.027
+        self.mass_drones = sample_uni(3) * 0.007 + 0.027
         self.J_drones = torch.zeros(
             (self.env_num, self.drone_num, 3, 3), device=self.device)
-        self.J_drones[:, :, 0, 0] = 1.7e-5
-        self.J_drones[:, :, 1, 1] = 1.7e-5
-        self.J_drones[:, :, 2, 2] = 2.98e-5
-        self.hook_disp = torch.zeros(
-            (self.env_num, self.drone_num, 3), device=self.device)
-        self.hook_disp[:, :, 2] = -0.03
+        self.J_drones[:, :, 0, 0] = sample_uni(0) * 0.2e-5 + 1.7e-5
+        self.J_drones[:, :, 1, 1] = sample_uni(0) * 0.2e-5 + 1.7e-5
+        self.J_drones[:, :, 2, 2] = sample_uni(0) * 0.3e-5 + 2.98e-5
+        self.hook_disp = sample_uni(3) * torch.tensor(
+            [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, 0.015], device=self.device)
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.01
-        self.rope_length = torch.ones(
-            (self.env_num, self.drone_num, 1), device=self.device) * 0.2
-        self.rope_zeta = torch.ones(
-            (self.env_num, self.drone_num, 1), device=self.device) * 0.7
-        self.rope_wn = torch.ones(
-            (self.env_num, self.drone_num, 1), device=self.device) * 1000.0
+        self.mass_obj[..., :] = sample_uni(0) * 0.005 + 0.01
+        self.rope_length = sample_uni(1) * 0.1 + 0.2
+        self.rope_zeta = sample_uni(1) * 0.15 + 0.75
+        self.rope_wn = sample_uni(1) * 300 + 1000
 
     def sample_control_params(self):
         # attitude rate controller
