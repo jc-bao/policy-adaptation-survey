@@ -316,16 +316,20 @@ class QuadTransEnv(gym.Env):
         # sample object initial position
         self.xyz_obj = torch.rand(
             [self.env_num, 3], device=self.device) * 2.0 - 1.0
+        
         # sample target trajectory
         self.xyz_traj, self.vxyz_traj = self._generate_traj()
+
         # sample goal position
         self.xyz_obj_target = self.xyz_traj[0]
         self.vxyz_obj_target = self.vxyz_traj[0]
         # sample drone initial position
         thetas = torch.rand([self.env_num, self.drone_num],
                             device=self.device) * 2 * np.pi
+        
         phis = torch.rand([self.env_num, self.drone_num],
-                          device=self.device) * 0.25 * np.pi
+                          device=self.device) * 0.5 * np.pi
+        
         xyz_drones2obj = torch.stack([torch.sin(phis) * torch.cos(thetas),
                                       torch.sin(phis) * torch.sin(thetas),
                                       torch.cos(phis)], dim=-1) * self.rope_length - self.hook_disp
@@ -615,7 +619,7 @@ def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path
     # make sure the incorperated logger is enabled
     env.logger.enable = True
     state, info = env.reset()
-    total_steps = env.max_steps
+    total_steps = env.max_steps * 3
     for _ in range(total_steps):
         act = policy(state, None)
         state, rew, done, info = env.step(act)
@@ -666,7 +670,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_rand.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_stable.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=False), policy, save_path='results/test')
+             enable_log=True, enable_vis=True), policy, save_path='results/test')
