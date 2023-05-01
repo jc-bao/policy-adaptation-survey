@@ -614,8 +614,7 @@ class MeshVisulizer:
 def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path=None):
     # make sure the incorperated logger is enabled
     env.logger.enable = True
-    state,
-    info = env.reset()
+    state, info = env.reset()
     total_steps = env.max_steps
     for _ in range(total_steps):
         act = policy(state, None)
@@ -667,7 +666,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans3p.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_rand.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=False), policy, save_path='results/test')
