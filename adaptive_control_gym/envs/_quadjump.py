@@ -29,7 +29,10 @@ class QuadTransEnv(gym.Env):
         self.drone_num = drone_num
         self.ctl_dt = self.sim_dt * self.ctl_substeps
         self.step_substeps = 50
-        self.max_steps = 50
+
+        # DEBUG
+        self.max_steps = 20
+
         self.step_dt = self.ctl_dt * self.step_substeps
         self.gpu_id = gpu_id
         self.device = torch.device(
@@ -53,6 +56,10 @@ class QuadTransEnv(gym.Env):
 
     def step(self, action):
         action = action.reshape(self.env_num, self.drone_num, 3)
+        
+        # DEBUG disable roll rate control
+        action[..., 1]*= 0.0 
+
         thrust = (action[..., 0] + 1.0) * 0.5 * self.max_thrust
         vrp_target = action[..., 1:] * self.max_vrp
 
@@ -77,13 +84,44 @@ class QuadTransEnv(gym.Env):
         return None
 
     def _get_reward(self):
+
+        # DEBUG
+        def get_hit_penalty(xyz):
+            within_obs_x_range = torch.abs(xyz[:, 0]) < 0.1
+            outof_obs_z_range = torch.abs(xyz[:, 2]) > 0.15
+            dist2upcir = torch.norm(
+                xyz[:, [0, 2]] - torch.tensor([0.0, 0.15], device=self.device), dim=1)
+            within_obs_upcir_range = dist2upcir < 0.1
+            dist2downcir = torch.norm(
+                xyz[:, [0, 2]] - torch.tensor([0.0, -0.15], device=self.device), dim=1)
+            within_obs_downcir_range = dist2downcir < 0.1
+            
+            hit_x_bound = within_obs_x_range & outof_obs_z_range
+            hit_upcir_bound = within_obs_x_range & within_obs_upcir_range
+            hit_downcir_bound = within_obs_x_range & within_obs_downcir_range
+
+            hit_panelty = - hit_x_bound.float() * torch.abs(xyz[:, 0]) - \
+                hit_upcir_bound.float() * (0.1 - dist2upcir) - \
+                hit_downcir_bound.float() * (0.1 - dist2downcir)
+            return hit_panelty
+
+
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
-        err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1)
+
+        # DEBUG
+        err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1) * 0.0
+
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
+
+        # DEBUG
+        reward *= 3.0
+        reward += get_hit_penalty(self.xyz_obj) * 3.0
+        reward += get_hit_penalty(self.xyz_drones.squeeze(1)) * 3.0
+
         return reward
 
     def _get_obs(self):
@@ -316,16 +354,32 @@ class QuadTransEnv(gym.Env):
         # sample object initial position
         self.xyz_obj = torch.rand(
             [self.env_num, 3], device=self.device) * 2.0 - 1.0
+        
+        # DEBUG
+        self.xyz_obj[..., 0] = -0.5
+        self.xyz_obj[..., 1] = 0.0
+        self.xyz_obj[..., 2] = -0.1
+
         # sample target trajectory
         self.xyz_traj, self.vxyz_traj = self._generate_traj()
+
+        # DEBUG
+        self.xyz_traj[..., 0] = 0.5
+        self.xyz_traj[..., 1] = 0.0
+        self.xyz_traj[..., 2] = -0.1
+
         # sample goal position
         self.xyz_obj_target = self.xyz_traj[0]
         self.vxyz_obj_target = self.vxyz_traj[0]
+
         # sample drone initial position
+
+        #DEBUG
         thetas = torch.rand([self.env_num, self.drone_num],
-                            device=self.device) * 2 * np.pi
+                            device=self.device) * 2 * np.pi * 0.0
         phis = torch.rand([self.env_num, self.drone_num],
-                          device=self.device) * 0.25 * np.pi
+                          device=self.device) * 0.25 * np.pi * 0.0
+        
         xyz_drones2obj = torch.stack([torch.sin(phis) * torch.cos(thetas),
                                       torch.sin(phis) * torch.sin(thetas),
                                       torch.cos(phis)], dim=-1) * self.rope_length - self.hook_disp
@@ -366,13 +420,16 @@ class QuadTransEnv(gym.Env):
         return x, v
 
     def sample_physical_params(self):
+
+
+        # DEBUG
         def sample_uni(size):
             if size == 0:
                 return (torch.rand(
-                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0)
+                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 0.0
             else:
                 return (torch.rand(
-                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0)
+                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 0.0
 
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
@@ -666,7 +723,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_rand.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=False), policy, save_path='results/test')
+             enable_log=True, enable_vis=True), policy, save_path='results/test')
