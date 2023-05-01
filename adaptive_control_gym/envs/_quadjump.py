@@ -87,24 +87,13 @@ class QuadTransEnv(gym.Env):
 
         # DEBUG
         def get_hit_penalty(xyz):
-            within_obs_x_range = torch.abs(xyz[:, 0]) < 0.1
-            outof_obs_z_range = torch.abs(xyz[:, 2]) > 0.15
-            dist2upcir = torch.norm(
-                xyz[:, [0, 2]] - torch.tensor([0.0, 0.15], device=self.device), dim=1)
-            within_obs_upcir_range = dist2upcir < 0.1
-            dist2downcir = torch.norm(
-                xyz[:, [0, 2]] - torch.tensor([0.0, -0.15], device=self.device), dim=1)
-            within_obs_downcir_range = dist2downcir < 0.1
-            
+            within_obs_x_range = torch.abs(xyz[:, 0]) < 0.03
+            outof_obs_z_range = torch.abs(xyz[:, 2]) > 0.07
+
             hit_x_bound = within_obs_x_range & outof_obs_z_range
-            hit_upcir_bound = within_obs_x_range & within_obs_upcir_range
-            hit_downcir_bound = within_obs_x_range & within_obs_downcir_range
 
-            hit_panelty = - hit_x_bound.float() * torch.abs(xyz[:, 0]) - \
-                hit_upcir_bound.float() * (0.1 - dist2upcir) - \
-                hit_downcir_bound.float() * (0.1 - dist2downcir)
+            hit_panelty = - torch.clip(hit_x_bound.float() * torch.min(0.03-torch.abs(xyz[:, 0]), torch.abs(xyz[:, 2])-0.07) * 100.0, -1, 1)
             return hit_panelty
-
 
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
@@ -118,9 +107,11 @@ class QuadTransEnv(gym.Env):
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
         # DEBUG
-        reward *= 3.0
-        reward += get_hit_penalty(self.xyz_obj) * 3.0
-        reward += get_hit_penalty(self.xyz_drones.squeeze(1)) * 3.0
+        drone_panelty = get_hit_penalty(self.xyz_drones.squeeze(1))
+        obj_panelty = get_hit_penalty(self.xyz_obj)
+        reward *= ((drone_panelty>=0) | (obj_panelty>=0)).float()
+        reward += drone_panelty
+        reward += obj_panelty
 
         return reward
 
