@@ -517,11 +517,18 @@ class Logger:
         x_time = np.arange(len(self.log_dict[self.log_items[0]])) * 4e-4
         for i, item in enumerate(self.log_items):
             self.log_dict[item] = np.array(self.log_dict[item])
+            if item == 'xyz_obj' and 'xyz_obj_target' in self.log_dict:
+                target = self.log_dict['xyz_obj_target']
+            else:
+                target = None
             if len(self.log_dict[item][0]) > 1:
                 # plot each dimension
                 for j in range(len(self.log_dict[item][0])):
                     axs[i].plot(x_time, np.array(self.log_dict[item])[
                                 :, j], label=f'{item}_{j}')
+                    if target is not None:
+                        axs[i].plot(x_time, np.array(target)[:, j],
+                                    label=f'{item}_{j}_target', linestyle='--')
             else:
                 axs[i].plot(x_time, self.log_dict[item])
             axs[i].set_title(item)
@@ -641,4 +648,4 @@ if __name__ == '__main__':
         '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans3p.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=True), policy, save_path='results/test')
+             enable_log=True, enable_vis=False), policy, save_path='results/test')
