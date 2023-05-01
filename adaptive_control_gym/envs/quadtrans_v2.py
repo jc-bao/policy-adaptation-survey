@@ -43,10 +43,10 @@ class QuadTransEnv(gym.Env):
         # set RL parameters
         self.state_dim = 3 + 3 + (3 + 3 + 4 + 3) * \
             self.drone_num + 3 + 3 + (3 + 3)*5
-        self.expert_dim = 1
+        self.expert_dim = 10 * drone_num + 4
         self.adapt_horizon = 1
         self.adapt_dim = 1
-        self.action_dim = 3
+        self.action_dim = 3 * drone_num
 
         # state variables, physical parameters
         self.reset()
@@ -105,8 +105,22 @@ class QuadTransEnv(gym.Env):
         return obs
 
     def _get_info(self):
+        drone_info = torch.cat([
+            self.mass_drones/0.027,
+            self.J_drones[:, :, 0, [0]]/1.7e-5,
+            self.J_drones[:, :, 1, [1]]/1.7e-5,
+            self.J_drones[:, :, 2, [2]]/2.98e-5,
+            self.hook_disp / 0.015,
+            self.rope_length/0.2,
+            self.rope_zeta/0.75,
+            self.rope_wn/1000.0,
+        ], dim=-1).reshape(self.env_num, -1) # 10*drone_num
+        expert_info = torch.cat([
+            drone_info,
+            self.mass_obj/0.01,
+        ], dim=-1)
         return {
-            'e': torch.zeros([self.env_num, 1], device=self.device),
+            'e': expert_info,
             'adapt_obs': torch.zeros([self.env_num, 1], device=self.device),
             'err_x': torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1),
             'err_v': torch.norm((self.vxyz_obj - self.vxyz_obj_target), dim=1),
@@ -355,14 +369,16 @@ class QuadTransEnv(gym.Env):
         def sample_uni(size):
             if size == 0:
                 return (torch.rand(
-            (self.env_num, self.drone_num), device=self.device)*2.0-1.0)
+                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0)
             else:
                 return (torch.rand(
-            (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0)
+                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0)
 
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
-        self.mass_drones = sample_uni(3) * 0.007 + 0.027
+        self.mass_drones = torch.zeros(
+            (self.env_num, self.drone_num, 3), device=self.device)
+        self.mass_drones[..., :] = sample_uni(1) * 0.007 + 0.027
         self.J_drones = torch.zeros(
             (self.env_num, self.drone_num, 3, 3), device=self.device)
         self.J_drones[:, :, 0, 0] = sample_uni(0) * 0.2e-5 + 1.7e-5
@@ -372,7 +388,8 @@ class QuadTransEnv(gym.Env):
             [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, 0.015], device=self.device)
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.01
-        self.mass_obj[..., :] = sample_uni(0) * 0.005 + 0.01
+        uni = torch.rand((self.env_num, 1), device=self.device) * 2.0 - 1.0
+        self.mass_obj[..., :] = uni * 0.005 + 0.01
         self.rope_length = sample_uni(1) * 0.1 + 0.2
         self.rope_zeta = sample_uni(1) * 0.15 + 0.75
         self.rope_wn = sample_uni(1) * 300 + 1000
@@ -597,7 +614,8 @@ class MeshVisulizer:
 def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path=None):
     # make sure the incorperated logger is enabled
     env.logger.enable = True
-    state, info = env.reset()
+    state,
+    info = env.reset()
     total_steps = env.max_steps
     for _ in range(total_steps):
         act = policy(state, None)
