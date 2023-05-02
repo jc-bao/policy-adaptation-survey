@@ -54,6 +54,9 @@ class QuadTransEnv(gym.Env):
     def step(self, action):
         action = action.reshape(self.env_num, self.drone_num, 3)
 
+        # DEBUG
+        action[..., 1] *= 0.0
+
         thrust = (action[..., 0] + 1.0) * 0.5 * self.max_thrust
         vrp_target = action[..., 1:] * self.max_vrp
 
@@ -318,8 +321,15 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj = torch.rand(
             [self.env_num, 3], device=self.device) * 2.0 - 1.0
 
+        # DEBUG
+        self.xyz_obj[..., 1] *= 0.0
+
         # sample target trajectory
         self.xyz_traj, self.vxyz_traj = self._generate_traj()
+
+        # DEBUG
+        self.xyz_traj *= 0.0
+        self.vxyz_traj *= 0.0
 
         # sample goal position
         self.xyz_obj_target = self.xyz_traj[0]
@@ -327,6 +337,10 @@ class QuadTransEnv(gym.Env):
         # sample drone initial position
         thetas = torch.rand([self.env_num, self.drone_num],
                             device=self.device) * 2 * np.pi
+
+        # DEBUG
+        thetas[..., 0] = 0.0
+        thetas[..., 1] = np.pi
 
         phis = torch.rand([self.env_num, self.drone_num],
                           device=self.device) * 0.5 * np.pi
@@ -391,11 +405,17 @@ class QuadTransEnv(gym.Env):
         self.hook_disp = sample_uni(3) * torch.tensor(
             [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, 0.015], device=self.device)
 
+        #  DEBUG
+        self.hook_disp *= 0.0
+
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.01
         uni = torch.rand((self.env_num, 1), device=self.device) * 2.0 - 1.0
         self.mass_obj[..., :] = uni * 0.005 + 0.01
         self.rope_length = sample_uni(1) * 0.1 + 0.2
+
+        # DEBUG
+        self.rope_length[...] = 0.2
 
         self.rope_zeta = sample_uni(1) * 0.15 + 0.75
         self.rope_wn = sample_uni(1) * 300 + 1000
