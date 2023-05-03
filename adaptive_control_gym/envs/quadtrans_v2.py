@@ -29,7 +29,7 @@ class QuadTransEnv(gym.Env):
         self.drone_num = drone_num
         self.ctl_dt = self.sim_dt * self.ctl_substeps
         self.step_substeps = 50
-        self.max_steps = 20
+        self.max_steps = 50
         self.step_dt = self.ctl_dt * self.step_substeps
         self.gpu_id = gpu_id
         self.device = torch.device(
