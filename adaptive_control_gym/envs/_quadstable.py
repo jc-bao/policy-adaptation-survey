@@ -42,32 +42,61 @@ class QuadTransEnv(gym.Env):
 
         # set RL parameters
         self.state_dim = 3 + 3 + (3 + 3 + 4 + 3) * \
-            self.drone_num + 3 + 3 + (3 + 3)*5
+            self.drone_num + 3 + 3
         self.expert_dim = 10 * drone_num + 5
         self.adapt_horizon = 1
         self.adapt_dim = 1
         self.action_dim = 3 * drone_num
+
+        # enviroment variables
+        self.step_cnt = torch.zeros(
+            (self.env_num), device=self.device, dtype=torch.long)
+        self.xyz_traj = torch.zeros(
+            (self.max_steps*2, self.env_num, 3), device=self.device)
+        self.vxyz_traj = torch.zeros(
+            (self.max_steps*2, self.env_num, 3), device=self.device)
+        self.xyz_obj_target = self.xyz_traj[0]
+        self.vxyz_obj_target = self.vxyz_traj[0]
+        self.xyz_drones = torch.zeros(
+            (self.env_num, self.drone_num, 3), device=self.device)
+        self.vxyz_drones = torch.zeros(
+            (self.env_num, self.drone_num, 3), device=self.device)
+        self.quat_drones = torch.zeros(
+            (self.env_num, self.drone_num, 4), device=self.device)
+        self.vrpy_drones = torch.zeros(
+            (self.env_num, self.drone_num, 3), device=self.device)
+        self.xyz_obj = torch.zeros((self.env_num, 3), device=self.device)
+        self.vxyz_obj = torch.zeros((self.env_num, 3), device=self.device)
+
+        # controller
+        self.set_control_params()
 
         # state variables, physical parameters
         self.reset()
 
     def step(self, action):
         action = action.reshape(self.env_num, self.drone_num, 3)
-        thrust = (action[..., 0] + 1.0) * 0.5 * self.max_thrust
+        # trick: set base action as gravity compensation
+        thrust = action[..., 0] * self.max_thrust - \
+            ((self.mass_drones + self.mass_obj.unsqueeze(1)) * self.g)[..., 2]
         vrp_target = action[..., 1:] * self.max_vrp
 
         for _ in range(self.step_substeps):
             self.ctlstep(vrp_target, thrust)
+            # self.dummystep(vrp_target, thrust)
 
         reward = self._get_reward()
         # calculate done
         self.step_cnt += 1
-        self.xyz_obj_target = self.xyz_traj[self.step_cnt]
-        self.vxyz_obj_target = self.vxyz_traj[self.step_cnt]
-        single_done = (self.step_cnt >= self.max_steps)
-        done = torch.ones((self.env_num), device=self.device) * single_done
-        if single_done:
-            self.reset()
+        rows = torch.arange(self.env_num, device=self.device, dtype=torch.long)
+        self.xyz_obj_target = self.xyz_traj[self.step_cnt, rows]
+        self.vxyz_obj_target = self.vxyz_traj[self.step_cnt, rows]
+        time_done = (self.step_cnt >= self.max_steps)
+        cos_err_div2 = self.quat_drones[..., 3]
+        quat_done = (cos_err_div2 < np.cos(self.max_angle/2)).any(dim=-1)
+        xyz_done = (torch.abs(self.xyz_drones) >= 1.0).any(dim=1).any(dim=1)
+        done = time_done | quat_done | xyz_done
+        self.reset(done)
         next_obs = self._get_obs()
         next_info = self._get_info()
 
@@ -80,6 +109,13 @@ class QuadTransEnv(gym.Env):
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1)
+
+        # DEBUG
+        err_x = torch.norm(self.xyz_drones.squeeze(1) -
+                           self.xyz_obj_target, dim=1)
+        err_v = torch.norm(self.vxyz_drones.squeeze(1) -
+                           self.vxyz_obj_target, dim=1)
+
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
@@ -97,10 +133,6 @@ class QuadTransEnv(gym.Env):
             self.vrpy_drones.reshape(self.env_num, -1) / 15.0,
             self.xyz_obj - self.xyz_obj_target,
             self.vxyz_obj - self.vxyz_obj_target,
-            self.xyz_traj[self.step_cnt:self.step_cnt +
-                          5].reshape(self.env_num, -1),
-            self.vxyz_traj[self.step_cnt:self.step_cnt +
-                           5].reshape(self.env_num, -1) / 2.0,
         ], dim=-1)
         return obs
 
@@ -114,7 +146,7 @@ class QuadTransEnv(gym.Env):
             self.rope_length/0.2,
             self.rope_zeta/0.75,
             self.rope_wn/1000.0,
-        ], dim=-1).reshape(self.env_num, -1) # 10*drone_num
+        ], dim=-1).reshape(self.env_num, -1)  # 10*drone_num
         expert_info = torch.cat([
             drone_info,
             self.mass_obj/0.01,
@@ -125,6 +157,116 @@ class QuadTransEnv(gym.Env):
             'err_x': torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1),
             'err_v': torch.norm((self.vxyz_obj - self.vxyz_obj_target), dim=1),
         }
+
+    def dummystep(self, rp_target, thrust):
+        # state variables
+        rotmat_drone = geom.quat2rotmat(self.quat_drones)
+        xyz_hook = self.xyz_drones + \
+            (rotmat_drone @ self.hook_disp.unsqueeze(-1)).squeeze(-1)
+
+        # analysis the force of the drone
+        # gravity
+        gravity_drones = self.g * self.mass_drones
+        # thrust
+        thrust_drones = torch.zeros(
+            (self.env_num, self.drone_num, 3), device=self.device)
+        thrust_drones[:, :, 2] = thrust
+        thrust_drones = (
+            rotmat_drone @ thrust_drones.unsqueeze(-1)).squeeze(-1)
+        # rope force
+        xyz_obj2hook = self.xyz_obj.unsqueeze(1) - xyz_hook
+        xyz_obj2hook_normed = xyz_obj2hook / \
+            torch.norm(xyz_obj2hook, dim=-1, keepdim=True)
+        rope_origin = self.rope_length * xyz_obj2hook_normed
+        rope_disp = xyz_obj2hook - rope_origin
+        loose_rope = torch.norm(
+            xyz_obj2hook, dim=-1) < self.rope_length.squeeze(-1)
+        vxyz_hook = self.vxyz_drones + \
+            torch.cross(self.vrpy_drones, self.hook_disp, dim=-1)
+        vxyz_obj2hook = self.vxyz_obj.unsqueeze(1) - vxyz_hook
+        rope_vel = torch.sum(vxyz_obj2hook * xyz_obj2hook_normed,
+                             dim=-1, keepdim=True) * xyz_obj2hook_normed
+        mass_joint = self.mass_drones * \
+            self.mass_obj.unsqueeze(
+                1) / (self.mass_drones + self.mass_obj.unsqueeze(1))
+        rope_force_drones = mass_joint * \
+            ((self.rope_wn ** 2) * rope_disp + 2 *
+             self.rope_zeta * self.rope_wn * rope_vel)
+        rope_force_drones[loose_rope] *= 0.0
+        # total force
+        force_drones = gravity_drones + thrust_drones + rope_force_drones
+        # TODO set as parameter
+        dist2center = torch.norm(self.xyz_drones, dim=-1, keepdim=True)
+        force_drones -= 0.1 * \
+            (self.xyz_drones - self.xyz_drones /
+             dist2center) * (dist2center > 3.0).float()
+        # total moment
+        rope_torque = torch.cross(self.hook_disp, rope_force_drones, dim=-1)
+
+        # analysis the force of the object
+        # gravity
+        gravity_obj = self.g * self.mass_obj
+        # rope force
+        rope_force_obj = -torch.sum(rope_force_drones, dim=1)
+        # total force
+        force_obj = gravity_obj + rope_force_obj - \
+            self.vxyz_obj * 0.01  # TODO set as parameter
+
+        # update the state variables
+        # drone
+        self.vxyz_drones = self.vxyz_drones + \
+            self.ctl_dt * force_drones / self.mass_drones
+        self.vxyz_drones = torch.clip(self.vxyz_drones, -10, 10)
+        self.xyz_drones = torch.clip(
+            self.xyz_drones + self.ctl_dt * self.vxyz_drones, -1, 1)
+
+        rpy_drones = torch.cat([rp_target, torch.zeros(
+            [*rp_target.shape[:-1], 1], device=self.device)], dim=-1)
+        rpy_drones_last = geom.quat2rpy(self.quat_drones)
+        self.vrpy_drones = (rpy_drones - rpy_drones_last) / self.ctl_dt
+
+        self.vrpy_drones = torch.clip(self.vrpy_drones, -50, 50)
+        # integrate the quaternion
+        self.quat_drones = geom.rpy2quat(rpy_drones)
+
+        # object
+        axyz_obj = force_obj / self.mass_obj
+        self.vxyz_obj = self.vxyz_obj + self.ctl_dt * axyz_obj
+        self.xyz_obj = self.xyz_obj + self.ctl_dt * self.vxyz_obj
+
+        # log and visualize for debug purpose
+        if self.logger.enable or self.visualizer.enable:
+            state = {
+                'xyz_drones': self.xyz_drones,
+                'vxyz_drones': self.vxyz_drones,
+                'quat_drones': self.quat_drones,
+                'rpy_drones': geom.quat2rpy(self.quat_drones),
+                'vrpy_drones': self.vrpy_drones,
+                'xyz_obj': self.xyz_obj,
+                'xyz_obj_err': self.xyz_obj - self.xyz_obj_target,
+                'vrpy_target': torch.zeros([*rp_target.shape[:-1], 3], device=self.device),
+                'vrpy_err': torch.zeros([*rp_target.shape[:-1], 3], device=self.device),
+                'vxyz_obj': self.vxyz_obj,
+                'vxyz_obj_err': self.vxyz_obj - self.vxyz_obj_target,
+                'force_drones': force_drones,
+                'moment_drones': torch.zeros((self.env_num, self.drone_num, 3), device=self.device),
+                'force_obj': force_obj,
+                'rope_force_drones': rope_force_drones,
+                'rope_force_obj': rope_force_obj,
+                'gravity_drones': gravity_drones,
+                'thrust_drones': thrust_drones,
+                'rope_disp': rope_disp,
+                'rope_vel': rope_vel,
+                'torque': torch.zeros((self.env_num, self.drone_num, 3), device=self.device),
+                'xyz_obj_target': self.xyz_obj_target,
+                'vxyz_obj_target': self.vxyz_obj_target,
+            }
+        else:
+            state = None
+        self.logger.log(state)
+        self.visualizer.update(state)
+
+        return state
 
     def ctlstep(self, vrp_target: torch.Tensor, thrust: torch.Tensor):
         rpy_drones = geom.quat2rpy(self.quat_drones)
@@ -208,7 +350,8 @@ class QuadTransEnv(gym.Env):
         self.vxyz_drones = self.vxyz_drones + \
             self.sim_dt * force_drones / self.mass_drones
         self.vxyz_drones = torch.clip(self.vxyz_drones, -10, 10)
-        self.xyz_drones = self.xyz_drones + self.sim_dt * self.vxyz_drones
+        self.xyz_drones = torch.clip(
+            self.xyz_drones + self.sim_dt * self.vxyz_drones, -1, 1)
         self.vrpy_drones = self.vrpy_drones + self.sim_dt * \
             (torch.inverse(self.J_drones) @ moment_drones.unsqueeze(-1)).squeeze(-1)
         self.vrpy_drones = torch.clip(self.vrpy_drones, -50, 50)
@@ -217,15 +360,15 @@ class QuadTransEnv(gym.Env):
             self.quat_drones, self.vrpy_drones, self.sim_dt)
 
         # manually limit the angle
-        cos_err_div2 = self.quat_drones[..., 3]
-        hit_angle_limit_mask = (
-            cos_err_div2 < np.cos(self.max_angle/2)).float()
-        self.quat_drones[..., 3] = hit_angle_limit_mask * np.cos(
-            self.max_angle/2) + (1 - hit_angle_limit_mask) * self.quat_drones[..., 3]
-        self.quat_drones[..., :3] = hit_angle_limit_mask.unsqueeze(-1) * self.quat_drones[..., :3] / torch.norm(
-            self.quat_drones[..., :3], dim=-1, keepdim=True) * np.sin(self.max_angle/2) + (1 - hit_angle_limit_mask.unsqueeze(-1)) * self.quat_drones[..., :3]
-        self.vrpy_drones = (
-            1 - hit_angle_limit_mask.unsqueeze(-1)) * self.vrpy_drones
+        # cos_err_div2 = self.quat_drones[..., 3]
+        # hit_angle_limit_mask = (
+        #     cos_err_div2 < np.cos(self.max_angle/2)).float()
+        # self.quat_drones[..., 3] = hit_angle_limit_mask * np.cos(
+        #     self.max_angle/2) + (1 - hit_angle_limit_mask) * self.quat_drones[..., 3]
+        # self.quat_drones[..., :3] = hit_angle_limit_mask.unsqueeze(-1) * self.quat_drones[..., :3] / torch.norm(
+        #     self.quat_drones[..., :3], dim=-1, keepdim=True) * np.sin(self.max_angle/2) + (1 - hit_angle_limit_mask.unsqueeze(-1)) * self.quat_drones[..., :3]
+        # self.vrpy_drones = (
+        #     1 - hit_angle_limit_mask.unsqueeze(-1)) * self.vrpy_drones
 
         # object
         axyz_obj = force_obj / self.mass_obj
@@ -304,87 +447,94 @@ class QuadTransEnv(gym.Env):
 
         return torch.cat([thrust.unsqueeze(-1), rpy_rate_target], dim=-1)
 
-    def reset(self):
-        self.sample_physical_params()
-        self.sample_control_params()
-        self.sample_state()
+    def reset(self, done=None):
+        if done is None:
+            done = torch.ones(
+                (self.env_num), device=self.device, dtype=torch.bool)
+        self.sample_physical_params(done)
+        self.sample_state(done)
         # reset steps
-        self.step_cnt = 0
+        self.step_cnt[done] = 0
         return self._get_obs(), self._get_info()
 
-    def sample_state(self):
+    def sample_state(self, done):
+        size = torch.sum(done)
         # sample object initial position
-        self.xyz_obj = torch.rand(
-            [self.env_num, 3], device=self.device) * 2.0 - 1.0
-        
+        self.xyz_obj[done] = torch.rand(
+            [size, 3], device=self.device) * 2.0 - 1.0
+
         # DEBUG
-        self.xyz_obj *= 0.0
+        self.xyz_obj[done] *= 0.0
+        self.xyz_obj[done, 2] = -0.201
 
         # sample target trajectory
-        self.xyz_traj, self.vxyz_traj = self._generate_traj()
+        self.xyz_traj[:, done], self.vxyz_traj[:,
+                                               done] = self._generate_traj(size)
 
-        # DEBUG 
-        self.xyz_traj *= 0.0
-        self.vxyz_traj *= 0.0
+        # DEBUG
+        self.xyz_traj[:, done] *= 0.0
+        self.vxyz_traj[:, done] *= 0.0
 
         # sample goal position
-        self.xyz_obj_target = self.xyz_traj[0]
-        self.vxyz_obj_target = self.vxyz_traj[0]
+        self.xyz_obj_target[done] = self.xyz_traj[0,done]
+        self.vxyz_obj_target[done] = self.vxyz_traj[0,done]
         # sample drone initial position
-        thetas = torch.rand([self.env_num, self.drone_num],
+        thetas = torch.rand([size, self.drone_num],
                             device=self.device) * 2 * np.pi
-        
-        # DEBUG
-        phis = torch.rand([self.env_num, self.drone_num],
-                          device=self.device) * 0.25 * np.pi + np.pi * 0.25
-        
+        phis = torch.rand([size, self.drone_num],
+                          device=self.device) * 0.25 * np.pi * 0.0  # DEBUG
+
         xyz_drones2obj = torch.stack([torch.sin(phis) * torch.cos(thetas),
                                       torch.sin(phis) * torch.sin(thetas),
                                       torch.cos(phis)], dim=-1) * self.rope_length - self.hook_disp
-        self.xyz_drones = self.xyz_obj.unsqueeze(1) + xyz_drones2obj
-        # reset drone initial attitude
-        self.quat_drones = torch.zeros(
-            [self.env_num, self.drone_num, 4], device=self.device)
-        self.quat_drones[:, :, 3] = 1.0
-        # reset drone initial velocity
-        self.vxyz_drones = torch.zeros(
-            [self.env_num, self.drone_num, 3], device=self.device)
-        # reset object initial velocity
-        self.vxyz_obj = torch.zeros([self.env_num, 3], device=self.device)
-        # reset drone initial angular velocity
-        self.vrpy_drones = torch.zeros(
-            [self.env_num, self.drone_num, 3], device=self.device)
+        self.xyz_drones[done] = self.xyz_obj[done].unsqueeze(
+            1) + xyz_drones2obj
 
-    def _generate_traj(self):
+        # reset drone initial attitude
+        self.quat_drones[done] = torch.zeros(
+            [size, self.drone_num, 4], device=self.device)
+        self.quat_drones[done, :, 3] = 1.0
+        # reset drone initial velocity
+        self.vxyz_drones[done] = torch.zeros(
+            [size, self.drone_num, 3], device=self.device)
+        # reset object initial velocity
+        self.vxyz_obj[done] = torch.zeros([size, 3], device=self.device)
+        # reset drone initial angular velocity
+        self.vrpy_drones[done] = torch.zeros(
+            [size, self.drone_num, 3], device=self.device)
+
+    def _generate_traj(self, size):
         traj_len = self.max_steps * 2
         delta_t = self.step_dt
         base_w = 2 * np.pi / (40.0 * delta_t)
         t = torch.arange(0, traj_len, 1, device=self.device) * delta_t
-        t = torch.tile(t.unsqueeze(-1).unsqueeze(-1), (1, self.env_num, 3))
-        x = torch.zeros((traj_len, self.env_num, 3), device=self.device)
-        v = torch.zeros((traj_len, self.env_num, 3), device=self.device)
+        t = torch.tile(t.unsqueeze(-1).unsqueeze(-1), (1, size, 3))
+        x = torch.zeros((traj_len, size, 3), device=self.device)
+        v = torch.zeros((traj_len, size, 3), device=self.device)
         for i in np.arange(0, 2, 1):
             # DEBUG
-            A = 0.5*torch.tile(((torch.rand((1, self.env_num, 3),
+            A = 0.5*torch.tile(((torch.rand((1, size, 3),
                                device=self.device)*0.3+0.7)*(2.0**(-i))), (traj_len, 1, 1))
 
             w = base_w*(2**i)
 
             phase = torch.tile(torch.rand(
-                (1, self.env_num, 3), device=self.device)*(2*np.pi), (traj_len, 1, 1))
+                (1, size, 3), device=self.device)*(2*np.pi), (traj_len, 1, 1))
 
             x += A*torch.cos(t*w+phase)
             v -= w*A*torch.sin(t*w+phase)
         return x, v
 
-    def sample_physical_params(self):
+    def sample_physical_params(self, done):
+        size = torch.sum(done)
+
         def sample_uni(size):
             if size == 0:
                 return (torch.rand(
-                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0)
+                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 0.0  # DEBUG
             else:
                 return (torch.rand(
-                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0)
+                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 0.0  # DEBUG
 
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
@@ -397,28 +547,31 @@ class QuadTransEnv(gym.Env):
         self.J_drones[:, :, 1, 1] = sample_uni(0) * 0.2e-5 + 1.7e-5
         self.J_drones[:, :, 2, 2] = sample_uni(0) * 0.3e-5 + 2.98e-5
         self.hook_disp = sample_uni(3) * torch.tensor(
-            [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, 0.015], device=self.device)
+            [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015*0.0], device=self.device)  # DEBUG
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.01
         uni = torch.rand((self.env_num, 1), device=self.device) * 2.0 - 1.0
         self.mass_obj[..., :] = uni * 0.005 + 0.01
+
+        self.mass_obj *= 0.01  # DEBUG
+
         self.rope_length = sample_uni(1) * 0.1 + 0.2
         self.rope_zeta = sample_uni(1) * 0.15 + 0.75
         self.rope_wn = sample_uni(1) * 300 + 1000
 
-    def sample_control_params(self):
+    def set_control_params(self):
         # attitude rate controller
         ones = torch.ones([self.env_num, self.drone_num, 3],
                           device=self.device)
         zeros = torch.zeros(
             [self.env_num, self.drone_num, 3], device=self.device)
-        # self.attirate_controller = PIDController(
-        #     kp=ones * torch.tensor([4e2, 4e2, 1e2], device=self.device),
-        #     ki=ones * torch.tensor([4e4, 4e4, 2e4], device=self.device),
-        #     kd=zeros,
-        #     ki_max=ones * torch.tensor([1e-1, 1e-1, 1e-1], device=self.device),
-        #     integral=zeros, last_error=zeros
-        # )
+        self.attirate_controller = PIDController(
+            kp=ones * torch.tensor([4e2, 4e2, 1e2], device=self.device),
+            ki=ones * torch.tensor([4e4, 4e4, 2e4], device=self.device),
+            kd=zeros,
+            ki_max=ones * torch.tensor([1e-1, 1e-1, 1e-1], device=self.device),
+            integral=zeros, last_error=zeros
+        )
         self.u_attirate = zeros
         self.attirate_controller = L1AdpativeController(
             kp=ones * (100.0),
@@ -451,8 +604,8 @@ class QuadTransEnv(gym.Env):
             integral=zeros, last_error=zeros
         )
         # thrust limits
-        self.max_thrust = 0.90
-        self.max_vrp = 12.0
+        self.max_thrust = 0.4
+        self.max_vrp = 12.0  # DEBUG
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
         self.max_angle = np.pi/3.0  # manually set max drone angle to 45 degree
 
@@ -643,7 +796,7 @@ def main():
 
     # setup environment
     env_num = 1
-    env = QuadTransEnv(env_num=env_num, drone_num=2,
+    env = QuadTransEnv(env_num=env_num, drone_num=1,
                        gpu_id=-1, enable_log=True, enable_vis=True)
     env.reset()
 
@@ -651,7 +804,7 @@ def main():
 
     all_obs = torch.zeros(
         [env.max_steps, env_num, env.state_dim], device=env.device)
-    for i in range(50):
+    for i in range(1000):
         # policy1: PID
         # action = env.policy_pos(target_pos)
 
@@ -666,7 +819,7 @@ def main():
         #     [-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
 
         # policy3: random
-        action = torch.rand([env_num, 2, env.action_dim],
+        action = torch.rand([env_num, 1, env.action_dim],
                             device=env.device) * 2 - 1
 
         obs, rew, done, info = env.step(action.reshape(1, -1))
@@ -676,9 +829,9 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_stable.pt', map_location='cpu')
-    policy = loaded_agent['actor']
-    test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=True), policy, save_path='results/test')
+    main()
+    # loaded_agent = torch.load(
+    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_stable_droneonly_p1.0.pt', map_location='cpu')
+    # policy = loaded_agent['actor']
+    # test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+    #          enable_log=True, enable_vis=True), policy, save_path='results/test')
