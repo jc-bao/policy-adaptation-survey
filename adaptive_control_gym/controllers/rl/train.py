@@ -1,5 +1,6 @@
 from adaptive_control_gym.controllers import PPO
 from adaptive_control_gym.envs import QuadTransEnv, test_env
+import adaptive_control_gym
 import torch
 import numpy as np
 import wandb
@@ -164,8 +165,9 @@ def train(args: Args) -> None:
             if i_ep == (n_ep-1):
                 adapt_err_x_end = log_dict['eval/err_x_last10']
 
-    path = f'../../../results/rl/ppo_{args.exp_name}.pt'
-    plt_path = f'../../../results/rl/ppo_{args.exp_name}'
+    base_path = adaptive_control_gym.__path__[0] + '/results/rl'
+    path = f'{base_path}/ppo_{args.exp_name}.pt'
+    plt_path = f'{base_path}/ppo_{args.exp_name}'
     # save agent.act, agent.adaptor, agent.compressor
     torch.save({
         'actor': agent.act,
@@ -180,7 +182,7 @@ def train(args: Args) -> None:
              agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
-        wandb.save(path, base_path="../../../results/rl", policy="now")
+        wandb.save(path, base_path=base_path, policy="now")
         # save the plot
         wandb.log({
             "eval/plot": wandb.Image(f'{plt_path}_plot.png', caption="plot"),

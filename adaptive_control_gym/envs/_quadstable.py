@@ -111,12 +111,16 @@ class QuadTransEnv(gym.Env):
         err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
 
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2)*0.5
+            torch.clip(err_v, 0, 2)*0.16
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
         # DEBUG
         reward -= err_vrpy * 0.03
+
+        # Update: panelty for exceeding the angle limit
+        exceed_penalty_angle = self.quat_drones[..., 3] < np.cos(self.panelty_angle/2)
+        reward -= exceed_penalty_angle.float().sum(dim=-1) * 0.5
 
         return reward
 
@@ -509,7 +513,8 @@ class QuadTransEnv(gym.Env):
                                                done] = self._generate_traj(size)
 
         # DEBUG
-        self.xyz_traj[:, done] *= 0.0
+        self.xyz_traj[:, done] = (torch.rand(
+            [size, 3], device=self.device) * 2.0 - 1.0) * 0.0
         self.vxyz_traj[:, done] *= 0.0
 
         # sample goal position
@@ -644,7 +649,8 @@ class QuadTransEnv(gym.Env):
         self.max_thrust = 0.6
         self.max_vrp = 12.0
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
-        self.max_angle = np.pi/3.0  # manually set max drone angle to 45 degree
+        self.max_angle = np.pi/2.1  # if exceed this angle, reset the environment
+        self.panelty_angle = np.pi/3.0  # if exceed this angle, give negative reward
 
     def render(self, mode='human'):
         pass
@@ -868,7 +874,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base_P0.03.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base_Pv0.08.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True), policy, save_path='results/test')
