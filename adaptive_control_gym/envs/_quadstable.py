@@ -119,7 +119,9 @@ class QuadTransEnv(gym.Env):
         err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
 
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2)*0.15 * 0.05
+            torch.clip(err_v, 0, 2) * 0.05
+        # reward = 1.0 - torch.clip(err_x, 0, 2)*0.0 - \
+        #     torch.clip(err_v, 0, 2) * 0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
@@ -876,7 +878,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base_anygoal_Pv0.05.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True), policy, save_path='results/test')
