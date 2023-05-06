@@ -81,8 +81,8 @@ class QuadTransEnv(gym.Env):
         vrp_target = action[..., 1:] * self.max_vrp
 
         for _ in range(self.step_substeps):
-            # self.ctlstep(vrp_target, thrust)
-            self.dummystep(vrp_target, thrust)
+            self.ctlstep(vrp_target, thrust)
+            # self.dummystep(vrp_target, thrust)
 
         reward = self._get_reward()
         # calculate done
@@ -108,17 +108,16 @@ class QuadTransEnv(gym.Env):
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1)
-
-        # DEBUG
-        err_x = torch.norm(self.xyz_drones.squeeze(1) -
-                           self.xyz_obj_target, dim=1)
-        err_v = torch.norm(self.vxyz_drones.squeeze(1) -
-                           self.vxyz_obj_target, dim=1)
+        err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
 
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
+
+        # DEBUG
+        reward -= err_vrpy * 0.03
+
         return reward
 
     def _get_obs(self):
@@ -138,8 +137,8 @@ class QuadTransEnv(gym.Env):
             self.vxyz_drones.reshape(self.env_num, -1) / 2.0,
             self.quat_drones.reshape(self.env_num, -1),
             self.vrpy_drones.reshape(self.env_num, -1) / 15.0,
-            self.xyz_drones.squeeze(1) - self.xyz_obj_target, # DEBUG
-            self.vxyz_drones.squeeze(1) - self.vxyz_obj_target, # DEBUG
+            self.xyz_obj - self.xyz_obj_target,
+            self.vxyz_obj - self.vxyz_obj_target,
         ], dim=-1)
         return obs
 
@@ -353,7 +352,11 @@ class QuadTransEnv(gym.Env):
         rope_force_drones = mass_joint * \
             ((self.rope_wn ** 2) * rope_disp + 2 *
              self.rope_zeta * self.rope_wn * rope_vel)
-        rope_force_drones[loose_rope] *= 0.0
+        
+
+        zero_mass_obj = (self.mass_obj < 1e-6).all(dim=1).unsqueeze(1)
+        rope_force_drones[loose_rope | zero_mass_obj, :] = 0.0
+
         # total force
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # TODO set as parameter
@@ -375,6 +378,7 @@ class QuadTransEnv(gym.Env):
         # total force
         force_obj = gravity_obj + rope_force_obj - \
             self.vxyz_obj * 0.01  # TODO set as parameter
+        force_obj[zero_mass_obj.squeeze(-1),:] = 0.0
 
         # update the state variables
         # drone
@@ -403,8 +407,11 @@ class QuadTransEnv(gym.Env):
 
         # object
         axyz_obj = force_obj / self.mass_obj
+        axyz_obj[zero_mass_obj.squeeze(-1),:] = 0.0
         self.vxyz_obj = self.vxyz_obj + self.sim_dt * axyz_obj
+        self.vxyz_obj[zero_mass_obj.squeeze(-1)] = self.vxyz_drones[zero_mass_obj.squeeze(-1),0]
         self.xyz_obj = self.xyz_obj + self.sim_dt * self.vxyz_obj
+        self.xyz_obj[zero_mass_obj.squeeze(-1)] = self.xyz_drones[zero_mass_obj.squeeze(-1),0]
 
         # log and visualize for debug purpose
         if self.logger.enable or self.visualizer.enable:
@@ -859,9 +866,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-    # loaded_agent = torch.load(
-    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base.pt', map_location='cpu')
-    # policy = loaded_agent['actor']
-    # test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-    #          enable_log=True, enable_vis=True), policy, save_path='results/test')
+    # main()
+    loaded_agent = torch.load(
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base_P0.03.pt', map_location='cpu')
+    policy = loaded_agent['actor']
+    test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+             enable_log=True, enable_vis=True), policy, save_path='results/test')
