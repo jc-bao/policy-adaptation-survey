@@ -28,7 +28,7 @@ class Args:
 
 def train(args: Args) -> None:
     env_num = 1024 * 8
-    total_steps = 1e7
+    total_steps = 3e7
     adapt_steps = 0.5e7 if ((args.act_expert_mode > 0)
                             | (args.cri_expert_mode > 0)) else 0
     eval_freq = 4
@@ -182,7 +182,7 @@ def train(args: Args) -> None:
              agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
     # evaluate
     if args.use_wandb:
-        wandb.save(path, base_path=base_path, policy="now")
+        wandb.save(path, policy="now")
         # save the plot
         wandb.log({
             "eval/plot": wandb.Image(f'{plt_path}_plot.png', caption="plot"),

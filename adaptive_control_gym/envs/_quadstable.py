@@ -119,8 +119,7 @@ class QuadTransEnv(gym.Env):
         reward -= err_vrpy * 0.03
 
         # Update: panelty for exceeding the angle limit
-        z_angle = torch.acos(self.quat_drones[..., 3]) * 2
-        reward -= torch.clip(z_angle - self.panelty_angle, 0, 1) * 1.0
+        reward -= torch.clip(np.cos(self.panelty_angle/2)-self.quat_drones[..., 3], 0, 0.05).sum(dim=-1) * 20.0
 
         return reward
 
@@ -514,7 +513,7 @@ class QuadTransEnv(gym.Env):
 
         # DEBUG
         self.xyz_traj[:, done] = (torch.rand(
-            [size, 3], device=self.device) * 2.0 - 1.0) * 0.0
+            [size, 3], device=self.device) * 2.0 - 1.0) * 0.5
         self.vxyz_traj[:, done] *= 0.0
 
         # sample goal position
