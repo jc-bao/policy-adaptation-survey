@@ -119,8 +119,8 @@ class QuadTransEnv(gym.Env):
         reward -= err_vrpy * 0.03
 
         # Update: panelty for exceeding the angle limit
-        exceed_penalty_angle = self.quat_drones[..., 3] < np.cos(self.panelty_angle/2)
-        reward -= exceed_penalty_angle.float().sum(dim=-1) * 0.5
+        z_angle = torch.acos(self.quat_drones[..., 3]) * 2
+        reward -= torch.clip(z_angle - self.panelty_angle, 0, 1) * 1.0
 
         return reward
 
@@ -650,7 +650,7 @@ class QuadTransEnv(gym.Env):
         self.max_vrp = 12.0
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
         self.max_angle = np.pi/2.1  # if exceed this angle, reset the environment
-        self.panelty_angle = np.pi/3.0  # if exceed this angle, give negative reward
+        self.panelty_angle = np.pi/4.0  # if exceed this angle, give negative reward
 
     def render(self, mode='human'):
         pass
