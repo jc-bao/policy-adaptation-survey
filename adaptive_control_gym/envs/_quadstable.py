@@ -51,6 +51,8 @@ class QuadTransEnv(gym.Env):
         # enviroment variables
         self.step_cnt = torch.zeros(
             (self.env_num), device=self.device, dtype=torch.long)
+        self.reach_goal_step = torch.zeros(
+            (self.env_num), device=self.device, dtype=torch.long)
         self.xyz_traj = torch.zeros(
             (self.max_steps*2, self.env_num, 3), device=self.device)
         self.vxyz_traj = torch.zeros(
@@ -90,11 +92,17 @@ class QuadTransEnv(gym.Env):
         rows = torch.arange(self.env_num, device=self.device, dtype=torch.long)
         self.xyz_obj_target = self.xyz_traj[self.step_cnt, rows]
         self.vxyz_obj_target = self.vxyz_traj[self.step_cnt, rows]
+        # update research goal step
+        reached_goal = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=-1) < 0.04
+        not_reached_goal_before = (self.reach_goal_step == self.max_steps)
+        self.reach_goal_step = torch.where(
+            reached_goal & not_reached_goal_before, self.step_cnt, self.reach_goal_step)
+        reach_done = (self.step_cnt - self.reach_goal_step) >= 8
         time_done = (self.step_cnt >= self.max_steps)
         cos_err_div2 = self.quat_drones[..., 3]
         quat_done = (cos_err_div2 < np.cos(self.max_angle/2)).any(dim=-1)
         xyz_done = (torch.abs(self.xyz_drones) >= 1.0).any(dim=1).any(dim=1)
-        done = time_done | quat_done | xyz_done
+        done = reach_done | time_done | quat_done | xyz_done
         self.reset(done)
         next_obs = self._get_obs()
         next_info = self._get_info()
@@ -111,7 +119,7 @@ class QuadTransEnv(gym.Env):
         err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
 
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2)*0.15 * 0.0
+            torch.clip(err_v, 0, 2)*0.15 * 0.05
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
@@ -492,6 +500,7 @@ class QuadTransEnv(gym.Env):
         self.sample_state(done)
         # reset steps
         self.step_cnt[done] = 0
+        self.reach_goal_step[done] = self.max_steps
         return self._get_obs(), self._get_info()
 
     def sample_state(self, done):
@@ -869,7 +878,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_dummy_anygoal.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base_anygoal_Pv0.05.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True), policy, save_path='results/test')
