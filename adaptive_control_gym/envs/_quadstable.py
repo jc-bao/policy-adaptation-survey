@@ -111,7 +111,7 @@ class QuadTransEnv(gym.Env):
         err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
 
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2)*0.15
+            torch.clip(err_v, 0, 2)*0.15 * 0.0
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
@@ -259,12 +259,8 @@ class QuadTransEnv(gym.Env):
         # # make sure axyz_obj is all zero
         # assert torch.all(torch.abs(axyz_obj) < 1e-6)
         axyz_obj = torch.zeros([self.env_num, 3], device=self.device)
-        self.vxyz_obj = self.vxyz_obj + self.ctl_dt * axyz_obj
-        self.xyz_obj = self.xyz_obj + self.ctl_dt * self.vxyz_obj
-
-        assert (torch.abs(self.vxyz_obj) < 1e-6).all()
-        assert (torch.abs(self.xyz_obj) < 1e-6).all() 
-
+        self.vxyz_obj = self.vxyz_drones.squeeze(1)
+        self.xyz_obj = self.xyz_drones.squeeze(1)
 
         # log and visualize for debug purpose
         zeros = torch.zeros((self.env_num, self.drone_num, 3), device=self.device)
@@ -873,7 +869,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_base_Pv0.08.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_dummy_anygoal.pt', map_location='cpu')
     policy = loaded_agent['actor']
     test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True), policy, save_path='results/test')

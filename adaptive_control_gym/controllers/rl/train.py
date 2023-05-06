@@ -165,7 +165,7 @@ def train(args: Args) -> None:
             if i_ep == (n_ep-1):
                 adapt_err_x_end = log_dict['eval/err_x_last10']
 
-    base_path = adaptive_control_gym.__path__[0] + '/results/rl'
+    base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
     path = f'{base_path}/ppo_{args.exp_name}.pt'
     plt_path = f'{base_path}/ppo_{args.exp_name}'
     # save agent.act, agent.adaptor, agent.compressor
