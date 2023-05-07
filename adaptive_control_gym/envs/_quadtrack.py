@@ -188,14 +188,14 @@ class QuadTransEnv(gym.Env):
         self.axyz_obj_his[step_idx, col] = axyz_obj
         self.jxyz_obj_his[step_idx, col] = jxyz_obj
 
-    def _get_reward_hovering(self):
+    def _get_reward(self):
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1)
-        err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
+        # err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
 
         reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2) * 0.05
+            torch.clip(err_v, 0, 2) * 0.5
         reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
@@ -203,43 +203,11 @@ class QuadTransEnv(gym.Env):
         #     torch.clip(err_v, 0, 2) * 0.5
 
         # DEBUG
-        reward -= err_vrpy * 0.03
+        # reward -= err_vrpy * 0.03
 
         # Update: panelty for exceeding the angle limit
         reward -= torch.clip(np.cos(self.panelty_angle/2) -
                              self.quat_drones[..., 3], 0, 0.05).sum(dim=-1) * 20.0
-
-        return reward
-    
-    def _get_reward(self):
-
-        # DEBUG
-        def get_hit_penalty(xyz):
-            within_obs_x_range = torch.abs(xyz[:, 0]) < 0.03
-            outof_obs_z_range = torch.abs(xyz[:, 2]) > 0.07
-
-            hit_x_bound = within_obs_x_range & outof_obs_z_range
-
-            hit_panelty = - torch.clip(hit_x_bound.float() * torch.min(0.03-torch.abs(xyz[:, 0]), torch.abs(xyz[:, 2])-0.07) * 100.0, 0, 1)
-            return hit_panelty
-
-        # calculate reward
-        err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
-
-        # DEBUG
-        err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1) 
-
-        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2)*0.0
-        # reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
-        # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
-
-        # DEBUG
-        drone_panelty = get_hit_penalty(self.xyz_drones.squeeze(1)) * 3
-        obj_panelty = get_hit_penalty(self.xyz_obj) * 3
-        reward *= ((drone_panelty>=0) | (obj_panelty>=0)).float()
-        reward += drone_panelty
-        reward += obj_panelty
 
         return reward
 
@@ -663,22 +631,12 @@ class QuadTransEnv(gym.Env):
     def sample_state(self, done):
         size = torch.sum(done)
         # sample object initial position
-        self.xyz_obj[done] = (torch.rand(
-            [size, 3], device=self.device) - 0.5) * 0.5
-
-        # DEBUG
-        self.xyz_obj[done, 0] = - torch.abs(self.xyz_obj[done, 0]) - 0.3
+        self.xyz_obj[done] = torch.rand(
+            [size, 3], device=self.device) * 2.0 - 1.0
 
         # sample target trajectory
         self.xyz_traj[:, done], self.vxyz_traj[:,
                                                done] = self._generate_traj(size)
-
-        # DEBUG
-        self.xyz_traj[:, done] = (torch.rand(
-            [size, 3], device=self.device) * 1.0 - 0.5) * 0.5
-        self.xyz_traj[:, done, 0] = torch.abs(
-            self.xyz_traj[:, done, 0]) + 0.3
-        self.vxyz_traj[:, done] *= 0.0
 
         # sample goal position
         self.xyz_obj_target[done] = self.xyz_traj[0, done]
@@ -936,6 +894,7 @@ class Logger:
         df = pd.DataFrame(save_dict)
         df.to_csv(filename+'.csv', index=False)
 
+
 class MeshVisulizer:
     def __init__(self, drone_num=1, enable=True) -> None:
         self.enable = enable
@@ -958,15 +917,6 @@ class MeshVisulizer:
         # set target object model as a red sphere
         self.vis["obj_target"].set_object(
             g.Sphere(0.01), material=g.MeshLambertMaterial(color=0xff0000))
-        # set obstacle model as a cube
-        self.vis["obstacle1"].set_object(g.Box([0.06, 0.5, 0.5]))
-        self.vis["obstacle2"].set_object(g.Box([0.06, 0.5, 0.5]))
-        # set obstacle position
-        self.vis["obstacle1"].set_transform(
-            tf.translation_matrix([0.0, 0.0, 0.07 + 0.5 / 2.0]))
-        self.vis["obstacle2"].set_transform(
-            tf.translation_matrix([0.0, 0.0, - 0.07 - 0.5 / 2.0]))
-
 
     def update(self, state):
         if not self.enable:
@@ -992,7 +942,7 @@ def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path
     # make sure the incorperated logger is enabled
     env.logger.enable = True
     state, info = env.reset()
-    total_steps = env.max_steps*10
+    total_steps = env.max_steps * 3
     for _ in range(total_steps):
         act = policy(state, None)
         state, rew, done, info = env.step(act)
@@ -1045,7 +995,5 @@ if __name__ == '__main__':
     loaded_agent = torch.load(
         '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump.pt', map_location='cpu')
     policy = loaded_agent['actor']
-    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=True)
-    time.sleep(2)
-    test_env(env, policy, save_path='results/test')
+    test_env(QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+             enable_log=True, enable_vis=True), policy, save_path='results/test')
