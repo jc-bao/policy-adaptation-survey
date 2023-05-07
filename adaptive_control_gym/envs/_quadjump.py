@@ -663,11 +663,11 @@ class QuadTransEnv(gym.Env):
     def sample_state(self, done):
         size = torch.sum(done)
         # sample object initial position
-        self.xyz_obj[done] = torch.rand(
-            [size, 3], device=self.device) * 2.0 - 1.0
+        self.xyz_obj[done] = (torch.rand(
+            [size, 3], device=self.device) - 0.5) * 0.5
 
         # DEBUG
-        self.xyz_obj[done, 2] = - torch.abs(self.xyz_obj[done, 2]) - 0.3
+        self.xyz_obj[done, 0] = - torch.abs(self.xyz_obj[done, 0]) - 0.3
 
         # sample target trajectory
         self.xyz_traj[:, done], self.vxyz_traj[:,
@@ -675,9 +675,9 @@ class QuadTransEnv(gym.Env):
 
         # DEBUG
         self.xyz_traj[:, done] = (torch.rand(
-            [size, 3], device=self.device) * 2.0 - 1.0)
-        self.xyz_traj[:, done, :, 2] = torch.abs(
-            self.xyz_traj[:, done, :, 2]) + 0.3
+            [size, 3], device=self.device) * 1.0 - 0.5) * 0.5
+        self.xyz_traj[:, done, 0] = torch.abs(
+            self.xyz_traj[:, done, 0]) + 0.3
         self.vxyz_traj[:, done] *= 0.0
 
         # sample goal position
@@ -935,7 +935,7 @@ class Logger:
                     save_dict[item+'_'+str(i)] = self.log_dict[item][:, i]
         df = pd.DataFrame(save_dict)
         df.to_csv(filename+'.csv', index=False)
-        
+
 class MeshVisulizer:
     def __init__(self, drone_num=1, enable=True) -> None:
         self.enable = enable
@@ -1008,7 +1008,7 @@ def main():
 
     # setup environment
     env_num = 1
-    env = QuadTransEnv(env_num=env_num, drone_num=2,
+    env = QuadTransEnv(env_num=env_num, drone_num=1,
                        gpu_id=-1, enable_log=True, enable_vis=True)
     env.reset()
 
@@ -1031,7 +1031,7 @@ def main():
         #     [-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
 
         # policy3: random
-        action = torch.rand([env_num, 2, env.action_dim],
+        action = torch.rand([env_num, 1, env.action_dim],
                             device=env.device) * 2 - 1
 
         obs, rew, done, info = env.step(action.reshape(1, -1))
@@ -1041,11 +1041,11 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_vrew.pt', map_location='cpu')
-    policy = loaded_agent['actor']
-    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=True)
-    time.sleep(2)
-    test_env(env, policy, save_path='results/test')
+    main()
+    # loaded_agent = torch.load(
+    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_vrew.pt', map_location='cpu')
+    # policy = loaded_agent['actor']
+    # env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+    #          enable_log=True, enable_vis=True)
+    # time.sleep(2)
+    # test_env(env, policy, save_path='results/test')
