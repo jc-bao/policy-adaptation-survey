@@ -243,8 +243,9 @@ class QuadTransEnv(gym.Env):
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1) 
 
         close2target = err_x < 0.2
-        reward = 1.5 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2)*0.5 * close2target.float() - (~close2target).float()
+        # reward = 1.5 - torch.clip(err_x, 0, 2)*0.5 - \
+        #     torch.clip(err_v, 0, 2)*0.5 * close2target.float() - (~close2target).float()
+        reward = 1.0 - torch.clip(err_x, 0, 2)*0.0 - torch.clip(err_v, 0, 2)*1.0
         # reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
@@ -783,7 +784,7 @@ class QuadTransEnv(gym.Env):
         self.mass_obj[..., :] = uni * 0.005 + 0.01
 
         self.rope_length = sample_uni(1) * 0.1 + 0.2
-        self.rope_zeta = sample_uni(1) * 0.15 + 0.75
+        self.rope_zeta = sample_uni(1) * 0.15 + 1.30
         self.rope_wn = sample_uni(1) * 300 + 1000
 
         # Update
@@ -987,14 +988,14 @@ class MeshVisulizer:
         # set target object model as a red sphere
         self.vis["obj_target"].set_object(
             g.Sphere(0.01), material=g.MeshLambertMaterial(color=0xff0000))
-        # set obstacle model as a cube
-        self.vis["obstacle1"].set_object(g.Box([0.1, 0.5, 0.5]))
-        self.vis["obstacle2"].set_object(g.Box([0.1, 0.5, 0.5]))
-        # set obstacle position
-        self.vis["obstacle1"].set_transform(
-            tf.translation_matrix([0.0, 0.0, 0.07 + 0.5 / 2.0]))
-        self.vis["obstacle2"].set_transform(
-            tf.translation_matrix([0.0, 0.0, - 0.07 - 0.5 / 2.0]))
+        # # set obstacle model as a cube
+        # self.vis["obstacle1"].set_object(g.Box([0.1, 0.5, 0.5]))
+        # self.vis["obstacle2"].set_object(g.Box([0.1, 0.5, 0.5]))
+        # # set obstacle position
+        # self.vis["obstacle1"].set_transform(
+        #     tf.translation_matrix([0.0, 0.0, 0.07 + 0.5 / 2.0]))
+        # self.vis["obstacle2"].set_transform(
+        #     tf.translation_matrix([0.0, 0.0, - 0.07 - 0.5 / 2.0]))
 
 
     def update(self, state):
@@ -1072,7 +1073,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_curri.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_stable.pt', map_location='cpu')
     policy = loaded_agent['actor']
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True)
