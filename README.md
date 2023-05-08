@@ -1,37 +1,24 @@
-# Policy Adaptation Survey
+# 🚁 Policy Adaptation Survey
 
-## Environment
+## 🤖 Environment
 
-| Cartpole                                                     | Hover                                                        |
-| ------------------------------------------------------------ | ------------------------------------------------------------ |
-| ![cartpole](https://tva1.sinaimg.cn/large/008vxvgGly1h8whypx7rig305k02s41b.gif) | ![hover](https://tva1.sinaimg.cn/large/008vxvgGly1h8whraypc1g301e05kq3r.gif) |
-|                                                              |                                                              |
-|                                                              |                                                              |
+|Quadrotor transportation| Cartpole                                                     | Hover                                                        |
+|-| ------------------------------------------------------------ | ------------------------------------------------------------ |
+|![quadrotor](https://user-images.githubusercontent.com/60093981/236766584-83b40cdb-bc8e-4c64-8562-f4261ac5af68.gif)| ![cartpole](https://tva1.sinaimg.cn/large/008vxvgGly1h8whypx7rig305k02s41b.gif) | ![hover](https://tva1.sinaimg.cn/large/008vxvgGly1h8whraypc1g301e05kq3r.gif) |
 
-* Hover
-   - [x] Basic environment and render
-   - [x] GPU-based environment
-   - [x] Model uncertainty + Disturbulence
-   - [x] RL example
-   - [x] RMA example
 
-|PPO-RMA|PPO|
-|-|-|
-|![](https://p.ipic.vip/10inmo.gif)|![](https://p.ipic.vip/5kqz95.gif)|
-
-## Train
+## 🐣 Train
 
 ```shell
 cd controller/rl
 python train.py
 ```
 
-## Policy
+## 🐒 Policy
 
 * Classic
   - [x] LQR
-  - [ ] PID
+  - [x] PID
   - [ ] MPC
 * RL
-  - [ ] SAC
   - [x] PPO 
