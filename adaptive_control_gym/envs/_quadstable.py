@@ -245,7 +245,7 @@ class QuadTransEnv(gym.Env):
         close2target = err_x < 0.2
         # reward = 1.5 - torch.clip(err_x, 0, 2)*0.5 - \
         #     torch.clip(err_v, 0, 2)*0.5 * close2target.float() - (~close2target).float()
-        reward = 1.0 - torch.clip(err_x, 0, 2)*0.0 - torch.clip(err_v, 0, 2)*1.0
+        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - torch.clip(err_v, 0, 2)*0.5
         # reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
