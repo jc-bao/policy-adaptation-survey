@@ -27,12 +27,12 @@ class Args:
 
 
 def train(args: Args) -> None:
-    env_num = 1024 * 32
+    env_num = 1024 * 16
     total_steps = 8e7
     adapt_steps = 0.5e7 if ((args.act_expert_mode > 0)
                             | (args.cri_expert_mode > 0)) else 0
     eval_freq = 4
-    curri_thereshold = 10.0
+    curri_thereshold = 0.5
 
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
@@ -115,7 +115,7 @@ def train(args: Args) -> None:
                     print(
                         f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
-                    env.curri_param += 0.5
+                    env.curri_param += 0.1
                 # log_dict = eval_env(env, agent, use_adaptor=True)
                 # print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
         expert_err_x_final = log_dict['eval/err_x_last10']
@@ -249,12 +249,12 @@ def eval_env(env: QuadTransEnv, agent: PPO, deterministic: bool = True, use_adap
 
     # env.res_dyn = env.res_dyn_origin
 
-    origin_curri_param = env.curri_param
-    env.curri_param = 0.0
+    # origin_curri_param = env.curri_param
+    # env.curri_param = 1.0
     agent.last_state, agent.last_info = env.reset()
     states, actions, logprobs, rewards, undones, infos = agent.explore_env(
         env, env.max_steps, deterministic=deterministic, use_adaptor=use_adaptor, w=w)
-    env.curri_param = origin_curri_param
+    # env.curri_param = origin_curri_param
 
     # env.res_dyn = env.res_dyn_fit
 

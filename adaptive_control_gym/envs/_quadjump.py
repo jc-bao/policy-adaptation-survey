@@ -48,6 +48,7 @@ class QuadTransEnv(gym.Env):
         self.record_len = 2
         self.adapt_dim = 41 * self.adapt_horizon
         self.action_dim = 3 * drone_num
+        self.curri_param = 0.0
 
         # record parameters
         # control related parameters
@@ -101,6 +102,8 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj = torch.zeros((self.env_num, 3), device=self.device)
         self.vxyz_obj = torch.zeros((self.env_num, 3), device=self.device)
         self.reward = torch.zeros((self.env_num), device=self.device)
+        self.hitwall_before = torch.zeros(
+            (self.env_num), device=self.device, dtype=torch.bool)
 
         # controller
         self.set_control_params()
@@ -153,6 +156,7 @@ class QuadTransEnv(gym.Env):
         hitwall_done = hitwall
 
         done = reach_done | time_done | quat_done | xyz_done | unmoved_done | hitwall_done
+        self.hitwall_before &= hitwall # NOTE: use hitwall before to aviod the hitwall becomes the last step, which does not contribute the the value function. 
         self.reset(done)
         next_obs = self._get_obs()
         next_info = self._get_info()
@@ -232,8 +236,6 @@ class QuadTransEnv(gym.Env):
         return hit_panelty
     
     def _get_reward(self):
-
-
         # calculate reward
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
 
@@ -241,7 +243,7 @@ class QuadTransEnv(gym.Env):
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1) 
 
         close2target = err_x < 0.2
-        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
+        reward = 1.5 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5 * close2target.float() - (~close2target).float()
         # reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
@@ -786,7 +788,7 @@ class QuadTransEnv(gym.Env):
 
         # Update
         self.wall_half_width = 0.05
-        self.wall_half_height = 0.07
+        self.wall_half_height = 0.07 + np.clip(1-self.curri_param, 0, 1) * 0.1 # from 0.17 -> 0.07
 
     def set_control_params(self):
         # attitude rate controller
@@ -1019,7 +1021,7 @@ def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path
     # make sure the incorperated logger is enabled
     env.logger.enable = True
     state, info = env.reset()
-    total_steps = env.max_steps*3
+    total_steps = env.max_steps*4
     for _ in range(total_steps):
         act = policy(state, None)
         state, rew, done, info = env.step(act)
@@ -1070,8 +1072,9 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_closetargetrew.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_curri.pt', map_location='cpu')
     policy = loaded_agent['actor']
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True)
+    env.curri_param = 1.0
     test_env(env, policy, save_path='results/test')
