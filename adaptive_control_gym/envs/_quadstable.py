@@ -155,7 +155,7 @@ class QuadTransEnv(gym.Env):
             past_traj - self.xyz_obj, dim=-1).max(dim=0)[0] < 0.03) & (self.step_cnt >= 5)
         hitwall_done = hitwall
 
-        done = reach_done | time_done | quat_done | xyz_done | unmoved_done | hitwall_done
+        done = reach_done | time_done | quat_done | xyz_done | unmoved_done # | hitwall_done
         self.hitwall_before &= hitwall # NOTE: use hitwall before to aviod the hitwall becomes the last step, which does not contribute the the value function. 
         self.reset(done)
         next_obs = self._get_obs()
@@ -249,11 +249,11 @@ class QuadTransEnv(gym.Env):
         # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
         # DEBUG
-        drone_panelty = self.get_hit_penalty(self.xyz_drones.squeeze(1)) * 10.0
-        obj_panelty = self.get_hit_penalty(self.xyz_obj) * 10.0
-        reward *= ((drone_panelty>=0) | (obj_panelty>=0)).float()
-        reward += drone_panelty
-        reward += obj_panelty
+        # drone_panelty = self.get_hit_penalty(self.xyz_drones.squeeze(1)) * 10.0
+        # obj_panelty = self.get_hit_penalty(self.xyz_obj) * 10.0
+        # reward *= ((drone_panelty>=0) | (obj_panelty>=0)).float()
+        # reward += drone_panelty
+        # reward += obj_panelty
 
         return reward
 
@@ -691,7 +691,7 @@ class QuadTransEnv(gym.Env):
             [size, 3], device=self.device) - 0.5) * 0.5
 
         # DEBUG
-        self.xyz_obj[done, 0] = - torch.abs(self.xyz_obj[done, 0]) - 0.3
+        # self.xyz_obj[done, 0] = - torch.abs(self.xyz_obj[done, 0]) - 0.3
 
         # sample target trajectory
         self.xyz_traj[:, done], self.vxyz_traj[:,
@@ -700,8 +700,8 @@ class QuadTransEnv(gym.Env):
         # DEBUG
         self.xyz_traj[:, done] = (torch.rand(
             [size, 3], device=self.device) * 1.0 - 0.5) * 0.5
-        self.xyz_traj[:, done, 0] = torch.abs(
-            self.xyz_traj[:, done, 0]) + 0.3
+        # self.xyz_traj[:, done, 0] = torch.abs(
+        #     self.xyz_traj[:, done, 0]) + 0.3
         self.vxyz_traj[:, done] *= 0.0
 
         # sample goal position
