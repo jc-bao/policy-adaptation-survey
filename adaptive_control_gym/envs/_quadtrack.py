@@ -551,12 +551,12 @@ class QuadTransEnv(gym.Env):
         # drone
         self.vxyz_drones = self.vxyz_drones + \
             self.sim_dt * force_drones / self.mass_drones
-        self.vxyz_drones = torch.clip(self.vxyz_drones, -10, 10)
-        self.xyz_drones = torch.clip(
-            self.xyz_drones + self.sim_dt * self.vxyz_drones, -1, 1)
+        # self.vxyz_drones = torch.clip(self.vxyz_drones, -10, 10)
+        # self.xyz_drones = torch.clip(
+        #     self.xyz_drones + self.sim_dt * self.vxyz_drones, -1, 1)
         self.vrpy_drones = self.vrpy_drones + self.sim_dt * \
             (torch.inverse(self.J_drones) @ moment_drones.unsqueeze(-1)).squeeze(-1)
-        self.vrpy_drones = torch.clip(self.vrpy_drones, -50, 50)
+        # self.vrpy_drones = torch.clip(self.vrpy_drones, -50, 50)
         # integrate the quaternion
         self.quat_drones = geom.integrate_quat(
             self.quat_drones, self.vrpy_drones, self.sim_dt)
