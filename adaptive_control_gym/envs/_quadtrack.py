@@ -146,7 +146,7 @@ class QuadTransEnv(gym.Env):
         time_done = (self.step_cnt >= self.max_steps)
         cos_err_div2 = self.quat_drones[..., 3]
         quat_done = (cos_err_div2 < np.cos(self.max_angle/2)).any(dim=-1)
-        xyz_done = (torch.abs(self.xyz_drones) >= 1.0).any(dim=1).any(dim=1)
+        xyz_done = (torch.abs(self.xyz_drones) >= 2.0).any(dim=1).any(dim=1)
         past_idx = (torch.arange(5, device=self.device,
                     dtype=torch.long).unsqueeze(1) - 4 + self.step_cnt.unsqueeze(0)) % self.record_len
         col = torch.arange(self.env_num, device=self.device, dtype=torch.long)
@@ -729,7 +729,7 @@ class QuadTransEnv(gym.Env):
     def _generate_traj(self, size):
         traj_len = self.max_steps * 2
         delta_t = self.step_dt
-        base_w = 2 * np.pi / (40.0 * delta_t)
+        base_w = 2 * np.pi / (40.0 * delta_t) * 2.0
         t = torch.arange(0, traj_len, 1, device=self.device) * delta_t
         t = torch.tile(t.unsqueeze(-1).unsqueeze(-1), (1, size, 3))
         x = torch.zeros((traj_len, size, 3), device=self.device)
@@ -833,7 +833,7 @@ class QuadTransEnv(gym.Env):
         self.max_vrp = 12.0
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
         self.max_angle = np.pi/2.1  # if exceed this angle, reset the environment
-        self.panelty_angle = np.pi/4.0  # if exceed this angle, give negative reward
+        self.panelty_angle = np.pi/3.0  # if exceed this angle, give negative reward
 
     def render(self, mode='human'):
         pass
