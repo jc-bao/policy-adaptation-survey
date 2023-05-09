@@ -552,8 +552,7 @@ class QuadTransEnv(gym.Env):
         self.vxyz_drones = self.vxyz_drones + \
             self.sim_dt * force_drones / self.mass_drones
         # self.vxyz_drones = torch.clip(self.vxyz_drones, -10, 10)
-        # self.xyz_drones = torch.clip(
-        #     self.xyz_drones + self.sim_dt * self.vxyz_drones, -1, 1)
+        self.xyz_drones = self.xyz_drones + self.sim_dt * self.vxyz_drones
         self.vrpy_drones = self.vrpy_drones + self.sim_dt * \
             (torch.inverse(self.J_drones) @ moment_drones.unsqueeze(-1)).squeeze(-1)
         # self.vrpy_drones = torch.clip(self.vrpy_drones, -50, 50)
@@ -729,7 +728,7 @@ class QuadTransEnv(gym.Env):
     def _generate_traj(self, size):
         traj_len = self.max_steps * 2
         delta_t = self.step_dt
-        base_w = 2 * np.pi / (40.0 * delta_t) * 2.0
+        base_w = 2 * np.pi / (40.0 * delta_t)
         t = torch.arange(0, traj_len, 1, device=self.device) * delta_t
         t = torch.tile(t.unsqueeze(-1).unsqueeze(-1), (1, size, 3))
         x = torch.zeros((traj_len, size, 3), device=self.device)
