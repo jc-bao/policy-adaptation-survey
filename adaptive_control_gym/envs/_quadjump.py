@@ -783,6 +783,8 @@ class QuadTransEnv(gym.Env):
         self.mass_obj[..., :] = uni * 0.005 + 0.01
 
         self.rope_length = sample_uni(1) * 0.1 + 0.2
+        self.rope_length = (torch.rand(
+                (self.env_num, self.drone_num, 1), device=self.device)*2.0-1.0) * 0.05 + 0.2
         self.rope_zeta = sample_uni(1) * 0.15 + 0.75
         self.rope_wn = sample_uni(1) * 300 + 1000
 

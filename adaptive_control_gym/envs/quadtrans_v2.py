@@ -675,9 +675,9 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_2drones-2d-stable.pt', map_location='cpu')
-    policy = loaded_agent['actor']
-    test_env(QuadTransEnv(env_num=1, drone_num=2, gpu_id=-1,
-             enable_log=True, enable_vis=True), policy, save_path='results/test')
+    main()
+    # loaded_agent = torch.load(
+    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_2drones-2d-stable.pt', map_location='cpu')
+    # policy = loaded_agent['actor']
+    # test_env(QuadTransEnv(env_num=1, drone_num=2, gpu_id=-1,
+    #          enable_log=True, enable_vis=True), policy, save_path='results/test')
