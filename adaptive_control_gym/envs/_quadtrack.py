@@ -43,10 +43,10 @@ class QuadTransEnv(gym.Env):
         # set RL parameters
         self.state_dim = 3 + 3 + (3 + 3 + 4 + 3) * \
             self.drone_num + 3 + 3
-        self.expert_dim = 10 * drone_num + 5
+        self.expert_dim = 12 * drone_num + 3
         self.adapt_horizon = 1
         self.record_len = 2
-        self.adapt_dim = 41 * self.adapt_horizon
+        self.adapt_dim = (29*drone_num+12) * self.adapt_horizon
         self.action_dim = 3 * drone_num
         self.curri_param = 0.0
 
