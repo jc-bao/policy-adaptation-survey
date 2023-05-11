@@ -1067,11 +1067,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-    # loaded_agent = torch.load(
-    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_track.pt', map_location='cpu')
-    # policy = loaded_agent['actor']
-    # env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-    #          enable_log=True, enable_vis=True)
-    # env.curri_param = 1.0
-    # test_env(env, policy, save_path='results/test')
+    # main()
+    loaded_agent = torch.load(
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_track-dual-drone.pt', map_location='cpu')
+    policy = loaded_agent['actor']
+    env = QuadTransEnv(env_num=1, drone_num=2, gpu_id=-1,
+             enable_log=True, enable_vis=True)
+    env.curri_param = 1.0
+    test_env(env, policy, save_path='results/test')
