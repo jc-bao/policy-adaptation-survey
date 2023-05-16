@@ -757,10 +757,10 @@ class QuadTransEnv(gym.Env):
         def sample_uni(size):
             if size == 0:
                 return (torch.rand(
-                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 0.0  # DEBUG
+                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 1.0  # DEBUG
             else:
                 return (torch.rand(
-                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 0.0  # DEBUG
+                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 1.0  # DEBUG
 
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
@@ -776,8 +776,7 @@ class QuadTransEnv(gym.Env):
             [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015*0.0], device=self.device)  # DEBUG
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
-        uni = torch.rand((self.env_num, 1), device=self.device) * 2.0 - 1.0
-        self.mass_obj[..., :] = uni * 0.005 + 0.01
+        self.mass_obj[..., :] = 0.01
 
         self.rope_length = sample_uni(1) * 0.1 + 0.2
         self.rope_zeta = sample_uni(1) * 0.15 + 1.30
