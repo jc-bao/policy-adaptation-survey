@@ -619,6 +619,9 @@ def playground():
         tf.translation_matrix([1.5, 0, 0]))
     # set quadrotor model
     vis["drone"].set_object(g.StlMeshGeometry.from_file('../assets/crazyflie2.stl'))
+    for i in range(3):
+        # set misc quadrotor model
+        vis[f"drone_{i}"].set_object(g.StlMeshGeometry.from_file('../assets/crazyflie2.stl'))
     # set object model as a sphere
     vis["obj"].set_object(g.Sphere(0.01))
     vis["obj_axes"].set_object(g.StlMeshGeometry.from_file('../assets/axes.stl'), material=g.MeshLambertMaterial(color=0x00FF00))
@@ -728,6 +731,13 @@ def playground():
             xyz_drone = env.xyz_drone[vis_env_id].numpy()
             rpy_drone = env.rpy_drone[vis_env_id].numpy()
             vis["drone"].set_transform(tf.translation_matrix(xyz_drone) @ tf.euler_matrix(*rpy_drone))
+            # for i in range(3):
+            #     tt = step % env.max_steps
+            #     xyz = xyz_drone.copy()
+            #     theta = np.pi * 2 / 3 * i + tt * i / env.max_steps * np.pi * 2 * 0.1
+            #     r = 0.15 + 0.04 * np.sin(tt * i / env.max_steps * np.pi * 2)
+            #     xyz[:2] += np.array([np.cos(theta), np.sin(theta)]) * r
+            #     vis[f"drone_{i}"].set_transform(tf.translation_matrix(xyz) @ tf.euler_matrix(*rpy_drone))
             # visualize the target
             xyz_target = env.xyz_target[vis_env_id].numpy()
             step_mod = step % env.max_steps
