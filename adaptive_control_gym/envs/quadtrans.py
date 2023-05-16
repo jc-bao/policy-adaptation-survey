@@ -2,6 +2,8 @@ import gym
 import os
 import torch
 import numpy as np
+import pandas as pd
+import seaborn as sns
 import adaptive_control_gym
 from adaptive_control_gym.utils import rpy2rotmat
 from icecream import ic
@@ -668,7 +670,7 @@ def playground():
     xyz_drone_his = np.zeros((env.max_steps, 3))
     rpy_drone_his = np.zeros((env.max_steps, 3))
     action_his = np.zeros((env.max_steps, 3))
-    for step in range(env.max_steps-1):
+    for step in range(env.max_steps*10-1):
         for t in range(env.substep_num):
             # ============= z-axis control =============
             # rope_force_projected = (torch.inverse(rotmat_drone) @ rope_force)[2].item()
@@ -728,6 +730,11 @@ def playground():
             vis["drone"].set_transform(tf.translation_matrix(xyz_drone) @ tf.euler_matrix(*rpy_drone))
             # visualize the target
             xyz_target = env.xyz_target[vis_env_id].numpy()
+            step_mod = step % env.max_steps
+            if step_mod > 2:
+                xyz_target = env.traj_x[step_mod-2, vis_env_id]
+            else:
+                xyz_target = env.traj_x[0, vis_env_id]
             vis["target"].set_transform(tf.translation_matrix(xyz_target))
             # visualize the object
             xyz_obj = env.xyz_drone[vis_env_id].numpy() + env.get_obj_disp(env.tp_obj, env.length_rope)[vis_env_id].numpy()
@@ -761,6 +768,8 @@ def playground():
             vis_traj(vis, env.traj_x[:, vis_env_id], env.traj_v[:, vis_env_id])
     # plot the trajectory xyz in three subplot
     fig, axs = plt.subplots(6, 1)
+    # set seaborn theme
+    sns.set_theme('darkgrid')
     axs[0].plot(xyz_drone_his[:, 0], label='x')
     axs[0].plot(env.traj_x[:,vis_env_id,0], label='x_ref', linestyle='--')
     axs[1].plot(xyz_drone_his[:, 1], label='y')
@@ -777,6 +786,14 @@ def playground():
         axs[i].legend()
     # save the plot
     plt.savefig('results/traj.png')
-        
+    # save the data as csv
+    # data = pd.DataFrame({
+    #     'xyz_drone': xyz_drone_his,
+    #     'rpy_drone': rpy_drone_his,
+    # })
+    # data.to_csv('results/test.csv')
+
+
+
 if __name__ == '__main__':
     playground()
