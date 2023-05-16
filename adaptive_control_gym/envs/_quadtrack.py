@@ -776,7 +776,7 @@ class QuadTransEnv(gym.Env):
             [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015*0.0], device=self.device)  # DEBUG
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
-        self.mass_obj[..., :] = 0.01
+        self.mass_obj[..., :] = sample_uni(1) * 0.03 + 0.01
 
         self.rope_length = sample_uni(1) * 0.1 + 0.2
         self.rope_zeta = sample_uni(1) * 0.15 + 1.30
