@@ -655,9 +655,9 @@ def playground():
     # for PID
     vis["force_pid"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0x000fff))
     # for neural
-    loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_robust.pt', map_location='cpu')
-    policy = loaded_agent['actor']
-    compressor = loaded_agent['compressor']
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_trans_robust.pt', map_location='cpu')
+    # policy = loaded_agent['actor']
+    # compressor = loaded_agent['compressor']
 
     '''
     running experinment
@@ -681,29 +681,29 @@ def playground():
             #     ctl_roll = -angle
             #     ctl_pitch = 0.0
             # ============= PID control =============
-            # if t % env.substep_num == 0:
-            #     thrust = env.thrust_pid[vis_env_id]
-            #     ctl_roll = env.ctl_roll_pid[vis_env_id]
-            #     ctl_pitch = env.ctl_pitch_pid[vis_env_id]
-                # total_force = -rope_force + env.mass_drone[vis_env_id]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.drone2goal[vis_env_id] * 1.0 - env.vxyz_drone[vis_env_id] * 0.2
-                # total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
-                # thrust = total_force_projected
-                # total_force_normed = total_force / torch.norm(total_force)
-                # ctl_roll = torch.atan2(-total_force_normed[1], torch.sqrt(total_force_normed[vis_env_id]**2 + total_force_normed[2]**2))
-                # ctl_pitch = torch.atan2(total_force_normed[vis_env_id], total_force_normed[2])
-                # vis_vector(vis["force_pid"], env.xyz_drone[vis_env_id].numpy(), total_force.numpy())
+            if t % env.substep_num == 0:
+                thrust = env.thrust_pid[vis_env_id]
+                ctl_roll = env.ctl_roll_pid[vis_env_id]
+                ctl_pitch = env.ctl_pitch_pid[vis_env_id]
+                total_force = -rope_force + env.mass_drone[vis_env_id]*env.g*torch.tensor([0, 0, 1], device=env.device) - env.drone2goal[vis_env_id] * 1.0 - env.vxyz_drone[vis_env_id] * 0.2
+                total_force_projected = (torch.inverse(rotmat_drone) @ total_force)[2].item()
+                thrust = total_force_projected
+                total_force_normed = total_force / torch.norm(total_force)
+                ctl_roll = torch.atan2(-total_force_normed[1], torch.sqrt(total_force_normed[vis_env_id]**2 + total_force_normed[2]**2))
+                ctl_pitch = torch.atan2(total_force_normed[vis_env_id], total_force_normed[2])
+                vis_vector(vis["force_pid"], env.xyz_drone[vis_env_id].numpy(), total_force.numpy())
             # ============= random control =============
             # if t % 10 == 0:
             #     thrust = np.random.uniform(0.0, 0.8)
             #     ctl_roll = np.random.uniform(-np.pi/3, np.pi/3)
             #     ctl_pitch = np.random.uniform(-np.pi/3, np.pi/3)
             # ============= neural control =============
-            if t % env.substep_num == 0:
-                obs = env._get_obs()
-                action = policy(obs, compressor(env._get_info()['e']))
-                thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
-                ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
-                ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
+            # if t % env.substep_num == 0:
+            #     obs = env._get_obs()
+            #     action = policy(obs, compressor(env._get_info()['e']))
+            #     thrust = action[vis_env_id,0].item() * env.thrust_std + env.thrust_mean
+            #     ctl_roll = action[vis_env_id, 1].item() * env.ctl_roll_std + env.ctl_roll_mean
+            #     ctl_pitch = action[vis_env_id, 2].item() * env.ctl_pitch_std + env.ctl_pitch_mean
             # ============= debug control =============
             # if t % env.substep_num == 0:
             #     roll = env.rpy_drone[vis_env_id, 0].item()
