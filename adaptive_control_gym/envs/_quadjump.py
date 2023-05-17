@@ -16,7 +16,7 @@ from adaptive_control_gym.utils import geom
 
 
 class QuadTransEnv(gym.Env):
-    def __init__(self, env_num: int = 1024, drone_num: int = 1, gpu_id: int = 0, seed: int = 0, enable_log: bool = False, enable_vis: bool = False, **kwargs) -> None:
+    def __init__(self, env_num: int = 1024, drone_num: int = 2, gpu_id: int = 0, seed: int = 0, enable_log: bool = False, enable_vis: bool = False, **kwargs) -> None:
         super().__init__()
         self.logger = Logger(drone_num=drone_num, enable=enable_log)
         self.visualizer = MeshVisulizer(drone_num=drone_num, enable=enable_vis)
@@ -43,7 +43,7 @@ class QuadTransEnv(gym.Env):
         # set RL parameters
         self.state_dim = 3 + 3 + (3 + 3 + 4 + 3) * \
             self.drone_num + 3 + 3
-        self.expert_dim = 10 * drone_num + 5
+        self.expert_dim = 12 * drone_num + 3
         self.adapt_horizon = 1
         self.record_len = 2
         self.adapt_dim = 41 * self.adapt_horizon
@@ -227,12 +227,16 @@ class QuadTransEnv(gym.Env):
     
     # DEBUG
     def get_hit_penalty(self, xyz):
-        within_obs_x_range = torch.abs(xyz[:, 0]) < self.wall_half_width
-        outof_obs_z_range = torch.abs(xyz[:, 2]) > self.wall_half_height
+        within_obs_x_range = torch.abs(xyz[..., 0]) < self.wall_half_width
+        outof_obs_z_range = torch.abs(xyz[..., 2]) > self.wall_half_height
 
         hit_x_bound = within_obs_x_range & outof_obs_z_range
 
-        hit_panelty = - torch.clip(hit_x_bound.float() * torch.min(0.03-torch.abs(xyz[:, 0]), torch.abs(xyz[:, 2])-0.07) * 500.0, 0, 1)
+        hit_panelty = - torch.clip(hit_x_bound.float() * torch.min(self.wall_half_width-torch.abs(xyz[..., 0]), torch.abs(xyz[..., 2])-self.wall_half_height) * 500.0, 0, 1)
+
+        if len(hit_panelty.shape) == 2:
+            hit_panelty = hit_panelty.sum(dim=-1)
+
         return hit_panelty
     
     def _get_reward(self):
@@ -1039,7 +1043,7 @@ def main():
 
     # setup environment
     env_num = 1
-    env = QuadTransEnv(env_num=env_num, drone_num=1,
+    env = QuadTransEnv(env_num=env_num, drone_num=2,
                        gpu_id=-1, enable_log=True, enable_vis=True)
     env.reset()
 
@@ -1072,11 +1076,11 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_curri.pt', map_location='cpu')
-    policy = loaded_agent['actor']
-    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=True)
-    env.curri_param = 1.0
-    test_env(env, policy, save_path='results/test')
+    main()
+    # loaded_agent = torch.load(
+    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_curri.pt', map_location='cpu')
+    # policy = loaded_agent['actor']
+    # env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+    #          enable_log=True, enable_vis=True)
+    # env.curri_param = 1.0
+    # test_env(env, policy, save_path='results/test')
