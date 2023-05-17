@@ -46,7 +46,7 @@ class QuadTransEnv(gym.Env):
         self.expert_dim = 12 * drone_num + 3
         self.adapt_horizon = 1
         self.record_len = 2
-        self.adapt_dim = 41 * self.adapt_horizon
+        self.adapt_dim = (29*drone_num+12) * self.adapt_horizon
         self.action_dim = 3 * drone_num
         self.curri_param = 0.0
 
