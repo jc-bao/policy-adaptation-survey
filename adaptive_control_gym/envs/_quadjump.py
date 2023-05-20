@@ -16,7 +16,7 @@ from adaptive_control_gym.utils import geom
 
 
 class QuadTransEnv(gym.Env):
-    def __init__(self, env_num: int = 1024, drone_num: int = 2, gpu_id: int = 0, seed: int = 0, enable_log: bool = False, enable_vis: bool = False, **kwargs) -> None:
+    def __init__(self, env_num: int = 1024, drone_num: int = 1, gpu_id: int = 0, seed: int = 0, enable_log: bool = False, enable_vis: bool = False, **kwargs) -> None:
         super().__init__()
         self.logger = Logger(drone_num=drone_num, enable=enable_log)
         self.visualizer = MeshVisulizer(drone_num=drone_num, enable=enable_vis)
@@ -236,7 +236,7 @@ class QuadTransEnv(gym.Env):
 
         if len(hit_panelty.shape) == 2:
             hit_panelty = hit_panelty.sum(dim=-1)
-
+        
         return hit_panelty
     
     def _get_reward(self):
@@ -246,14 +246,14 @@ class QuadTransEnv(gym.Env):
         # DEBUG
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1) 
 
-        close2target = err_x < 0.2
+        close2target = (err_x < 0.2)
         reward = 1.5 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5 * close2target.float() - (~close2target).float()
         # reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
         # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
         # DEBUG
-        drone_panelty = self.get_hit_penalty(self.xyz_drones.squeeze(1)) * 10.0
+        drone_panelty = self.get_hit_penalty(self.xyz_drones) * 10.0
         obj_panelty = self.get_hit_penalty(self.xyz_obj) * 10.0
         reward *= ((drone_panelty>=0) | (obj_panelty>=0)).float()
         reward += drone_panelty
@@ -784,11 +784,11 @@ class QuadTransEnv(gym.Env):
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
         uni = torch.rand((self.env_num, 1), device=self.device) * 2.0 - 1.0
-        self.mass_obj[..., :] = uni * 0.005 + 0.01
+        self.mass_obj[..., :] = uni * 0.005 * 0.0 + 0.01
 
         self.rope_length = sample_uni(1) * 0.1 + 0.2
-        self.rope_length = (torch.rand(
-                (self.env_num, self.drone_num, 1), device=self.device)*2.0-1.0) * 0.05 + 0.2
+        # self.rope_length = (torch.rand(
+        #         (self.env_num, self.drone_num, 1), device=self.device)*2.0-1.0) * 0.05 + 0.2
         self.rope_zeta = sample_uni(1) * 0.15 + 0.75
         self.rope_wn = sample_uni(1) * 300 + 1000
 
@@ -1076,11 +1076,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-    # loaded_agent = torch.load(
-    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_jump_curri.pt', map_location='cpu')
-    # policy = loaded_agent['actor']
-    # env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-    #          enable_log=True, enable_vis=True)
-    # env.curri_param = 1.0
-    # test_env(env, policy, save_path='results/test')
+    # main()
+    loaded_agent = torch.load(
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_JumpRobustDetermin.pt', map_location='cpu')
+    policy = loaded_agent['actor']
+    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+             enable_log=True, enable_vis=True)
+    env.curri_param = 0.0
+    test_env(env, policy, save_path='results/test')
