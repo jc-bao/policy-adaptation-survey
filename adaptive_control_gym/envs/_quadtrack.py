@@ -14,7 +14,6 @@ import os
 import adaptive_control_gym
 from adaptive_control_gym.utils import geom
 
-
 class QuadTransEnv(gym.Env):
     def __init__(self, env_num: int = 1024, drone_num: int = 2, gpu_id: int = 0, seed: int = 0, enable_log: bool = False, enable_vis: bool = False, **kwargs) -> None:
         super().__init__()
@@ -773,16 +772,15 @@ class QuadTransEnv(gym.Env):
         self.J_drones[:, :, 1, 1] = sample_uni(0) * 0.2e-5 + 1.7e-5
         self.J_drones[:, :, 2, 2] = sample_uni(0) * 0.3e-5 + 2.98e-5
         self.hook_disp = sample_uni(3) * torch.tensor(
-            [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015*0.0], device=self.device)  # DEBUG
-        self.hook_disp *= 0.0 # DEBUG
+            [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015], device=self.device)
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
         self.mass_obj[..., :] = (torch.rand(
-                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.01 + 0.03
-
-        self.rope_length = sample_uni(1) * 0.1 + 0.2
-        self.rope_zeta = sample_uni(1) * 0.15 + 1.30
-        self.rope_wn = sample_uni(1) * 300 + 1000
+                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.005 + 0.025
+        
+        self.rope_length = sample_uni(1) * 0.05 + 0.2
+        self.rope_zeta = sample_uni(1) * 0.05 + 0.75
+        self.rope_wn = sample_uni(1) * 100 + 1000
 
         # Update
         self.wall_half_width = 0.05
