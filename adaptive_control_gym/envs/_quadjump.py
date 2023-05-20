@@ -249,8 +249,8 @@ class QuadTransEnv(gym.Env):
         close2target = (err_x < 0.2)
         reward = 1.5 - torch.clip(err_x, 0, 2)*0.5 - \
             torch.clip(err_v, 0, 2)*0.5 * close2target.float() - (~close2target).float()
-        # reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
-        # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
+        reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
+        reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
         # DEBUG
         drone_panelty = self.get_hit_penalty(self.xyz_drones) * 10.0
@@ -794,7 +794,7 @@ class QuadTransEnv(gym.Env):
 
         # Update
         self.wall_half_width = 0.05
-        self.wall_half_height = 0.07 + np.clip(1-self.curri_param, 0, 1) * 0.1 # from 0.17 -> 0.07
+        self.wall_half_height = 0.07 + np.clip(1-self.curri_param, 0, 1) * 0.2 # from 0.17 -> 0.07
 
     def set_control_params(self):
         # attitude rate controller
@@ -1078,9 +1078,9 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_JumpRobustDetermin.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_JumpRobustDetermin(LargerGap).pt', map_location='cpu')
     policy = loaded_agent['actor']
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True)
-    env.curri_param = 0.0
+    env.curri_param = 1.0
     test_env(env, policy, save_path='results/test')
