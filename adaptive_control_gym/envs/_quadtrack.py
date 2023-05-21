@@ -15,7 +15,7 @@ import adaptive_control_gym
 from adaptive_control_gym.utils import geom
 
 class QuadTransEnv(gym.Env):
-    def __init__(self, env_num: int = 1024, drone_num: int = 2, gpu_id: int = 0, seed: int = 0, enable_log: bool = False, enable_vis: bool = False, **kwargs) -> None:
+    def __init__(self, env_num: int = 1024, drone_num: int = 1, gpu_id: int = 0, seed: int = 0, enable_log: bool = False, enable_vis: bool = False, **kwargs) -> None:
         super().__init__()
         self.logger = Logger(drone_num=drone_num, enable=enable_log)
         self.visualizer = MeshVisulizer(drone_num=drone_num, enable=enable_vis)
@@ -200,29 +200,6 @@ class QuadTransEnv(gym.Env):
         self.vxyz_obj_his[step_idx, col] = self.vxyz_obj
         self.axyz_obj_his[step_idx, col] = axyz_obj
         self.jxyz_obj_his[step_idx, col] = jxyz_obj
-
-    def _get_reward_hovering(self):
-        # calculate reward
-        err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
-        err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1)
-        err_vrpy = torch.norm(self.vrpy_drones, dim=2).sum(dim=-1)
-
-        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - \
-            torch.clip(err_v, 0, 2) * 0.05
-        reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
-        reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
-
-        # reward = 1.0 - torch.clip(err_x, 0, 2)*0.0 - \
-        #     torch.clip(err_v, 0, 2) * 0.5
-
-        # DEBUG
-        reward -= err_vrpy * 0.03
-
-        # Update: panelty for exceeding the angle limit
-        reward -= torch.clip(np.cos(self.panelty_angle/2) -
-                             self.quat_drones[..., 3], 0, 0.05).sum(dim=-1) * 20.0
-
-        return reward
     
     # DEBUG
     def get_hit_penalty(self, xyz):
@@ -245,12 +222,12 @@ class QuadTransEnv(gym.Env):
         # DEBUG
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1) 
 
-        close2target = err_x < 0.2
+        # close2target = err_x < 0.2
         # reward = 1.5 - torch.clip(err_x, 0, 2)*0.5 - \
         #     torch.clip(err_v, 0, 2)*0.5 * close2target.float() - (~close2target).float()
-        reward = 1.0 - torch.clip(err_x, 0, 2)*0.5 - torch.clip(err_v, 0, 2)*0.5
-        # reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
-        # reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
+        reward = 1.5- torch.clip(err_x, 0, 3)*0.7 - torch.clip(err_v, 0, 2)*0.3
+        reward -= torch.clip(torch.log(err_x+1)*5, 0, 1)*0.1  # for 0.2
+        reward -= torch.clip(torch.log(err_x+1)*10, 0, 1)*0.1  # for 0.1
 
         # DEBUG
         # drone_panelty = self.get_hit_penalty(self.xyz_drones.squeeze(1)) * 10.0
@@ -416,15 +393,10 @@ class QuadTransEnv(gym.Env):
         assert not torch.isnan(self.quat_drones).any()
 
         # object
-        # axyz_obj = force_obj / self.mass_obj
-        # # filter out Inf/Nan with 0
-        # axyz_obj = torch.where(torch.isinf(axyz_obj) | torch.isnan(axyz_obj), torch.zeros_like(
-        #     axyz_obj), axyz_obj)
-        # # make sure axyz_obj is all zero
-        # assert torch.all(torch.abs(axyz_obj) < 1e-6)
-        axyz_obj = torch.zeros([self.env_num, 3], device=self.device)
-        self.vxyz_obj = self.vxyz_drones.squeeze(1)
-        self.xyz_obj = self.xyz_drones.squeeze(1)
+        axyz_obj = force_obj / self.mass_obj
+        # filter out Inf/Nan with 0
+        axyz_obj = torch.where(torch.isinf(axyz_obj) | torch.isnan(axyz_obj), torch.zeros_like(
+            axyz_obj), axyz_obj)
 
         # log and visualize for debug purpose
         zeros = torch.zeros(
@@ -693,9 +665,6 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj[done] = (torch.rand(
             [size, 3], device=self.device) - 0.5) * 0.5
 
-        # DEBUG
-        # self.xyz_obj[done, 0] = - torch.abs(self.xyz_obj[done, 0]) - 0.3
-
         # sample target trajectory
         self.xyz_traj[:, done], self.vxyz_traj[:,
                                                done] = self._generate_traj(size)
@@ -707,7 +676,7 @@ class QuadTransEnv(gym.Env):
         thetas = torch.rand([size, self.drone_num],
                             device=self.device) * 2 * np.pi
         phis = torch.rand([size, self.drone_num],
-                          device=self.device) * 0.5 * np.pi  # DEBUG
+                          device=self.device) * 0.5 * np.pi
 
         xyz_drones2obj = torch.stack([torch.sin(phis) * torch.cos(thetas),
                                       torch.sin(phis) * torch.sin(thetas),
@@ -731,7 +700,7 @@ class QuadTransEnv(gym.Env):
     def _generate_traj(self, size):
         traj_len = self.max_steps * 2
         delta_t = self.step_dt
-        base_w = 2 * np.pi / (40.0 * delta_t)
+        base_w = 2 * np.pi / (40.0 * delta_t)   
         t = torch.arange(0, traj_len, 1, device=self.device) * delta_t
         t = torch.tile(t.unsqueeze(-1).unsqueeze(-1), (1, size, 3))
         x = torch.zeros((traj_len, size, 3), device=self.device)
@@ -756,10 +725,10 @@ class QuadTransEnv(gym.Env):
         def sample_uni(size):
             if size == 0:
                 return (torch.rand(
-                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 1.0  # DEBUG
+                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 0.0  # DEBUG
             else:
                 return (torch.rand(
-                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 1.0  # DEBUG
+                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 0.0  # DEBUG
 
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
@@ -773,10 +742,14 @@ class QuadTransEnv(gym.Env):
         self.J_drones[:, :, 2, 2] = sample_uni(0) * 0.3e-5 + 2.98e-5
         self.hook_disp = sample_uni(3) * torch.tensor(
             [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015], device=self.device)
+        
+        # DEBUG
+        self.hook_disp *= 0.0
+
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
         self.mass_obj[..., :] = (torch.rand(
-                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.005 + 0.025
+                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.005 * 0.0 + 0.025
         
         self.rope_length = sample_uni(1) * 0.05 + 0.2
         self.rope_zeta = sample_uni(1) * 0.05 + 0.75
@@ -983,6 +956,9 @@ class MeshVisulizer:
         # set target object model as a red sphere
         self.vis["obj_target"].set_object(
             g.Sphere(0.01), material=g.MeshLambertMaterial(color=0xff0000))
+        # create arrow for visualize the trajectory
+        for i in range(50):
+            self.vis[f"traj_x{i}"].set_object(g.StlMeshGeometry.from_file('../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0xf000ff))
         # # set obstacle model as a cube
         # self.vis["obstacle1"].set_object(g.Box([0.1, 0.5, 0.5]))
         # self.vis["obstacle2"].set_object(g.Box([0.1, 0.5, 0.5]))
@@ -992,6 +968,30 @@ class MeshVisulizer:
         # self.vis["obstacle2"].set_transform(
         #     tf.translation_matrix([0.0, 0.0, - 0.07 - 0.5 / 2.0]))
 
+    def vis_traj(self, vis_input, traj_x, traj_v):
+        for i in range(traj_x.shape[0]):
+            self.vis_vector(vis_input[f'traj_x{i}'], traj_x[i], traj_v[i], scale=0.5)
+
+    def vis_vector(self, obj, origin, vec, scale = 2.0):
+            # visualize the force with arrow    
+            vec_norm = np.linalg.norm(vec)
+            if vec_norm == 0:
+                return
+            vec = vec / vec_norm
+            # gernerate two unit vectors perpendicular to the force vector
+            if vec[0] == 0 and vec[1] == 0:
+                vec_1 = np.array([1, 0, 0])
+                vec_2 = np.array([0, 1, 0])
+            else:
+                vec_1 = np.array([vec[1], -vec[0], 0])
+                vec_1 /= np.linalg.norm(vec_1)
+                vec_2 = np.cross(vec, vec_1)
+            rot_mat = np.eye(4)
+            rot_mat[:3, 2] = vec
+            rot_mat[:3, 0] = vec_1
+            rot_mat[:3, 1] = vec_2
+            rot_mat[:3, :3] *= vec_norm*scale
+            obj.set_transform(tf.translation_matrix(origin) @ rot_mat)
 
     def update(self, state):
         if not self.enable:
@@ -1068,9 +1068,9 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_track-dual-drone.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackRobustCertain(UpdateReward).pt', map_location='cpu')
     policy = loaded_agent['actor']
-    env = QuadTransEnv(env_num=1, drone_num=2, gpu_id=-1,
+    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True)
     env.curri_param = 1.0
     test_env(env, policy, save_path='results/test')
