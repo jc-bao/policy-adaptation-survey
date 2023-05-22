@@ -72,6 +72,7 @@ class PPO:
         err_vs = torch.zeros((horizon_len, env.env_num), dtype=torch.float32).to(self.device)
         es = torch.zeros((horizon_len, env.env_num, self.expert_dim+self.search_dim), dtype=torch.float32).to(self.device)
         adapt_obses = torch.zeros((horizon_len, env.env_num, env.adapt_dim), dtype=torch.float32).to(self.device)
+        steps = torch.zeros((horizon_len, env.env_num), dtype=torch.int32).to(self.device)
 
         state, info = self.last_state, self.last_info  # shape == (env_num, state_dim) for a vectorized env.
         if predefined_e is not None:
@@ -107,6 +108,7 @@ class PPO:
             logprobs[t] = logprob
             rewards[t] = reward
             dones[t] = done
+            steps[t] = info['step']
             if w is not None:
                 es[t] = torch.concat([e, w], dim=-1)
             else:
@@ -119,7 +121,7 @@ class PPO:
 
         rewards *= self.reward_scale
         undones = 1.0 - dones.type(torch.float32)
-        infos = {"err_x": err_xs, "err_v": err_vs, 'e': es, 'adapt_obs': adapt_obses}
+        infos = {"err_x": err_xs, "err_v": err_vs, 'e': es, 'adapt_obs': adapt_obses, 'step': steps}
         return states, actions, logprobs, rewards, undones, infos
 
     def update_net(self, states, es_origin, adapt_obs, actions, logprobs, rewards, undones, update_adaptor=False, update_critic=True, update_actor=True):

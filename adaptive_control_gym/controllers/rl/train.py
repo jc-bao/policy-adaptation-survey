@@ -87,6 +87,7 @@ def train(args: Args) -> None:
             err_v_mean = err_v.mean().item()
             err_x_last10_mean = err_x[-10:].mean().item()
             err_v_last10_mean = err_v[-10:].mean().item()
+            step_mean = infos['step'].mean().item()*2.0
             if args.use_wandb:
                 wandb.log({
                     'train/rewards_mean': rew_mean,
@@ -101,6 +102,7 @@ def train(args: Args) -> None:
                     'train/err_v': err_v_mean,
                     'train/err_x_last10': err_x_last10_mean,
                     'train/err_v_last10': err_v_last10_mean,
+                    'train/step': step_mean,
                 }, step=total_steps)
             t.set_postfix(e10=err_x_last10_mean, rewards=rew_mean, actor_loss=actor_loss, critic_loss=critic_loss,
                           compressor_std=compressor_std, ada_com_loss=ada_com_loss, steps=total_steps)
@@ -278,6 +280,7 @@ def eval_env(env: QuadTransEnv, agent: PPO, deterministic: bool = True, use_adap
     err_x_last10_std = err_x[-10:].mean(dim=0).std().item()
     err_v_last10_mean = err_v[-10:].mean().item()
     err_v_last10_std = err_v[-10:].mean(dim=0).std().item()
+    step_mean = infos['step'].mean().item()*2.0
     log_dict = {
         'eval/rewards_mean': rew_mean,
         'eval/rewards_final': rewards[-1].mean().item(),
@@ -287,6 +290,7 @@ def eval_env(env: QuadTransEnv, agent: PPO, deterministic: bool = True, use_adap
         'eval/err_x_last10_std': err_x_last10_std,
         'eval/err_v_last10': err_v_last10_mean,
         'eval/err_v_last10_std': err_v_last10_std,
+        'eval/step': step_mean,
     }
     return log_dict
 

@@ -308,6 +308,7 @@ class QuadTransEnv(gym.Env):
             'adapt_obs': adapt_obs,
             'err_x': torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1),
             'err_v': torch.norm((self.vxyz_obj - self.vxyz_obj_target), dim=1),
+            'step': self.step_cnt, 
         }
 
     def dummystep(self, vrp_target, thrust):
