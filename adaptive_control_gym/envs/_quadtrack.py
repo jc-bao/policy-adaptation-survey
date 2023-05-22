@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from icecream import ic
 import meshcat
+from meshcat.animation import Animation, convert_frames_to_video
 import meshcat.geometry as g
 import meshcat.transformations as tf
 import time
@@ -403,6 +404,9 @@ class QuadTransEnv(gym.Env):
             (self.env_num, self.drone_num, 3), device=self.device)
         if self.logger.enable or self.visualizer.enable:
             state = {
+                'step': self.step_cnt, 
+                'xyz_traj': self.xyz_traj, 
+                'vxyz_traj': self.vxyz_traj, 
                 'xyz_drones': self.xyz_drones,
                 'vxyz_drones': self.vxyz_drones,
                 'quat_drones': self.quat_drones,
@@ -563,6 +567,9 @@ class QuadTransEnv(gym.Env):
         }
         if self.logger.enable or self.visualizer.enable:
             state = {
+                'step': self.step_cnt, 
+                'xyz_traj': self.xyz_traj, 
+                'vxyz_traj': self.vxyz_traj,
                 'xyz_drones': self.xyz_drones,
                 'vxyz_drones': self.vxyz_drones,
                 'quat_drones': self.quat_drones,
@@ -750,6 +757,9 @@ class QuadTransEnv(gym.Env):
             (self.env_num, 3), device=self.device) * 0.02
         self.mass_obj[..., :] = (torch.rand(
                     (self.env_num,1), device=self.device)*2.0-1.0) * 0.005 * 0.0 + 0.025
+
+        # DEBUG
+        self.mass_obj *= 0.0
         
         self.rope_length = sample_uni(1) * 0.05 + 0.2
         self.rope_zeta = sample_uni(1) * 0.05 + 0.75
@@ -815,6 +825,7 @@ class QuadTransEnv(gym.Env):
 
     def close(self, savepath):
         self.logger.plot(savepath)
+        self.visualizer.render()
 
 
 class PIDController:
@@ -940,7 +951,9 @@ class MeshVisulizer:
         self.drone_num = drone_num
         if not enable:
             return
+        self.num_frame = 0
         self.vis = meshcat.Visualizer()
+        self.anim = Animation()
         # set camera position
         self.vis["/Cameras/default"].set_transform(
             tf.translation_matrix([0, 0, 0]).dot(
@@ -968,9 +981,9 @@ class MeshVisulizer:
         # self.vis["obstacle2"].set_transform(
         #     tf.translation_matrix([0.0, 0.0, - 0.07 - 0.5 / 2.0]))
 
-    def vis_traj(self, vis_input, traj_x, traj_v):
-        for i in range(traj_x.shape[0]):
-            self.vis_vector(vis_input[f'traj_x{i}'], traj_x[i], traj_v[i], scale=0.5)
+    def vis_traj(self, traj_x, traj_v):
+        for i in range(50):
+            self.vis_vector(self.vis[f'traj_x{i}'], traj_x[i], traj_v[i], scale=0.5)
 
     def vis_vector(self, obj, origin, vec, scale = 2.0):
             # visualize the force with arrow    
@@ -996,13 +1009,17 @@ class MeshVisulizer:
     def update(self, state):
         if not self.enable:
             return
+        # visualize the trajectory
+        if state['step'][0] == 0:
+            self.vis_traj(state['xyz_traj'][:,0,:], state['vxyz_traj'][:,0,:])
         # update drone
         for i in range(self.drone_num):
             xyz_drone = state['xyz_drones'][0, i].cpu().numpy()
             quat_drone = state['quat_drones'][0, i].cpu().numpy()
             quat_drone = np.array([quat_drone[3], *quat_drone[:3]])
-            self.vis[f"drone{i}"].set_transform(tf.translation_matrix(
-                xyz_drone).dot(tf.quaternion_matrix(quat_drone)))
+            transmat = tf.translation_matrix(
+                xyz_drone).dot(tf.quaternion_matrix(quat_drone))
+            self.vis[f"drone{i}"].set_transform(transmat)
         # update object
         xyz_obj = state['xyz_obj'][0].cpu().numpy()
         self.vis["obj"].set_transform(tf.translation_matrix(xyz_obj))
@@ -1010,14 +1027,18 @@ class MeshVisulizer:
         xyz_obj_target = state['xyz_obj_target'][0].cpu().numpy()
         self.vis["obj_target"].set_transform(
             tf.translation_matrix(xyz_obj_target))
+        self.num_frame += 1
         time.sleep(4e-4)
 
+    def render(self, save_path='/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/test.tar'):
+        if not self.enable:
+            return
 
 def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path=None):
     # make sure the incorperated logger is enabled
     env.logger.enable = True
     state, info = env.reset()
-    total_steps = env.max_steps*4
+    total_steps = env.max_steps
     for _ in range(total_steps):
         act = policy(state, None)
         state, rew, done, info = env.step(act)
@@ -1068,7 +1089,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackRobustCertain.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackNoObjRobustCertain.pt', map_location='cpu')
     policy = loaded_agent['actor']
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True)
