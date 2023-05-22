@@ -121,10 +121,13 @@ class QuadTransEnv(gym.Env):
             (self.step_substeps, self.env_num), device=self.device, dtype=torch.float32)
         hitwall = torch.zeros(
             (self.env_num), device=self.device, dtype=torch.bool)
+        rope_force_done = torch.zeros(
+            (self.env_num), device=self.device, dtype=torch.bool)
         for i in range(self.step_substeps):
             state = self.ctlstep(vrp_target, thrust)
             reward_tensor[i] = state['reward_groundtruth']
             hitwall = hitwall | state['hitwall']
+            rope_force_done = rope_force_done | state['rope_force_done']
             # self.dummystep(vrp_target, thrust)
 
         self._save_state()
@@ -155,7 +158,8 @@ class QuadTransEnv(gym.Env):
             past_traj - self.xyz_obj, dim=-1).max(dim=0)[0] < 0.03) & (self.step_cnt >= 5)
         hitwall_done = hitwall
 
-        done = reach_done | time_done | quat_done | xyz_done | unmoved_done # | hitwall_done
+
+        done = reach_done | time_done | quat_done | xyz_done | unmoved_done | rope_force_done # | hitwall_done
         self.hitwall_before &= hitwall # NOTE: use hitwall before to aviod the hitwall becomes the last step, which does not contribute the the value function. 
         self.reset(done)
         next_obs = self._get_obs()
@@ -458,11 +462,14 @@ class QuadTransEnv(gym.Env):
                            torque.unsqueeze(-1)).squeeze(-1)
         reward_tensor = torch.zeros((self.ctl_substeps, self.env_num), device=self.device)
         hitwall = torch.zeros((self.env_num), device=self.device, dtype=torch.bool)
+        rope_force_done = torch.zeros((self.env_num), device=self.device, dtype=torch.bool)
         for i in range(self.ctl_substeps):
             state = self.simstep(torque, thrust)
             reward_tensor[i] = state['reward_groundtruth'].squeeze(-1)
             hitwall = hitwall | state['hitwall']
+            rope_force_done = state['rope_force_done']
         state['reward_groundtruth'] = reward_tensor.mean(dim=0)
+        state['rope_force_done'] = rope_force_done
         return state
 
     def simstep(self, torque: torch.Tensor, thrust: torch.Tensor):
@@ -559,11 +566,12 @@ class QuadTransEnv(gym.Env):
         self.xyz_obj = self.xyz_obj + self.sim_dt * self.vxyz_obj
         self.xyz_obj[zero_mass_obj.squeeze(-1)
                      ] = self.xyz_drones[zero_mass_obj.squeeze(-1), 0]
-
+        
         # log and visualize for debug purpose
         state = {
             'reward_groundtruth': self._get_reward().unsqueeze(-1), 
             'hitwall': (self.get_hit_penalty(self.xyz_drones)<0.0) | (self.get_hit_penalty(self.xyz_obj)<0.0),
+            'rope_force_done': (torch.norm(rope_force_drones, dim=-1)>500.0).any(dim=-1),
         }
         if self.logger.enable or self.visualizer.enable:
             state = {
@@ -585,6 +593,7 @@ class QuadTransEnv(gym.Env):
                 'moment_drones': moment_drones,
                 'force_obj': force_obj,
                 'rope_force_drones': rope_force_drones,
+                'rope_force_norm': rope_force_drones.norm(dim=-1),
                 'rope_force_obj': rope_force_obj,
                 'gravity_drones': gravity_drones,
                 'thrust_drones': thrust_drones,
@@ -755,7 +764,7 @@ class QuadTransEnv(gym.Env):
         self.J_drones[:, :, 1, 1] = sample_uni(0) * 0.2e-5 + 1.7e-5
         self.J_drones[:, :, 2, 2] = sample_uni(0) * 0.3e-5 + 2.98e-5
         self.hook_disp = sample_uni(3) * torch.tensor(
-            [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015], device=self.device)
+            [0.01, 0.01, 0.01], device=self.device) + torch.tensor([0.0, 0.0, -0.015], device=self.device)
         
         # DEBUG
         # self.hook_disp *= 0.0
@@ -770,7 +779,7 @@ class QuadTransEnv(gym.Env):
         
         self.rope_length = sample_uni(1) * 0.05 + 0.2
         self.rope_zeta = sample_uni(1) * 0.05 + 0.75
-        self.rope_wn = sample_uni(1) * 100 + 1000
+        self.rope_wn = sample_uni(1) * 50 + 500
 
         # Update
         self.wall_half_width = 0.05
@@ -1073,9 +1082,9 @@ def main():
 
     all_obs = torch.zeros(
         [env.max_steps, env_num, env.state_dim], device=env.device)
-    for i in range(10):
+    for i in range(100):
         # policy1: PID
-        action = env.policy_pos(target_pos)
+        # action = env.policy_pos(target_pos)
 
         # policy2: manual
         # total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
@@ -1088,8 +1097,8 @@ def main():
         #     [-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
 
         # policy3: random
-        # action = torch.rand([env_num, 1, env.action_dim],
-        #                     device=env.device) * 2 - 1
+        action = torch.rand([env_num, 1, env.action_dim],
+                            device=env.device) * 2 - 1
 
         obs, rew, done, info = env.step(action.reshape(1, -1))
         all_obs[i] = obs
@@ -1100,7 +1109,7 @@ def main():
 if __name__ == '__main__':
     # main()
     loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackNoObjRobustCertain.pt', map_location='cpu')
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackRobustUncertain.pt', map_location='cpu')
     policy = loaded_agent['actor']
     env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
              enable_log=True, enable_vis=True)
