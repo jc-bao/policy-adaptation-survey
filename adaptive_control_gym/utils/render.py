@@ -1,10 +1,11 @@
 import bpy
 from mathutils import Quaternion, Vector
+import csv
 
 # Set up the scene
 scene = bpy.context.scene
 scene.frame_start = 1
-scene.frame_end = 100
+scene.render.fps = int(1/4e-4)
 
 # Set the file path to the STL file
 stl_file_path = "/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/assets/crazyflie2.stl"
@@ -19,18 +20,20 @@ obj = bpy.context.selected_objects[0]
 obj.animation_data_create()
 obj.animation_data.action = bpy.data.actions.new(name="Animation")
 
-# Define the orientations and positions as quaternions and vectors
-orientations = [
-    Quaternion((1, 0, 0, 0)),  # Quaternion 1
-    Quaternion((0, 1, 0, 0)),  # Quaternion 2
-    Quaternion((0, 0, 1, 0))   # Quaternion 3
-]
-
-positions = [
-    Vector((0, 0, 0)),    # Position 1
-    Vector((1, 0, 0)),    # Position 2
-    Vector((0, 1, 0))     # Position 3
-]
+# Load csv file as a dict
+orientations = [ ]
+positions = [ ]
+csv_file_path = "/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/test.csv"
+num_frame = 0
+with open(csv_file_path, mode='r') as csv_file:
+    csv_reader = csv.DictReader(csv_file)
+    for row in csv_reader:
+        orientation = Quaternion((float(row["quat_drones_3"]), float(row["quat_drones_0"]), float(row["quat_drones_1"]), float(row["quat_drones_2"])))
+        position = Vector((float(row["xyz_drones_0"]), float(row["xyz_drones_1"]), float(row["xyz_drones_2"])))
+        orientations.append(orientation)
+        positions.append(position)
+        num_frame += 1
+scene.frame_end = num_frame
 
 # Create keyframes for each frame in the animation
 for frame in range(scene.frame_start, scene.frame_end + 1):

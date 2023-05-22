@@ -739,10 +739,10 @@ class QuadTransEnv(gym.Env):
         def sample_uni(size):
             if size == 0:
                 return (torch.rand(
-                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 0.0  # DEBUG
+                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 1.0  # DEBUG
             else:
                 return (torch.rand(
-                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 0.0  # DEBUG
+                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 1.0  # DEBUG
 
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
@@ -758,15 +758,15 @@ class QuadTransEnv(gym.Env):
             [0.01, 0.01, 0.015], device=self.device) + torch.tensor([0.0, 0.0, -0.015], device=self.device)
         
         # DEBUG
-        self.hook_disp *= 0.0
+        # self.hook_disp *= 0.0
 
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
         self.mass_obj[..., :] = (torch.rand(
-                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.005 * 0.0 + 0.025
+                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.005 + 0.025
 
         # DEBUG
-        self.mass_obj *= 0.0
+        # self.mass_obj *= 0.0
         
         self.rope_length = sample_uni(1) * 0.05 + 0.2
         self.rope_zeta = sample_uni(1) * 0.05 + 0.75
@@ -959,6 +959,8 @@ class MeshVisulizer:
         if not enable:
             return
         self.num_frame = 0
+        self.real_render_time = 0.0
+        self.render_interval = 1.0/60.0
         self.vis = meshcat.Visualizer()
         self.anim = Animation()
         # set camera position
@@ -1019,23 +1021,25 @@ class MeshVisulizer:
         # visualize the trajectory
         if state['step'][0] == 0:
             self.vis_traj(state['xyz_traj'][:,0,:], state['vxyz_traj'][:,0,:])
-        # update drone
-        for i in range(self.drone_num):
-            xyz_drone = state['xyz_drones'][0, i].cpu().numpy()
-            quat_drone = state['quat_drones'][0, i].cpu().numpy()
-            quat_drone = np.array([quat_drone[3], *quat_drone[:3]])
-            transmat = tf.translation_matrix(
-                xyz_drone).dot(tf.quaternion_matrix(quat_drone))
-            self.vis[f"drone{i}"].set_transform(transmat)
-        # update object
-        xyz_obj = state['xyz_obj'][0].cpu().numpy()
-        self.vis["obj"].set_transform(tf.translation_matrix(xyz_obj))
-        # update target object
-        xyz_obj_target = state['xyz_obj_target'][0].cpu().numpy()
-        self.vis["obj_target"].set_transform(
-            tf.translation_matrix(xyz_obj_target))
-        self.num_frame += 1
-        time.sleep(4e-4)
+        self.real_render_time += 4e-4
+        if (self.num_frame * self.render_interval) < self.real_render_time:
+            # update drone
+            for i in range(self.drone_num):
+                xyz_drone = state['xyz_drones'][0, i].cpu().numpy()
+                quat_drone = state['quat_drones'][0, i].cpu().numpy()
+                quat_drone = np.array([quat_drone[3], *quat_drone[:3]])
+                transmat = tf.translation_matrix(
+                    xyz_drone).dot(tf.quaternion_matrix(quat_drone))
+                self.vis[f"drone{i}"].set_transform(transmat)
+            # update object
+            xyz_obj = state['xyz_obj'][0].cpu().numpy()
+            self.vis["obj"].set_transform(tf.translation_matrix(xyz_obj))
+            # update target object
+            xyz_obj_target = state['xyz_obj_target'][0].cpu().numpy()
+            self.vis["obj_target"].set_transform(
+                tf.translation_matrix(xyz_obj_target))
+            self.num_frame += 1
+            time.sleep(self.render_interval)
 
     def render(self, save_path='/home/pcy/rl/policy-adaptation-survey/adaptive_control_gym/envs/results/test.tar'):
         if not self.enable:
@@ -1094,11 +1098,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-    # loaded_agent = torch.load(
-    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackNoObjRobustCertain.pt', map_location='cpu')
-    # policy = loaded_agent['actor']
-    # env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-    #          enable_log=True, enable_vis=True)
-    # env.curri_param = 1.0
-    # test_env(env, policy, save_path='results/test')
+    # main()
+    loaded_agent = torch.load(
+        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackNoObjRobustCertain.pt', map_location='cpu')
+    policy = loaded_agent['actor']
+    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+             enable_log=True, enable_vis=True)
+    env.curri_param = 1.0
+    test_env(env, policy, save_path='results/test')
