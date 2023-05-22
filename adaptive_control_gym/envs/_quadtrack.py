@@ -603,6 +603,7 @@ class QuadTransEnv(gym.Env):
 
     def policy_pos(self, pos_target: torch.Tensor):
         # run lower level position PID controller
+        zero_mass_obj = (self.mass_obj < 1e-6).all(dim=1)
 
         # Object-level controller
         delta_pos = torch.clip(pos_target - self.xyz_obj, -1.0, 1.0)
@@ -615,12 +616,15 @@ class QuadTransEnv(gym.Env):
             torch.norm(xyz_obj2drone, dim=-1, keepdim=True)
         # TODO distribute the force to multiple drones
         target_force_obj_projected = torch.sum(
-            target_force_obj * z_hat_obj, dim=-1) * z_hat_obj / self.drone_num
+            target_force_obj * z_hat_obj, dim=-1, keepdim=True) * z_hat_obj / self.drone_num
+        target_force_obj_projected[zero_mass_obj, :] = 0.0
 
         # Drone-level controller
         xyz_drone_target = (self.xyz_obj + target_force_obj /
                             torch.norm(target_force_obj, dim=-1, keepdim=True) *
                             self.rope_length) - self.hook_disp
+        # if object mass is too small, use object position as target
+        xyz_drone_target[zero_mass_obj] = self.xyz_obj_target[zero_mass_obj].unsqueeze(1).repeat(1,self.drone_num,1)
         delta_pos_drones = xyz_drone_target - self.xyz_drones
         target_force_drone = self.mass_drones*self.pos_controller.update(
             delta_pos_drones, self.step_dt) - (self.mass_drones) * self.g + target_force_obj_projected
@@ -636,8 +640,11 @@ class QuadTransEnv(gym.Env):
             desired_rotvec, thrust_desired/torch.norm(thrust_desired, dim=-1, keepdim=True), dim=-1)
         rpy_rate_target = self.attitude_controller.update(
             rot_err, self.step_dt)
+        
+        thrust_normed = thrust / (0.5 * self.max_thrust) - 1.0
+        vrp_target = rpy_rate_target[..., :2] / self.max_vrp
 
-        return torch.cat([thrust.unsqueeze(-1), rpy_rate_target], dim=-1)
+        return torch.cat([thrust_normed.unsqueeze(-1), vrp_target], dim=-1)
 
     def reset(self, done=None):
         if done is None:
@@ -1054,7 +1061,7 @@ def main():
 
     # setup environment
     env_num = 1
-    env = QuadTransEnv(env_num=env_num, drone_num=2,
+    env = QuadTransEnv(env_num=env_num, drone_num=1,
                        gpu_id=-1, enable_log=True, enable_vis=True)
     env.reset()
 
@@ -1062,9 +1069,9 @@ def main():
 
     all_obs = torch.zeros(
         [env.max_steps, env_num, env.state_dim], device=env.device)
-    for i in range(50):
+    for i in range(10):
         # policy1: PID
-        # action = env.policy_pos(target_pos)
+        action = env.policy_pos(target_pos)
 
         # policy2: manual
         # total_gravity = env.g * (env.mass_drones + env.mass_obj.unsqueeze(1))
@@ -1077,8 +1084,8 @@ def main():
         #     [-total_gravity[..., [2]]/0.6, vrp_target/20.0], dim=-1)
 
         # policy3: random
-        action = torch.rand([env_num, 1, env.action_dim],
-                            device=env.device) * 2 - 1
+        # action = torch.rand([env_num, 1, env.action_dim],
+        #                     device=env.device) * 2 - 1
 
         obs, rew, done, info = env.step(action.reshape(1, -1))
         all_obs[i] = obs
@@ -1087,11 +1094,11 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    loaded_agent = torch.load(
-        '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackNoObjRobustCertain.pt', map_location='cpu')
-    policy = loaded_agent['actor']
-    env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
-             enable_log=True, enable_vis=True)
-    env.curri_param = 1.0
-    test_env(env, policy, save_path='results/test')
+    main()
+    # loaded_agent = torch.load(
+    #     '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackNoObjRobustCertain.pt', map_location='cpu')
+    # policy = loaded_agent['actor']
+    # env = QuadTransEnv(env_num=1, drone_num=1, gpu_id=-1,
+    #          enable_log=True, enable_vis=True)
+    # env.curri_param = 1.0
+    # test_env(env, policy, save_path='results/test')
