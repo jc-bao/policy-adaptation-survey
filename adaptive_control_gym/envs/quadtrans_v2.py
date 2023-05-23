@@ -1022,8 +1022,8 @@ def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path
 
 @dataclass
 class Args:
-    policy_type: str = "ppo"  # 'random', 'pid'
-    task: str = "track"  # 'track', 'hover', 'aviod'
+    policy_type: str = "pid"  # 'random', 'pid'
+    task: str = "hover"  # 'track', 'hover', 'aviod'
     policy_path: str = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_CurriTrackExpertUnCertain(LimitForce).pt'
     seed: int = 0
     env_num: int = 1
