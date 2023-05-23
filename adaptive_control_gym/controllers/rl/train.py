@@ -319,13 +319,3 @@ def eval_env(env: QuadTransEnv, agent: PPO, deterministic: bool = True, use_adap
 
 if __name__ == '__main__':
     train(tyro.cli(Args))
-    # env_num = 256
-    # env = QuadTrans(env_num=env_num, gpu_id =0, seed=0, res_dyn_param_dim=0)
-    # agent = PPO(
-    #     state_dim=env.state_dim, expert_dim=env.expert_dim,
-    #     adapt_dim=env.adapt_dim, action_dim=env.action_dim,
-    #     adapt_horizon=env.adapt_horizon,
-    #     act_expert_mode=1, cri_expert_mode=1,
-    #     compressor_dim=4, search_dim=2,
-    #     env_num=env_num, gpu_id=0)
-    # w, env_params = get_optimal_w(env, agent, search_dim=2)
