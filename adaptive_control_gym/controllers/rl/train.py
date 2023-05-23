@@ -32,6 +32,7 @@ def train(args: Args) -> None:
     adapt_steps = 0.5e7 if ((args.act_expert_mode > 0)
                             | (args.cri_expert_mode > 0)) else 0
     eval_freq = 4
+    save_freq = 40
     curri_thereshold = 0.5
 
     if len(args.exp_name) == 0:
@@ -48,7 +49,7 @@ def train(args: Args) -> None:
         compressor_dim=args.compressor_dim, search_dim=args.search_dim,
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackAdaptUncertain.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_CurriTrackRobustUnCertain.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act.load_state_dict(loaded_agent['actor'].state_dict())
     # agent.cri.load_state_dict(loaded_agent['critic'].state_dict())
     # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
@@ -121,6 +122,11 @@ def train(args: Args) -> None:
                     env.curri_param += 0.1
                 # log_dict = eval_env(env, agent, use_adaptor=True)
                 # print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
+            
+            # save
+            if i_ep % save_freq == 0:
+                save_agent(args, agent)
+                
         expert_err_x_final = log_dict['eval/err_x_last10']
 
     adapt_err_x_initial = torch.nan
@@ -168,6 +174,22 @@ def train(args: Args) -> None:
             if i_ep == (n_ep-1):
                 adapt_err_x_end = log_dict['eval/err_x_last10']
 
+    save_agent(args, agent)
+
+    test_env(QuadTransEnv(env_num=1, gpu_id=-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim),
+             agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
+    # evaluate
+    if args.use_wandb:
+        wandb.save(path, policy="now")
+        # save the plot
+        wandb.log({
+            "eval/plot": wandb.Image(f'{plt_path}_plot.png', caption="plot"),
+            "eval/vis": wandb.Image(f'{plt_path}_vis.png', caption="vis")
+        })
+    # print the result
+    print(f'{expert_err_x_final:.4f} | {adapt_err_x_initial:.4f} | {adapt_err_x_end:.4f}')
+
+def save_agent(agrs, agent):
     base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
     path = f'{base_path}/ppo_{args.exp_name}.pt'
     plt_path = f'{base_path}/ppo_{args.exp_name}'
@@ -181,18 +203,6 @@ def train(args: Args) -> None:
         'adapt_err_x_initial': adapt_err_x_initial,
         'adapt_err_x_end': adapt_err_x_end,
     }, path)
-    test_env(QuadTransEnv(env_num=1, gpu_id=-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim),
-             agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
-    # evaluate
-    if args.use_wandb:
-        wandb.save(path, policy="now")
-        # save the plot
-        wandb.log({
-            "eval/plot": wandb.Image(f'{plt_path}_plot.png', caption="plot"),
-            "eval/vis": wandb.Image(f'{plt_path}_vis.png', caption="vis")
-        })
-    # print the result
-    print(f'{expert_err_x_final:.4f} | {adapt_err_x_initial:.4f} | {adapt_err_x_end:.4f}')
 
 
 def get_optimal_w(env: QuadTransEnv, agent: PPO, search_dim: int = 0):
