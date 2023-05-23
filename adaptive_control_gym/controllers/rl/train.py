@@ -8,6 +8,7 @@ from tqdm import trange
 from icecream import install
 from dataclasses import dataclass
 import tyro
+from typing import Union
 
 install()
 
@@ -24,22 +25,30 @@ class Args:
     compressor_dim: int = 4
     search_dim: int = 0
     res_dyn_param_dim: int = 0
+    task: str = 'track' # 'track', 'hover', 'avoid'
+    resume_path: Union[str, None] = None
+    drone_num: int = 1
+    env_num: int = 16384
+    total_steps: int = 8e7
+    adapt_steps: int = 5e6
+    curri_thereshold: float = 0.2
 
 
 def train(args: Args) -> None:
-    env_num = 1024 * 16
-    total_steps = 8e7
-    adapt_steps = 0.5e7 if ((args.act_expert_mode > 0)
+    env_num = args.env_num
+    total_steps = args.total_steps
+    adapt_steps = args.adapt_steps if ((args.act_expert_mode > 0)
                             | (args.cri_expert_mode > 0)) else 0
     eval_freq = 4
     save_freq = 40
-    curri_thereshold = 0.5
+    curri_thereshold = args.curri_thereshold
 
     if len(args.exp_name) == 0:
         args.exp_name = f'ActEx{args.act_expert_mode}_CriEx{args.cri_expert_mode}_S{args.seed}'
     env = QuadTransEnv(
         env_num=env_num, gpu_id=args.gpu_id, seed=args.seed,
-        res_dyn_param_dim=args.res_dyn_param_dim
+        res_dyn_param_dim=args.res_dyn_param_dim, 
+        task=args.task, drone_num=args.drone_num
     )
     agent = PPO(
         state_dim=env.state_dim, expert_dim=env.expert_dim,
@@ -49,12 +58,13 @@ def train(args: Args) -> None:
         compressor_dim=args.compressor_dim, search_dim=args.search_dim,
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_CurriTrackRobustUnCertain.pt', map_location=f'cuda:{args.gpu_id}')
-    # agent.act.load_state_dict(loaded_agent['actor'].state_dict())
-    # agent.cri.load_state_dict(loaded_agent['critic'].state_dict())
-    # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
-    # agent.adaptor.load_state_dict(loaded_agent['adaptor'].state_dict())
-    # agent.compressor.load_state_dict(loaded_agent['compressor'].state_dict())
+    if args.resume_path is not None:
+        loaded_agent = torch.load(args.resume_path, map_location=f'cuda:{args.gpu_id}')
+        agent.act.load_state_dict(loaded_agent['actor'].state_dict())
+        agent.cri.load_state_dict(loaded_agent['critic'].state_dict())
+        agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
+        agent.adaptor.load_state_dict(loaded_agent['adaptor'].state_dict())
+        agent.compressor.load_state_dict(loaded_agent['compressor'].state_dict())
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
