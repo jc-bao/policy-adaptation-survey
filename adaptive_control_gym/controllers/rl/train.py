@@ -32,6 +32,7 @@ class Args:
     total_steps: int = 8e7
     adapt_steps: int = 5e6
     curri_thereshold: float = 0.6
+    curri_param_init: float = 0.0
 
 
 def train(args: Args) -> None:
@@ -71,7 +72,7 @@ def train(args: Args) -> None:
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
     total_steps = 0
-    env.curri_param = 0.0
+    env.curri_param = args.curri_param_init
     expert_err_x_final = torch.nan
     with trange(n_ep) as t:
         for i_ep in t:
@@ -128,7 +129,7 @@ def train(args: Args) -> None:
                 else:
                     print(
                         f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
-                if rew_mean > curri_thereshold and env.curri_param < 1.0:
+                if rew_mean > curri_thereshold and env.curri_param <= 0.95:
                     env.curri_param += 0.05
                 # log_dict = eval_env(env, agent, use_adaptor=True)
                 # print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
