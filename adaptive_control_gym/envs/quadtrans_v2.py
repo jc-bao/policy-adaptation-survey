@@ -26,7 +26,7 @@ class QuadTransEnv(gym.Env):
                  seed: int = 0,
                  enable_log: bool = False,
                  enable_vis: bool = False,
-                 task: str = 'track',  # 'hover', 'track', 'aviod'
+                 task: str = 'track',  # 'hover', 'track', 'avoid'
                  **kwargs) -> None:
 
         super().__init__()
@@ -40,8 +40,8 @@ class QuadTransEnv(gym.Env):
         assert self.task in {
             'hover',
             'track',
-            'aviod',
-        }, 'task must be one of hover, track, aviod'
+            'avoid',
+        }, 'task must be one of hover, track, avoid'
 
         # set simulator parameters
         self.seed = seed
@@ -78,12 +78,12 @@ class QuadTransEnv(gym.Env):
         # controller
         self.set_control_params()
 
+        # state variables, physical parameters
+        self.reset()
+
         # set logger and visualizer
         self.logger = Logger(drone_num=drone_num, enable=enable_log)
         self.visualizer = MeshVisulizer(env=self, enable=enable_vis)
-
-        # state variables, physical parameters
-        self.reset()
 
     def set_state(self):
         # enviroment variables
@@ -302,7 +302,7 @@ class QuadTransEnv(gym.Env):
         rope_force_drones = mass_joint * \
             ((self.rope_wn ** 2) * rope_disp + 2 *
              self.rope_zeta * self.rope_wn * rope_vel)
-        # clip rope force to aviod numerical instability
+        # clip rope force to avoid numerical instability
         rope_force_drones = torch.clip(
             rope_force_drones, -self.max_rope_force, self.max_rope_force)
         # corner case: disable object by setting its weight to zero
@@ -444,7 +444,7 @@ class QuadTransEnv(gym.Env):
 
         return hit_panelty
 
-    def get_aviod_reward(self):
+    def get_avoid_reward(self):
 
         err_x = torch.norm(self.xyz_obj - self.xyz_obj_target, dim=1)
         err_v = torch.norm(self.vxyz_obj - self.vxyz_obj_target, dim=1)
@@ -477,7 +477,7 @@ class QuadTransEnv(gym.Env):
 
     def get_reward(self):
         if self.task == 'avoid':
-            return self.get_aviod_reward()
+            return self.get_avoid_reward()
         elif self.task in ['track', 'hover']:
             return self.get_track_reward()
         else:
@@ -620,10 +620,10 @@ class QuadTransEnv(gym.Env):
         size = torch.sum(done)
         # sample object initial position
         self.xyz_obj[done] = (torch.rand(
-            [size, 3], device=self.device) - 0.5) * 0.5
-        if self.task == 'aviod':
+            [size, 3], device=self.device)*2.0 - 1.0) * 0.5
+        if self.task == 'avoid':
             self.xyz_obj[done] = torch.rand(
-                (1, size, 3), device=self.device)*0.5 + 0.2
+                (1, size, 3), device=self.device)*0.2 + 0.4
 
         # sample target trajectory
         self.xyz_traj[:, done], self.vxyz_traj[:,
@@ -658,7 +658,7 @@ class QuadTransEnv(gym.Env):
             [size, self.drone_num, 3], device=self.device)
 
     def generate_traj(self, size):
-        # generate a trajectory for the task. The trajectory is a circle for the track task and a straight line for the hover/aviodance task.
+        # generate a trajectory for the task. The trajectory is a circle for the track task and a straight line for the hover/avoidance task.
 
         traj_len = self.max_steps * 2
         delta_t = self.step_dt
@@ -681,8 +681,8 @@ class QuadTransEnv(gym.Env):
                 v -= w*A*torch.sin(t*w+phase)
         elif self.task == 'hover':
             x = torch.rand((1, size, 3), device=self.device)
-        elif self.task == 'aviod':
-            x = - torch.rand((1, size, 3), device=self.device)*0.5 - 0.2
+        elif self.task == 'avoid':
+            x = - torch.rand((1, size, 3), device=self.device)*0.2 - 0.4
         return x, v
 
     def sample_physical_params(self, done):
@@ -940,17 +940,12 @@ class MeshVisulizer:
         for i in range(50):
             self.vis[f"traj_x{i}"].set_object(g.StlMeshGeometry.from_file(
                 '../assets/arrow.stl'), material=g.MeshLambertMaterial(color=0xf000ff))
-        if env.task == 'aviodance':
+        if env.task == 'avoid':
             # set obstacle model as a cube
             self.vis["obstacle1"].set_object(
                 g.Box([self.env.wall_half_width*2.0, 0.5, 0.5]))
             self.vis["obstacle2"].set_object(
                 g.Box([self.env.wall_half_width*2.0, 0.5, 0.5]))
-            # set obstacle position
-            self.vis["obstacle1"].set_transform(
-                tf.translation_matrix([0.0, 0.0, self.env.wall_half_height + 0.5 / 2.0]))
-            self.vis["obstacle2"].set_transform(
-                tf.translation_matrix([0.0, 0.0, - self.env.wall_half_height - 0.5 / 2.0]))
 
     def vis_traj(self, traj_x, traj_v):
         for i in range(50):
@@ -1002,6 +997,13 @@ class MeshVisulizer:
             xyz_obj_target = state['xyz_obj_target'][0].cpu().numpy()
             self.vis["obj_target"].set_transform(
                 tf.translation_matrix(xyz_obj_target))
+            # update obstacle
+            if self.env.task == 'avoid':
+                # set obstacle position
+                self.vis["obstacle1"].set_transform(
+                    tf.translation_matrix([0.0, 0.0, self.env.wall_half_height + 0.5 / 2.0]))
+                self.vis["obstacle2"].set_transform(
+                    tf.translation_matrix([0.0, 0.0, - self.env.wall_half_height - 0.5 / 2.0]))
             self.num_frame += 1
             time.sleep(self.render_interval)
 
@@ -1023,7 +1025,7 @@ def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path
 @dataclass
 class Args:
     policy_type: str = "pid"  # 'random', 'pid'
-    task: str = "hover"  # 'track', 'hover', 'aviod'
+    task: str = "avoid"  # 'track', 'hover', 'avoid'
     policy_path: str = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_CurriTrackExpertUnCertain(LimitForce).pt'
     seed: int = 0
     env_num: int = 1
