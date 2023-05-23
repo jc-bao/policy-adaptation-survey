@@ -10,9 +10,45 @@
 ## 🐣 Train
 
 ```shell
-cd controller/rl
-python train.py
+cd adaptive_control_gym/controller/rl
+# Run the train function with the parsed arguments
+python train.py \
+    --use_wandb $USE_WANDB \
+    --program $PROGRAM \
+    --seed $SEED \
+    --gpu_id $GPU_ID \
+    --act_expert_mode $ACT_EXPERT_MODE \
+    --cri_expert_mode $CRI_EXPERT_MODE \
+    --exp_name $EXP_NAME \
+    --compressor_dim $COMPRESSOR_DIM \
+    --search_dim $SEARCH_DIM \
+    --res_dyn_param_dim $RES_DYN_PARAM_DIM \
+    --task $TASK \
+    --resume_path $RESUME_PATH \
+    --drone_num $DRONE_NUM \
+    --env_num $ENV_NUM \
+    --total_steps $TOTAL_STEPS \
+    --adapt_steps $ADAPT_STEPS \
+    --curri_thereshold $CURRI_THERESHOLD
 ```
+
+* use_wandb: A boolean flag indicating whether to use the Weights & Biases service for logging and visualization. Default is False.
+* program: A string specifying the name of the program. Default is 'tmp'.
+* seed: An integer specifying the random seed to use. Default is 1.
+* gpu_id: An integer specifying the ID of the GPU to use. Default is 0.
+* act_expert_mode: An integer specifying the expert mode for the actor network. Default is 0.
+* cri_expert_mode: An integer specifying the expert mode for the critic network. Default is 0.
+* exp_name: A string specifying the name of the experiment. Default is an empty string.
+* compressor_dim: An integer specifying the dimension of the compressor network. Default is 4.
+* search_dim: An integer specifying the dimension of the search network. Default is 0.
+* res_dyn_param_dim: An integer specifying the dimension of the residual dynamic parameter network. Default is 0.
+* task: A string specifying the task to perform. Can be 'track', 'hover', or 'avoid'. Default is 'track'.
+* resume_path: A string specifying the path to a saved checkpoint to resume training from. Default is None.
+* drone_num: An integer specifying the number of drones to use. Default is 1.
+* env_num: An integer specifying the number of environments to use. Default is 16384.
+* total_steps: An integer specifying the total number of training steps to perform. Default is 8e7.
+* adapt_steps: An integer specifying the number of adaptation steps to perform. Default is 5e6.
+* curri_thereshold: A float specifying the curriculum threshold. Default is 0.2.
 
 ## 🕹 Play with environment
 
