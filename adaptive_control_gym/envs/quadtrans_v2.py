@@ -623,7 +623,7 @@ class QuadTransEnv(gym.Env):
             [size, 3], device=self.device)*2.0 - 1.0) * 0.5
         if self.task == 'avoid':
             self.xyz_obj[done] = torch.rand(
-                (1, size, 3), device=self.device)*0.2 + 0.4
+                (1, size, 3), device=self.device)*0.2 + 0.3
 
         # sample target trajectory
         self.xyz_traj[:, done], self.vxyz_traj[:,
@@ -682,7 +682,7 @@ class QuadTransEnv(gym.Env):
         elif self.task == 'hover':
             x = torch.rand((1, size, 3), device=self.device)
         elif self.task == 'avoid':
-            x = - torch.rand((1, size, 3), device=self.device)*0.2 - 0.4
+            x = - torch.rand((1, size, 3), device=self.device)*0.1 - 0.3
         return x, v
 
     def sample_physical_params(self, done):
@@ -1025,7 +1025,7 @@ def test_env(env: QuadTransEnv, policy, adaptor=None, compressor=None, save_path
 @dataclass
 class Args:
     policy_type: str = "pid"  # 'random', 'pid'
-    task: str = "avoid"  # 'track', 'hover', 'avoid'
+    task: str = "track"  # 'track', 'hover', 'avoid'
     policy_path: str = '/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_CurriTrackExpertUnCertain(LimitForce).pt'
     seed: int = 0
     env_num: int = 1
