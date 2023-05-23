@@ -34,7 +34,7 @@ class Args:
     total_steps: int = 8e7
     adapt_steps: int = 5e6
     curri_thereshold: float = 0.6
-    curri_param_init: float = 0.0
+    curri_param_init: float = 0.3
 
 
 def train(args: Args) -> None:
