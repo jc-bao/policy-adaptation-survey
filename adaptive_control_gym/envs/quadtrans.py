@@ -1055,6 +1055,11 @@ def main(args: Args):
         loaded_agent = torch.load(args.policy_path, map_location=map_location)
         actor = loaded_agent['actor']
         compressor = loaded_agent['compressor']
+        # disable gradient
+        for param in actor.parameters():
+            param.requires_grad = False
+        for param in compressor.parameters():
+            param.requires_grad = False
         def policy(state, info): 
             return actor(state, compressor(info['e']))
     elif args.policy_type == 'random':
