@@ -77,10 +77,11 @@ python quadtrans.py
 
 
 ## 🐒 Policy
-`
+
 * Classic
   - [x] LQR
   - [x] PID
   - [ ] MPC
 * RL
   - [x] PPO 
+  - [x] RMA
