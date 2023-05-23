@@ -511,6 +511,9 @@ class QuadTransEnv(gym.Env):
         zero_mass_obj = (self.mass_obj < 1e-6).all(dim=1).unsqueeze(1)
         rope_force_drones[loose_rope | zero_mass_obj, :] = 0.0
 
+        # DEBUG
+        rope_force_drones = torch.clip(rope_force_drones, -self.max_rope_force, self.max_rope_force)
+
         # total force
         force_drones = gravity_drones + thrust_drones + rope_force_drones
         # TODO set as parameter
@@ -749,10 +752,10 @@ class QuadTransEnv(gym.Env):
         def sample_uni(size):
             if size == 0:
                 return (torch.rand(
-                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 1.0  # DEBUG
+                    (self.env_num, self.drone_num), device=self.device)*2.0-1.0) * 1.0 * self.curri_param  # DEBUG
             else:
                 return (torch.rand(
-                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 1.0  # DEBUG
+                    (self.env_num, self.drone_num, size), device=self.device)*2.0-1.0) * 1.0 * self.curri_param  # DEBUG
 
         self.g = torch.zeros(3, device=self.device)
         self.g[2] = -9.81
@@ -773,7 +776,7 @@ class QuadTransEnv(gym.Env):
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
         self.mass_obj[..., :] = (torch.rand(
-                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.005 + 0.025
+                    (self.env_num,1), device=self.device)*2.0-1.0) * 0.005  * self.curri_param + 0.025
 
         # DEBUG
         # self.mass_obj *= 0.0
@@ -833,6 +836,7 @@ class QuadTransEnv(gym.Env):
         # thrust limits
         self.max_thrust = 0.6
         self.max_vrp = 12.0
+        self.max_rope_force = 200.0
         self.max_torque = torch.tensor([9e-3, 9e-3, 2e-3], device=self.device)
         self.max_angle = np.pi/2.1  # if exceed this angle, reset the environment
         self.panelty_angle = np.pi/3.0  # if exceed this angle, give negative reward

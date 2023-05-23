@@ -48,7 +48,7 @@ def train(args: Args) -> None:
         compressor_dim=args.compressor_dim, search_dim=args.search_dim,
         env_num=env_num, gpu_id=args.gpu_id)
 
-    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_track.pt', map_location=f'cuda:{args.gpu_id}')
+    # loaded_agent = torch.load('/home/pcy/rl/policy-adaptation-survey/results/rl/ppo_TrackAdaptUncertain.pt', map_location=f'cuda:{args.gpu_id}')
     # agent.act.load_state_dict(loaded_agent['actor'].state_dict())
     # agent.cri.load_state_dict(loaded_agent['critic'].state_dict())
     # agent.act.action_std_log = (torch.nn.Parameter(torch.ones((1, 2), device=f'cuda:{args.gpu_id}')*2.0))
@@ -87,7 +87,7 @@ def train(args: Args) -> None:
             err_v_mean = err_v.mean().item()
             err_x_last10_mean = err_x[-10:].mean().item()
             err_v_last10_mean = err_v[-10:].mean().item()
-            step_mean = infos['step'].mean().item()*2.0
+            step_mean = infos['step'].float().mean().item()*2.0
             if args.use_wandb:
                 wandb.log({
                     'train/rewards_mean': rew_mean,
@@ -280,7 +280,7 @@ def eval_env(env: QuadTransEnv, agent: PPO, deterministic: bool = True, use_adap
     err_x_last10_std = err_x[-10:].mean(dim=0).std().item()
     err_v_last10_mean = err_v[-10:].mean().item()
     err_v_last10_std = err_v[-10:].mean(dim=0).std().item()
-    step_mean = infos['step'].mean().item()*2.0
+    step_mean = infos['step'].float().mean().item()*2.0
     log_dict = {
         'eval/rewards_mean': rew_mean,
         'eval/rewards_final': rewards[-1].mean().item(),
