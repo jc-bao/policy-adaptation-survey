@@ -42,7 +42,7 @@ def train(args: Args) -> None:
     total_steps = args.total_steps
     adapt_steps = args.adapt_steps if ((args.act_expert_mode > 0)
                             | (args.cri_expert_mode > 0)) else 0
-    eval_freq = 4
+    eval_freq = 1#4
     save_freq = 40
     curri_thereshold = args.curri_thereshold
 
@@ -71,6 +71,7 @@ def train(args: Args) -> None:
 
     if args.use_wandb:
         wandb.init(project=args.program, name=args.exp_name, config=args)
+    plotter = Plotter()
     steps_per_ep = env.max_steps*env_num
     n_ep = int(total_steps//steps_per_ep)
     total_steps = 0
@@ -131,7 +132,7 @@ def train(args: Args) -> None:
                 else:
                     print(
                         f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
-                    plot_logger(args=args, data = log_dict)
+                plotter.plot_logger(args=args, data = log_dict)
                 if rew_mean > curri_thereshold and env.curri_param <= 0.95:
                     env.curri_param += 0.1
                 # log_dict = eval_env(env, agent, use_adaptor=True)
@@ -193,6 +194,7 @@ def train(args: Args) -> None:
     test_env(QuadTransEnv(env_num=1, gpu_id=-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim),
              agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
     # evaluate
+    base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
     path = f'{base_path}/ppo_{args.exp_name}.pt'
     plt_path = f'{base_path}/ppo_{args.exp_name}'
     if args.use_wandb:
@@ -220,22 +222,32 @@ def save_agent(args, agent):
         # 'adapt_err_x_end': adapt_err_x_end,
     }, path)
 
-def plot_logger(args, data):
-    # plot all items in data dict
-    # setup theme with seaborn
-    sns.set_theme()
-    # create subplots
-    n = len(data)
-    fig, axs = plt.subplots(n, 1, figsize=(10, 5*n))
-    for i, (k, v) in enumerate(data.items()):
-        # plot
-        axs[i].plot(v)
-        # set title
-        axs[i].set_title(k)
-    # save
-    base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
-    plt_path = f'{base_path}/ppo_{args.exp_name}'
-    plt.savefig(f'{plt_path}_plot.png')
+class Plotter:
+    def __init__(self) -> None:
+        self.data = {}
+
+    def plot_logger(self, args, data):
+        if len(self.data) == 0:
+            # plot all items in data dict
+            # setup theme with seaborn
+            sns.set_theme()
+            # create subplots
+            self.n = len(data)
+            self.fig, self.axs = plt.subplots(self.n, 1, figsize=(10, 5*self.n))
+            self.data = {k: [v] for k, v in data.items()}
+        else:
+            # append new data
+            for k, v in data.items():
+                self.data[k].append(v)
+        for i, (k, v) in enumerate(self.data.items()):
+            # plot
+            self.axs[i].plot(v)
+            # set title
+            self.axs[i].set_title(k)
+        # save
+        base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
+        plt_path = f'{base_path}/curve_{args.exp_name}'
+        plt.savefig(f'{plt_path}_plot.png')
 
 def get_optimal_w(env: QuadTransEnv, agent: PPO, search_dim: int = 0):
     # save initial environment parameters
