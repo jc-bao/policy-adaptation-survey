@@ -50,6 +50,15 @@ python train.py \
 * adapt_steps: An integer specifying the number of adaptation steps to perform. Default is 5e6.
 * curri_thereshold: A float specifying the curriculum threshold. Default is 0.2.
 
+### Examples
+
+```shell
+# train with RMA
+python train.py --exp-name "TrackRMA"  --task track --act-expert-mode 1 --cri-expert-mode 1 --use-wandb  --gpu-id 0
+# train Robust policy
+python train.py --exp-name "TrackRobust"  --task track --use-wandb --gpu-id 0
+```
+
 ## 🕹 Play with environment
 
 ```shell
