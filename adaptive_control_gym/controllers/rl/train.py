@@ -129,7 +129,7 @@ def train(args: Args) -> None:
                     print(
                         f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
                 if rew_mean > curri_thereshold and env.curri_param < 1.0:
-                    env.curri_param += 0.1
+                    env.curri_param += 0.05
                 # log_dict = eval_env(env, agent, use_adaptor=True)
                 # print(f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
             
