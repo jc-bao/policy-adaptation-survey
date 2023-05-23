@@ -9,6 +9,8 @@ from icecream import install
 from dataclasses import dataclass
 import tyro
 from typing import Union
+from matplotlib import pyplot as plt
+import seaborn as sns
 
 install()
 
@@ -129,6 +131,7 @@ def train(args: Args) -> None:
                 else:
                     print(
                         f"{log_dict['eval/err_x_last10']:.4f} \pm {log_dict['eval/err_x_last10_std']:.4f}")
+                    plot_logger(args=args, data = log_dict)
                 if rew_mean > curri_thereshold and env.curri_param <= 0.95:
                     env.curri_param += 0.1
                 # log_dict = eval_env(env, agent, use_adaptor=True)
@@ -217,6 +220,22 @@ def save_agent(args, agent):
         # 'adapt_err_x_end': adapt_err_x_end,
     }, path)
 
+def plot_logger(args, data):
+    # plot all items in data dict
+    # setup theme with seaborn
+    sns.set_theme()
+    # create subplots
+    n = len(data)
+    fig, axs = plt.subplots(n, 1, figsize=(10, 5*n))
+    for i, (k, v) in enumerate(data.items()):
+        # plot
+        axs[i].plot(v)
+        # set title
+        axs[i].set_title(k)
+    # save
+    base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
+    plt_path = f'{base_path}/ppo_{args.exp_name}'
+    plt.savefig(f'{plt_path}_plot.png')
 
 def get_optimal_w(env: QuadTransEnv, agent: PPO, search_dim: int = 0):
     # save initial environment parameters
@@ -314,6 +333,7 @@ def eval_env(env: QuadTransEnv, agent: PPO, deterministic: bool = True, use_adap
         'eval/err_v_last10': err_v_last10_mean,
         'eval/err_v_last10_std': err_v_last10_std,
         'eval/step': step_mean,
+        'eval/curri': env.curri_param, 
     }
     return log_dict
 
