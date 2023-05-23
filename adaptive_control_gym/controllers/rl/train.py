@@ -33,6 +33,7 @@ class Args:
     env_num: int = 16384
     total_steps: int = 8e7
     adapt_steps: int = 5e6
+    disable_obj: bool = False
     curri_thereshold: float = 0.6
     curri_param_init: float = 0.3
 
@@ -51,7 +52,8 @@ def train(args: Args) -> None:
     env = QuadTransEnv(
         env_num=env_num, gpu_id=args.gpu_id, seed=args.seed,
         res_dyn_param_dim=args.res_dyn_param_dim, 
-        task=args.task, drone_num=args.drone_num
+        task=args.task, drone_num=args.drone_num, 
+        disable_obj=args.disable_obj
     )
     agent = PPO(
         state_dim=env.state_dim, expert_dim=env.expert_dim,

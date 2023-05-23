@@ -27,6 +27,7 @@ class QuadTransEnv(gym.Env):
                  enable_log: bool = False,
                  enable_vis: bool = False,
                  task: str = 'track',  # 'hover', 'track', 'avoid'
+                 disable_obj: bool = False, 
                  **kwargs) -> None:
 
         super().__init__()
@@ -44,6 +45,7 @@ class QuadTransEnv(gym.Env):
         }, 'task must be one of hover, track, avoid'
 
         # set simulator parameters
+        self.disable_obj = disable_obj
         self.seed = seed
         self.env_num = env_num
         self.sim_dt = 4e-4
@@ -725,6 +727,11 @@ class QuadTransEnv(gym.Env):
         self.wall_half_width = 0.05
         self.wall_half_height = 0.07 + \
             np.clip(1-self.curri_param, 0, 1) * 0.1  # from 0.17 -> 0.07
+        
+        if self.disable_obj:
+            self.mass_obj *= 0.0
+            self.rope_length *= 0.0
+            self.hook_disp *= 0.0
 
     def set_control_params(self):
         # attitude rate controller
@@ -1033,6 +1040,7 @@ class Args:
     gpu_id: int = -1
     enable_log: bool = True
     enable_vis: bool = True
+    disable_obj: bool = False
     curri_param: float = 1.0
 
 def main(args: Args):
@@ -1055,7 +1063,7 @@ def main(args: Args):
     elif args.policy_type == 'pid':
         def policy(state, info): return env.policy_pid()
     env = QuadTransEnv(env_num=args.env_num, drone_num=args.drone_num, gpu_id=args.gpu_id, seed=args.seed,
-                       enable_log=args.enable_log, enable_vis=args.enable_vis, task=args.task)
+                       enable_log=args.enable_log, enable_vis=args.enable_vis, task=args.task, disable_obj = args.disable_obj)
     env.curri_param = args.curri_param
     test_env(env, policy, save_path='results/test')
 
