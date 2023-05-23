@@ -1,4 +1,20 @@
-## 🕹 Play the environment
+# 🚁 Policy Adaptation Survey
+
+## 🤖 Environment
+
+|Quadrotor transportation| Cartpole                                                     | Hover                                                        |
+|-| ------------------------------------------------------------ | ------------------------------------------------------------ |
+|![quadrotor](https://user-images.githubusercontent.com/60093981/236766584-83b40cdb-bc8e-4c64-8562-f4261ac5af68.gif)| ![cartpole](https://tva1.sinaimg.cn/large/008vxvgGly1h8whypx7rig305k02s41b.gif) | ![hover](https://tva1.sinaimg.cn/large/008vxvgGly1h8whraypc1g301e05kq3r.gif) |
+
+
+## 🐣 Train
+
+```shell
+cd controller/rl
+python train.py
+```
+
+## 🕹 Play with environment
 
 ```shell
 # go to environment folder
@@ -26,3 +42,13 @@ python quadtrans_v2.py
    |  ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/1a3546ce-6527-451a-8c0a-975f256964e0)
     | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/76c82417-b7bd-4ea4-8988-f8e2b2fc1134)
  |
+
+
+## 🐒 Policy
+`
+* Classic
+  - [x] LQR
+  - [x] PID
+  - [ ] MPC
+* RL
+  - [x] PPO 
