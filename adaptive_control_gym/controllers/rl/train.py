@@ -179,6 +179,8 @@ def train(args: Args) -> None:
     test_env(QuadTransEnv(env_num=1, gpu_id=-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim),
              agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
     # evaluate
+    path = f'{base_path}/ppo_{args.exp_name}.pt'
+    plt_path = f'{base_path}/ppo_{args.exp_name}'
     if args.use_wandb:
         wandb.save(path, policy="now")
         # save the plot
@@ -189,7 +191,7 @@ def train(args: Args) -> None:
     # print the result
     print(f'{expert_err_x_final:.4f} | {adapt_err_x_initial:.4f} | {adapt_err_x_end:.4f}')
 
-def save_agent(agrs, agent):
+def save_agent(args, agent):
     base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
     path = f'{base_path}/ppo_{args.exp_name}.pt'
     plt_path = f'{base_path}/ppo_{args.exp_name}'
@@ -199,9 +201,9 @@ def save_agent(agrs, agent):
         'critic': agent.cri,
         'adaptor': agent.adaptor,
         'compressor': agent.compressor,
-        'expert_err_x_final': expert_err_x_final,
-        'adapt_err_x_initial': adapt_err_x_initial,
-        'adapt_err_x_end': adapt_err_x_end,
+        # 'expert_err_x_final': expert_err_x_final,
+        # 'adapt_err_x_initial': adapt_err_x_initial,
+        # 'adapt_err_x_end': adapt_err_x_end,
     }, path)
 
 
