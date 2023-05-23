@@ -37,11 +37,7 @@ python quadtrans_v2.py
 
 | `task=aviod curri_param=1.0`                                 |    `task=aviod curri_param=0.0`    |  `task=track`    | `task=hover` |
 | ------------------------------------------------------------ | ---- | ---- | - |
-| ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/2db622a8-23cc-4fc7-8c82-94c54cc154e0)
-|   ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/c5178f3c-29e6-4c98-a09f-4028cf70e496)
-   |  ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/1a3546ce-6527-451a-8c0a-975f256964e0)
-    | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/76c82417-b7bd-4ea4-8988-f8e2b2fc1134)
- |
+| ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/2db622a8-23cc-4fc7-8c82-94c54cc154e0) |   ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/c5178f3c-29e6-4c98-a09f-4028cf70e496) |  ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/1a3546ce-6527-451a-8c0a-975f256964e0)a  | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/76c82417-b7bd-4ea4-8988-f8e2b2fc1134)|
 
 
 ## 🐒 Policy
