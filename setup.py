@@ -18,5 +18,6 @@ setup(name='adaptive_control_gym',
         'torch', 
         'tqdm', 
         'tyro', 
+        'meshcat', 
         ]
 )
