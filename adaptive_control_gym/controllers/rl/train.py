@@ -193,12 +193,13 @@ def train(args: Args) -> None:
 
     save_agent(args, agent)
 
-    test_env(QuadTransEnv(env_num=1, gpu_id=-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim),
-             agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
     # evaluate
     base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
     path = f'{base_path}/ppo_{args.exp_name}.pt'
     plt_path = f'{base_path}/ppo_{args.exp_name}'
+    test_env(QuadTransEnv(env_num=1, gpu_id=-1, seed=args.seed, res_dyn_param_dim=args.res_dyn_param_dim),
+             agent.act.cpu(), agent.adaptor.cpu(), compressor=agent.compressor.cpu(), save_path=plt_path)
+    
     if args.use_wandb:
         wandb.save(path, policy="now")
         # save the plot
@@ -212,7 +213,6 @@ def train(args: Args) -> None:
 def save_agent(args, agent):
     base_path = adaptive_control_gym.__path__[0] + '/../results/rl'
     path = f'{base_path}/ppo_{args.exp_name}.pt'
-    plt_path = f'{base_path}/ppo_{args.exp_name}'
     # save agent.act, agent.adaptor, agent.compressor
     torch.save({
         'actor': agent.act,

@@ -28,6 +28,8 @@ class QuadTransEnv(gym.Env):
                  enable_vis: bool = False,
                  task: str = 'track',  # 'hover', 'track', 'avoid'
                  disable_obj: bool = False, 
+                 disable_hook: bool = False,
+                 disable_loose_rope: bool = False,
                  **kwargs) -> None:
 
         super().__init__()
@@ -46,6 +48,8 @@ class QuadTransEnv(gym.Env):
 
         # set simulator parameters
         self.disable_obj = disable_obj
+        self.disable_hook = disable_hook
+        self.disable_loose_rope = disable_loose_rope
         self.seed = seed
         self.env_num = env_num
         self.sim_dt = 4e-4
@@ -291,8 +295,12 @@ class QuadTransEnv(gym.Env):
             torch.norm(xyz_obj2hook, dim=-1, keepdim=True)
         rope_origin = self.rope_length * xyz_obj2hook_normed
         rope_disp = xyz_obj2hook - rope_origin
-        loose_rope = torch.norm(
-            xyz_obj2hook, dim=-1) < self.rope_length.squeeze(-1)
+        if self.disable_loose_rope:
+            loose_rope = torch.zeros(
+                (self.env_num, self.drone_num), device=self.device, dtype=torch.bool)
+        else:
+            loose_rope = torch.norm(
+                xyz_obj2hook, dim=-1) < self.rope_length.squeeze(-1)
         vxyz_hook = self.vxyz_drones + \
             torch.cross(self.vrpy_drones, self.hook_disp, dim=-1)
         vxyz_obj2hook = self.vxyz_obj.unsqueeze(1) - vxyz_hook
@@ -711,14 +719,17 @@ class QuadTransEnv(gym.Env):
         self.hook_disp = sample_uni(3) * torch.tensor(
             [0.01, 0.01, 0.01], device=self.device) + torch.tensor([0.0, 0.0, -0.015], device=self.device)
 
+        if self.disable_hook:
+            self.hook_disp *= 0.0 
+
         self.mass_obj = torch.ones(
             (self.env_num, 3), device=self.device) * 0.02
         self.mass_obj[..., :] = (torch.rand(
             (self.env_num, 1), device=self.device)*2.0-1.0) * 0.005 * self.curri_param + 0.025
 
         self.rope_length = sample_uni(1) * 0.05 + 0.2
-        self.rope_zeta = sample_uni(1) * 0.15 + 1.1
-        self.rope_wn = sample_uni(1) * 50 + 500
+        self.rope_zeta = sample_uni(1) * 0.15 + 1.05
+        self.rope_wn = sample_uni(1) * 5 + 50
 
         self.drone_drag_coef = 0.1
         self.obj_drag_coef = 0.1
@@ -921,6 +932,7 @@ class MeshVisulizer:
         self.enable = enable
         self.drone_num = env.drone_num
         self.env = env
+        self.replay_speed = 1.0
         if not enable:
             return
         self.num_frame = 0
@@ -988,7 +1000,7 @@ class MeshVisulizer:
             self.vis_traj(state['xyz_traj'][:, 0, :],
                           state['vxyz_traj'][:, 0, :])
         self.real_render_time += 4e-4
-        if (self.num_frame * self.render_interval) < self.real_render_time:
+        if (self.num_frame * self.render_interval / self.replay_speed) < self.real_render_time:
             # update drone
             for i in range(self.drone_num):
                 xyz_drone = state['xyz_drones'][0, i].cpu().numpy()
@@ -1041,6 +1053,8 @@ class Args:
     enable_log: bool = True
     enable_vis: bool = True
     disable_obj: bool = False
+    disable_hook: bool = False
+    disable_loose_rope: bool = False    
     curri_param: float = 1.0
 
 def main(args: Args):
@@ -1068,7 +1082,7 @@ def main(args: Args):
     elif args.policy_type == 'pid':
         def policy(state, info): return env.policy_pid()
     env = QuadTransEnv(env_num=args.env_num, drone_num=args.drone_num, gpu_id=args.gpu_id, seed=args.seed,
-                       enable_log=args.enable_log, enable_vis=args.enable_vis, task=args.task, disable_obj = args.disable_obj)
+                       enable_log=args.enable_log, enable_vis=args.enable_vis, task=args.task, disable_obj = args.disable_obj, disable_hook = args.disable_hook, disable_loose_rope = args.disable_loose_rope)
     env.curri_param = args.curri_param
     test_env(env, policy, save_path='results/test')
 
