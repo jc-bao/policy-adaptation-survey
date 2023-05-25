@@ -5,7 +5,8 @@ from etils import epath
 import jax
 from jax import numpy as jp
 
-class InvertedPendulum(PipelineEnv):
+
+class QuadBrax(PipelineEnv):
     def __init__(self, backend='generalized', **kwargs):
         path = epath.resource_path(
             'adaptive_control_gym') / 'assets/quadbrax.xml'
@@ -25,31 +26,47 @@ class InvertedPendulum(PipelineEnv):
         """Resets the environment to an initial state."""
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
+        q_bound = jp.array([1.0, 1.0, jp.pi/3])
         q = self.sys.init_q + jax.random.uniform(
-            rng1, (self.sys.q_size(),), minval=-0.01, maxval=0.01
+            rng1, (self.sys.q_size(),), minval=-q_bound, maxval=q_bound
         )
         qd = jax.random.uniform(
             rng2, (self.sys.qd_size(),), minval=-0.01, maxval=0.01
         )
         pipeline_state = self.pipeline_init(q, qd)
         obs = self._get_obs(pipeline_state)
-        reward, done = jp.zeros(2)
-        metrics = {}
+        reward, done, reached_steps = jp.zeros(3)
+        metrics = {
+            'reached_steps': reached_steps,
+        }
 
         return State(pipeline_state, obs, reward, done, metrics)
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Run one timestep of the environment's dynamics."""
+
         thrust = (action[..., 0]+1.0)/2.0
         torque = action[..., 1]
         angle = state.pipeline_state.q[2]
         force_x = thrust * jp.sin(angle)
         force_y = thrust * jp.cos(angle)
         action_applied = jp.stack([force_x, force_y, torque], axis=-1)
-        pipeline_state = self.pipeline_step(state.pipeline_state, action_applied)
+        pipeline_state = self.pipeline_step(
+            state.pipeline_state, action_applied)
+
         obs = self._get_obs(pipeline_state)
-        reward = 1.0
-        done = jp.where(jp.abs(obs[1]) > 0.2, 1.0, 0.0)
+        theta = pipeline_state.q[2]
+        dist2center = jp.linalg.norm(pipeline_state.q[:2])
+        vel = jp.linalg.norm(pipeline_state.qd[:2])
+        omega = jp.abs(pipeline_state.qd[2])
+        reward = 1.5 - dist2center - vel * 0.1 - \
+            omega * 0.1 - jp.clip((theta-jp.pi*0.45)*5.0, 0.0, 1.0)
+        state.metrics.update(
+            reached_steps=jp.where(dist2center<0.05, state.metrics['reached_steps']+1.0, 0.0)
+        )
+        done = jp.where(
+            (dist2center > 1.5) | (theta > jp.pi/2) | (state.metrics['reached_steps'] > 5.0), 1.0, 0.0)
+
         return state.replace(
             pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
         )
