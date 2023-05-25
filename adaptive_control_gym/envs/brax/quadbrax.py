@@ -8,7 +8,7 @@ from jax import numpy as jp
 class InvertedPendulum(PipelineEnv):
     def __init__(self, backend='generalized', **kwargs):
         path = epath.resource_path(
-            'adaptive_control_gym') / 'assets/inverted_pendulum.xml'
+            'adaptive_control_gym') / 'assets/quadbrax.xml'
         sys = mjcf.load(path)
 
         n_frames = 2

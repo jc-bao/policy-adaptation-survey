@@ -618,6 +618,7 @@ class QuadTransEnv(gym.Env):
                 (self.env_num), device=self.device, dtype=torch.bool)
         self.sample_physical_params(done)
         self.sample_state(done)
+        
         # reset steps
         self.step_cnt[done] = 0
         self.reach_goal_step[done] = self.max_steps

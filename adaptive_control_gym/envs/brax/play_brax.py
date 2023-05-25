@@ -7,7 +7,7 @@ from tqdm import trange
 import matplotlib.pyplot as plt
 import numpy as np
 
-from adaptive_control_gym.envs.brax.inverted_pendulum import InvertedPendulum
+from adaptive_control_gym.envs.brax.quadbrax import InvertedPendulum
 
 def vis_html(file):
     app = Flask(__name__)
@@ -17,7 +17,6 @@ def vis_html(file):
     app.run()
 
 def plot_rollout(rollout):
-    s = rollout[0].q
     q = np.array([s.q for s in rollout])
     qd = np.array([s.qd for s in rollout])
     # plot in 2 subplots
