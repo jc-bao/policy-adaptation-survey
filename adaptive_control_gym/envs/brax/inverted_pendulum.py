@@ -40,7 +40,13 @@ class InvertedPendulum(PipelineEnv):
 
     def step(self, state: State, action: jp.ndarray) -> State:
         """Run one timestep of the environment's dynamics."""
-        pipeline_state = self.pipeline_step(state.pipeline_state, action)
+        thrust = (action[..., 0]+1.0)/2.0
+        torque = action[..., 1]
+        angle = state.pipeline_state.q[2]
+        force_x = thrust * jp.sin(angle)
+        force_y = thrust * jp.cos(angle)
+        action_applied = jp.stack([force_x, force_y, torque], axis=-1)
+        pipeline_state = self.pipeline_step(state.pipeline_state, action_applied)
         obs = self._get_obs(pipeline_state)
         reward = 1.0
         done = jp.where(jp.abs(obs[1]) > 0.2, 1.0, 0.0)
