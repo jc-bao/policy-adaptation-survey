@@ -9,6 +9,8 @@
 
 ## 🐣 Train
 
+### Torch-based environemnt
+
 ```shell
 cd adaptive_control_gym/controller/rl
 # Run the train function with the parsed arguments
@@ -50,6 +52,14 @@ python train.py \
 * adapt_steps: An integer specifying the number of adaptation steps to perform. Default is 5e6.
 * curri_thereshold: A float specifying the curriculum threshold. Default is 0.2.
 
+### Brax-based environemnt
+
+```shell
+cd adaptive_control_gym/envs/brax
+python train_brax.py
+python play_brax.py --policy-type ppo --policy-path '../results/params' # visualize
+```
+
 ### Examples
 
 ```shell
@@ -80,9 +90,9 @@ python quadtrans.py
 
 ```
 
-| `task=aviod curri_param=1.0`                                 |    `task=aviod curri_param=0.0`    |  `task=track`    | `task=hover` |
-| ------------------------------------------------------------ | ---- | ---- | - |
-| ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/2db622a8-23cc-4fc7-8c82-94c54cc154e0) |   ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/c5178f3c-29e6-4c98-a09f-4028cf70e496) |  ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/1a3546ce-6527-451a-8c0a-975f256964e0)  | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/76c82417-b7bd-4ea4-8988-f8e2b2fc1134)|
+| `task=aviod curri_param=1.0`                                 |    `task=aviod curri_param=0.0`    |  `task=track`    | `task=hover` | `Brax` |
+| ------------------------------------------------------------ | ---- | ---- | - | - |
+| ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/2db622a8-23cc-4fc7-8c82-94c54cc154e0) |   ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/c5178f3c-29e6-4c98-a09f-4028cf70e496) |  ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/1a3546ce-6527-451a-8c0a-975f256964e0)  | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/76c82417-b7bd-4ea4-8988-f8e2b2fc1134)|  |
 
 
 ## 🐒 Policy

@@ -9,15 +9,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tyro
 from dataclasses import dataclass
+from brax.training.acme import running_statistics
+from typing import Optional
 
 from adaptive_control_gym.envs.brax.quadbrax import QuadBrax
 
+
 def vis_html(file):
     app = Flask(__name__)
+
     @app.route('/')
     def hello_world():
         return file
     app.run()
+
 
 def plot_rollout(rollout):
     q = np.array([s.pipeline_state.q for s in rollout])
@@ -37,14 +42,17 @@ def plot_rollout(rollout):
     # save it
     fig.savefig('../results/brax.png')
 
+
 def random_policy(obs, rng):
     act = jax.random.uniform(rng, shape=(2,), minval=-1.0, maxval=1.0) * 1.0
     return act, ()
 
+
 @dataclass
 class Args:
     policy_type: str = "random"  # 'random', 'ppo'
-    policy_path = None
+    policy_path: Optional[str] = None
+
 
 def play_main(args: Args):
     env = QuadBrax()
@@ -58,21 +66,29 @@ def play_main(args: Args):
         inference_fn = random_policy()
     elif args.policy_type == "ppo":
         params = model.load_params(args.policy_path)
-        inference_fn = ppo_networks.make_inference_fn(params)
+        inference_fn = ppo_networks.make_inference_fn(
+            ppo_networks.make_ppo_networks(
+                6, 2,
+                preprocess_observations_fn=running_statistics.normalize))(params)
     jit_inference_fn = jax.jit(inference_fn)
     rollout = []
     state = jit_env_reset(rng=rng)
-    for _ in trange(100):
+    for i in trange(1000):
         rollout.append(state)
         act_rng, rng = jax.random.split(rng)
         act, _ = jit_inference_fn(state.obs, act_rng)
         state = jit_env_step(state, act)
-        if state.done:
+        if state.done or (i % 100 == 99):
             state = jit_env_reset(rng=rng)
 
     plot_rollout(rollout)
-    html_file = html.render(env.sys.replace(dt=env.dt), [r.pipeline_state for r in rollout], height=720)
+    html_file = html.render(env.sys.replace(dt=env.dt), [
+                            r.pipeline_state for r in rollout], height=720)
+    # save html_file to a file
+    with open('../results/brax.html', 'w') as f:
+        f.write(html_file)
     vis_html(html_file)
+
 
 if __name__ == '__main__':
     play_main(tyro.cli(Args))

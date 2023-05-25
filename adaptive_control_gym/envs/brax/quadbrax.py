@@ -26,7 +26,7 @@ class QuadBrax(PipelineEnv):
         """Resets the environment to an initial state."""
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
-        q_bound = jp.array([1.0, 1.0, jp.pi/3])
+        q_bound = jp.array([2.0, 2.0, jp.pi/3])
         q = self.sys.init_q + jax.random.uniform(
             rng1, (self.sys.q_size(),), minval=-q_bound, maxval=q_bound
         )
@@ -56,16 +56,16 @@ class QuadBrax(PipelineEnv):
 
         obs = self._get_obs(pipeline_state)
         theta = pipeline_state.q[2]
-        dist2center = jp.linalg.norm(pipeline_state.q[:2])
+        err_x = jp.linalg.norm(pipeline_state.q[:2])
         vel = jp.linalg.norm(pipeline_state.qd[:2])
         omega = jp.abs(pipeline_state.qd[2])
-        reward = 1.5 - dist2center - vel * 0.1 - \
+        reward = 1.5 - err_x - vel * 0.2 - \
             omega * 0.1 - jp.clip((theta-jp.pi*0.45)*5.0, 0.0, 1.0)
         state.metrics.update(
-            reached_steps=jp.where(dist2center<0.05, state.metrics['reached_steps']+1.0, 0.0)
+            reached_steps=jp.where(err_x<0.1, state.metrics['reached_steps']+1.0, 0.0)
         )
         done = jp.where(
-            (dist2center > 1.5) | (theta > jp.pi/2) | (state.metrics['reached_steps'] > 5.0), 1.0, 0.0)
+            (err_x > 3.0) | (theta > jp.pi/2), 1.0, 0.0)
 
         return state.replace(
             pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
@@ -73,7 +73,7 @@ class QuadBrax(PipelineEnv):
 
     @property
     def action_size(self):
-        return 1
+        return 2
 
     def _get_obs(self, pipeline_state: base.State) -> jp.ndarray:
         """Observe cartpole body position and velocities."""

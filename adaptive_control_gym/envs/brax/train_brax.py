@@ -14,7 +14,7 @@ def main():
     rng = jax.random.PRNGKey(seed=1)
     state = jax.jit(env.reset)(rng=rng)
 
-    train_fn = functools.partial(ppo.train, num_timesteps=2_000, num_evals=20, reward_scaling=1.0, episode_length=1000, normalize_observations=True, action_repeat=1, unroll_length=5, num_minibatches=32, num_updates_per_batch=4, discounting=0.97, learning_rate=3e-4, entropy_cost=1e-2, num_envs=2048, batch_size=1024, seed=1)
+    train_fn = functools.partial(ppo.train, num_timesteps=4_000_000, num_evals=20, reward_scaling=1.0, episode_length=100, normalize_observations=True, action_repeat=1, unroll_length=5, num_minibatches=32, num_updates_per_batch=4, discounting=0.97, learning_rate=3e-4, entropy_cost=1e-2, num_envs=2048, batch_size=1024, seed=1)
 
     xdata, ydata = [], []
     times = [datetime.now()]
@@ -23,7 +23,6 @@ def main():
         times.append(datetime.now())
         xdata.append(num_steps)
         ydata.append(metrics['eval/episode_reward'])
-        plt.xlim([0, train_fn.keywords['num_timesteps']])
         plt.xlabel('# environment steps')
         plt.ylabel('reward per episode')
         plt.plot(xdata, ydata)
