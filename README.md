@@ -4,7 +4,7 @@
 
 |Quadrotor transportation| Cartpole                                                     | Hover                                                        | Brax [html](https://drive.google.com/file/d/1CCgmkMbNYMG4W4XHiMsaBZcKgz3WMREQ/view?usp=sharing) |
 |-| ------------------------------------------------------------ | ------------------------------------------------------------ | - |
-|![quadrotor](https://user-images.githubusercontent.com/60093981/236766584-83b40cdb-bc8e-4c64-8562-f4261ac5af68.gif)| ![cartpole](https://tva1.sinaimg.cn/large/008vxvgGly1h8whypx7rig305k02s41b.gif) | ![hover](https://tva1.sinaimg.cn/large/008vxvgGly1h8whraypc1g301e05kq3r.gif) | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/a9a8458b-235b-494c-8e29-bd935bc809fc) |
+|![quadrotor](https://user-images.githubusercontent.com/60093981/236766584-83b40cdb-bc8e-4c64-8562-f4261ac5af68.gif)| ![cartpole](https://tva1.sinaimg.cn/large/008vxvgGly1h8whypx7rig305k02s41b.gif) | ![hover](https://tva1.sinaimg.cn/large/008vxvgGly1h8whraypc1g301e05kq3r.gif) | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/ed1ebac1-2fa3-45ce-a5b8-f1f2b3b418d0) |
 
 
 ## 🐣 Train
