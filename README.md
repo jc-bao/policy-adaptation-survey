@@ -2,9 +2,9 @@
 
 ## 🤖 Environment
 
-|Quadrotor transportation| Cartpole                                                     | Hover                                                        |
-|-| ------------------------------------------------------------ | ------------------------------------------------------------ |
-|![quadrotor](https://user-images.githubusercontent.com/60093981/236766584-83b40cdb-bc8e-4c64-8562-f4261ac5af68.gif)| ![cartpole](https://tva1.sinaimg.cn/large/008vxvgGly1h8whypx7rig305k02s41b.gif) | ![hover](https://tva1.sinaimg.cn/large/008vxvgGly1h8whraypc1g301e05kq3r.gif) |
+|Quadrotor transportation| Cartpole                                                     | Hover                                                        | Brax [html](https://drive.google.com/file/d/1CCgmkMbNYMG4W4XHiMsaBZcKgz3WMREQ/view?usp=sharing) |
+|-| ------------------------------------------------------------ | ------------------------------------------------------------ | - |
+|![quadrotor](https://user-images.githubusercontent.com/60093981/236766584-83b40cdb-bc8e-4c64-8562-f4261ac5af68.gif)| ![cartpole](https://tva1.sinaimg.cn/large/008vxvgGly1h8whypx7rig305k02s41b.gif) | ![hover](https://tva1.sinaimg.cn/large/008vxvgGly1h8whraypc1g301e05kq3r.gif) | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/a9a8458b-235b-494c-8e29-bd935bc809fc) |
 
 
 ## 🐣 Train
@@ -90,9 +90,9 @@ python quadtrans.py
 
 ```
 
-| `task=aviod curri_param=1.0`                                 |    `task=aviod curri_param=0.0`    |  `task=track`    | `task=hover` | `Brax` |
-| ------------------------------------------------------------ | ---- | ---- | - | - |
-| ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/2db622a8-23cc-4fc7-8c82-94c54cc154e0) |   ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/c5178f3c-29e6-4c98-a09f-4028cf70e496) |  ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/1a3546ce-6527-451a-8c0a-975f256964e0)  | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/76c82417-b7bd-4ea4-8988-f8e2b2fc1134)|  |
+| `task=aviod curri_param=1.0`                                 |    `task=aviod curri_param=0.0`    |  `task=track`    | `task=hover` |
+| ------------------------------------------------------------ | ---- | ---- | - |
+| ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/2db622a8-23cc-4fc7-8c82-94c54cc154e0) |   ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/c5178f3c-29e6-4c98-a09f-4028cf70e496) |  ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/1a3546ce-6527-451a-8c0a-975f256964e0)  | ![image](https://github.com/jc-bao/policy-adaptation-survey/assets/60093981/76c82417-b7bd-4ea4-8988-f8e2b2fc1134)|
 
 
 ## 🐒 Policy
