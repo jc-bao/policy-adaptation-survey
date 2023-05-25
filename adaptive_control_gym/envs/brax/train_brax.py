@@ -14,7 +14,7 @@ def vis_html(file):
     app.run()
 
 def inference_fn(obs, rng):
-    act = jax.random.uniform(rng, shape=(1,), minval=-1.0, maxval=1.0)
+    act = jax.random.uniform(rng, shape=(3,), minval=-1.0, maxval=1.0)
     return act, ()
 
 def main():
