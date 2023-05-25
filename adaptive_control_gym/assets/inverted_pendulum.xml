@@ -4,9 +4,9 @@
         <joint armature="0" damping="1" limited="true" />
         <geom contype="0" friction="1 0.1 0.1" />
         <tendon />
-        <motor ctrlrange="-3 3" />
+        <motor ctrlrange="-1 1" />
     </default>
-    <option gravity="0 0 -9.81" timestep="0.02" />
+    <option gravity="0.0 0.0 0.0" timestep="0.02" />
     <custom>
         <!-- brax custom params -->
         <numeric data="10000" name="constraint_stiffness" />
@@ -17,22 +17,23 @@
     </custom>
     <size nstack="3000" />
     <worldbody>
-        <geom name="rail_y" pos="0 0 0" quat="1.0 0 0.0 0" size="0.02 1" type="capsule" />
+        <geom name="rail_y" pos="0 0 0" quat="1.0 0 0.0 0" size="0.02 1" mass="0.0001" type="capsule" />
         <body name="rail_x_with_cart" pos=" 0 0 0">
             <joint axis="0 0 1" limited="true" name="slider_y" pos="0 0 0" range="-1 1" type="slide" />
-            <geom name="rail_x" pos="0 0 0" quat="0.707 0 0.707 0" size="0.02 1" type="capsule" />
+            <geom name="rail_x" pos="0 0 0" quat="0.707 0 0.707 0" size="0.02 1" mass="0.0001" type="capsule" />
             <body name="cart" pos="0 0 0">
                 <joint axis="1 0 0" limited="true" name="slider_x" pos="0 0 0" range="-1 1" type="slide" />
-                <geom name="cart" pos="0 0 0" quat="0.707 0 0.707 0" size="0.1 0.1" type="capsule" />
+                <geom name="cart" pos="0 0 0" quat="0.707 0 0.707 0" size="0.01 0.01" mass="0.0001"  type="capsule" />
                 <body name="pole" pos="0 0 0">
-                    <joint axis="0 1 0" name="hinge" pos="0 0 0" range="-90 90" type="hinge" />
-                    <geom fromto="0 0 0 0.001 0 0.6" name="cpole" size="0.049 0.3" type="capsule" />
+                    <joint axis="0 1 0" name="hinge" pos="0 0 0" range="-180 180" type="hinge" />
+                    <geom fromto="0.0 0 -0.3 0.0 0 0.3" name="cpole" size="0.05" type="capsule" />
                 </body>
             </body>
         </body>
     </worldbody>
     <actuator>
-        <motor ctrllimited="true" ctrlrange="-3 3" gear="100" joint="slider_x" name="act_x" />
-        <motor ctrllimited="true" ctrlrange="-3 3" gear="100" joint="slider_y" name="act_y" />
+        <motor ctrllimited="true" ctrlrange="-1 1" gear="100" joint="slider_x" name="act_x" />
+        <motor ctrllimited="true" ctrlrange="-1 1" gear="100" joint="slider_y" name="act_y" />
+        <motor ctrllimited="true" ctrlrange="-1 1" gear="10" joint="hinge" name="act_hinge" />
     </actuator>
 </mujoco>
