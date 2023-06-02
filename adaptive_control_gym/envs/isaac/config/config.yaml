@@ -47,7 +47,7 @@ mt_timeout: 30
 wandb_activate: False
 wandb_group: ""
 wandb_name: ${train.params.config.name}
-wandb_entity: ""
+wandb_entity: "chaoyipan"
 wandb_project: "omniisaacgymenvs"
 
 # set default task and default training config based on task

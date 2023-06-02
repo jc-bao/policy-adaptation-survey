@@ -29,8 +29,8 @@ class RLGTrainer():
         vecenv.register('RLGPU',
                         lambda config_name, num_actors, **kwargs: RLGPUEnv(config_name, num_actors, **kwargs))
         env_configurations.register('rlgpu', {
+            'env_creator': lambda **kwargs: env, 
             'vecenv_type': 'RLGPU',
-            'env_creator': lambda **kwargs: env
         })
 
         self.rlg_config_dict = omegaconf_to_dict(self.cfg.train)
@@ -82,7 +82,15 @@ def parse_hydra_configs(cfg: DictConfig):
     cfg.seed = set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
     cfg_dict['seed'] = cfg.seed
 
-    task = initialize_task(cfg_dict, env)
+    assert cfg['task_name'] == 'Crazyflie', 'Only Crazyflie is supported for now'
+    from omniisaacgymenvs.utils.config_utils.sim_config import SimConfig
+    sim_config = SimConfig(cfg_dict)
+    from adaptive_control_gym.envs.isaac.crazyflie import CrazyflieTask
+    task = CrazyflieTask(
+        name=cfg["task_name"], sim_config=sim_config, env=env
+    )
+    env.set_task(task=task, sim_params=sim_config.get_physics_params(), backend="torch", init_sim=True)
+
 
     if cfg.wandb_activate and rank == 0:
         # Make sure to install WandB if you actually use this.
@@ -99,7 +107,6 @@ def parse_hydra_configs(cfg: DictConfig):
             name=run_name,
             resume="allow",
         )
-
 
     rlg_trainer = RLGTrainer(cfg, cfg_dict)
     rlg_trainer.launch_rlg_hydra(env)
