@@ -359,7 +359,7 @@ class QuadTransEnv(gym.Env):
 
         # log and visualize for debug purpose
         state = {
-            'reward_groundtruth': self.get_reward().unsqueeze(-1),
+            'reward_groundtruth': self.get_reward().unsqueeze(-1), 
             'hitwall': (self.get_hit_penalty(self.xyz_drones) < 0.0) | (self.get_hit_penalty(self.xyz_obj) < 0.0),
             'rope_force_done': (torch.norm(rope_force_drones, dim=-1) > 500.0).any(dim=-1),
         }

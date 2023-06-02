@@ -17,9 +17,9 @@
     </custom>
     <size nstack="3000" />
     <worldbody>
-        <geom name="rail_y" pos="0 0 0" quat="1.0 0 0.0 0" size="0.02 0.1" mass="0.0001" type="capsule" />
+        <geom name="rail_z" pos="0 0 0" quat="1.0 0 0.0 0" size="0.02 0.1" mass="0.0001" type="capsule" />
         <body name="rail_x_with_cart" pos=" 0 0 0">
-            <joint axis="0 0 1" limited="false" name="slider_y" pos="0 0 0" type="slide" />
+            <joint axis="0 0 1" limited="false" name="slider_z" pos="0 0 0" type="slide" />
             <geom name="rail_x" pos="0 0 0" quat="0.707 0 0.707 0" size="0.02 0.1" mass="0.0001" type="capsule" />
             <body name="cart" pos="0 0 0">
                 <joint axis="1 0 0" limited="false" name="slider_x" pos="0 0 0" type="slide" />
@@ -37,7 +37,7 @@
         <!-- acc_max = 20 -->
         <!-- alpha_max = 500 -->
         <motor ctrllimited="true" ctrlrange="-1 1" gear="100.0" joint="slider_x" name="act_x" />
-        <motor ctrllimited="true" ctrlrange="-1 1" gear="100.0" joint="slider_y" name="act_y" />
+        <motor ctrllimited="true" ctrlrange="-1 1" gear="100.0" joint="slider_z" name="act_z" />
         <motor ctrllimited="true" ctrlrange="-1 1" gear="10.0" joint="hinge" name="act_hinge" />
     </actuator>
 </mujoco>
