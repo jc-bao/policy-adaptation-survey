@@ -12,7 +12,6 @@ import torch
 
 EPS = 1e-6   # small constant to avoid divisions by 0 and log(0)
 
-
 class CrazyflieTask(RLTask):
     def __init__(
             self,
