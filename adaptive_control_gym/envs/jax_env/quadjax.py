@@ -58,10 +58,11 @@ class Quad2D(environment.Environment):
         reward = 1.0 - 0.8 * err_pos - 0.05 * err_vel
         reward = reward.squeeze()
         if self.task == "jumping":
-            drone_panelty = get_hit_penalty(state.y, state.z) * 10.0
-            obj_panelty = get_hit_penalty(state.y_obj, state.z_obj) * 10.0
-            reward *= ((drone_panelty>=0) | (obj_panelty>=0)).astype(jnp.float32)
+            drone_panelty = get_hit_penalty(state.y, state.z) * 3.0
+            obj_panelty = get_hit_penalty(state.y_obj, state.z_obj) * 3.0
+            # reward *= ((drone_panelty>=0) | (obj_panelty>=0)).astype(jnp.float32)
             reward += (drone_panelty + obj_panelty)
+            reward +=  0.05 * err_vel
         env_action = Action(thrust=thrust, tau=tau)
 
         old_loose_state = state.l_rope < (params.l - params.rope_taut_therehold)
@@ -127,8 +128,12 @@ class Quad2D(environment.Environment):
         ts = jnp.arange(
             0, self.default_params.max_steps_in_episode + 50, self.default_params.dt
         )
-        y_traj = jnp.zeros_like(ts) + 1.0
-        z_traj = jnp.zeros_like(ts)
+        key_y, key_z, key_sign = jax.random.split(key, 3)
+        sign = jax.random.choice(key_sign, jnp.array([-1.0, 1.0]))
+        y = jax.random.uniform(key_y, shape=(), minval=0.12, maxval=1.0)
+        z = jax.random.uniform(key_z, shape=(), minval=-1.0, maxval=1.0)
+        y_traj = jnp.zeros_like(ts) + sign * y
+        z_traj = jnp.zeros_like(ts) + z
         y_dot_traj = jnp.zeros_like(ts)
         z_dot_traj = jnp.zeros_like(ts)
         return y_traj, z_traj, y_dot_traj, z_dot_traj
@@ -400,7 +405,7 @@ def test_env(env: Quad2D, policy, render_video=False):
         plt.plot([s.y_tar for s in state_seq], [s.z_tar for s in state_seq], "--", alpha=0.3)
 
         if env.task == 'jumping':
-            hy, hz = 0.05, 0.1
+            hy, hz = 0.05, 0.3
             square1 = [[hy, hz], [hy, 2.0], [-hy, 2.0], [-hy, hz], [hy, hz]]
             square2 = [[hy, -hz], [hy, -2.0], [-hy, -2.0], [-hy, -hz], [hy, -hz]]
             for square in [square1, square2]:

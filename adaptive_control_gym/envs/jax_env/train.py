@@ -11,6 +11,7 @@ from gymnax.wrappers.purerl import LogWrapper
 import time
 from matplotlib import pyplot as plt
 from dataclasses import dataclass as pydataclass
+import tyro
 
 from adaptive_control_gym.envs.jax_env.quadjax import Quad2D, test_env
 
