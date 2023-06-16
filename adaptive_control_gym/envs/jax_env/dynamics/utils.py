@@ -51,6 +51,8 @@ class EnvParams:
     delta_zh: float = -0.06  # z displacement of the hook from the quadrotor center
     max_steps_in_episode: int = 300
     rope_taut_therehold: float = 1e-4
+    traj_obs_len: int = 5
+    traj_obs_gap: int = 5
 
 @struct.dataclass
 class Action:

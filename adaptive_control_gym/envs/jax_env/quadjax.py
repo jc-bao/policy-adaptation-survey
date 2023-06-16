@@ -117,7 +117,7 @@ class Quad2D(environment.Environment):
         # get trajectory
         scale = 0.8
         ts = jnp.arange(
-            0, self.default_params.max_steps_in_episode, self.default_params.dt
+            0, self.default_params.max_steps_in_episode + 50, self.default_params.dt
         )  # NOTE: do not use params for jax limitation
         w1 = 2 * jnp.pi * 0.25
         w2 = 2 * jnp.pi * 0.5
@@ -135,7 +135,7 @@ class Quad2D(environment.Environment):
         ) + scale * rand_amp_z[1] * w2 * jnp.cos(w2 * ts + rand_phase_z[1])
         return y_traj, z_traj, y_dot_traj, z_dot_traj
 
-    def get_obs(self, state: EnvState) -> chex.Array:
+    def get_obs(self, state: EnvState, params: EnvParams) -> chex.Array:
         """Return angle in polar coordinates and change."""
         
         obs_elements = [
@@ -164,10 +164,10 @@ class Quad2D(environment.Environment):
             state.y_hook_dot / 4.0,
             state.z_hook_dot / 4.0,
         ]
-        
-        # Debug print
-        # for i, elem in enumerate(obs_elements):
-        #     print(f"Element {i}: shape {jax.numpy.shape(elem)}")
+        # future trajectory observation 
+        # start arange from step+1, end at step+params.traj_obs_len*params.traj_obs_gap+1, with gap params.traj_obs_gap as step
+        obs_elements.append(*state.y_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)])
+        obs_elements.append(*state.z_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)])
         
         return jnp.array(obs_elements).squeeze()
 
