@@ -8,8 +8,10 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import numpy as np
 from functools import partial
+from dataclasses import dataclass as pydataclass
+import tyro
 
-from adaptive_control_gym.envs.jax_env.dynamics.utils import angle_normalize, EnvParams, EnvState, Action
+from adaptive_control_gym.envs.jax_env.dynamics.utils import angle_normalize, get_hit_penalty, EnvParams, EnvState, Action
 from adaptive_control_gym.envs.jax_env.dynamics.taut import get_taut_dynamics
 from adaptive_control_gym.envs.jax_env.dynamics.loose import get_loose_dynamics
 from adaptive_control_gym.envs.jax_env.dynamics.trans import get_dynamic_transfer
@@ -23,10 +25,16 @@ class Quad2D(environment.Environment):
 
     def __init__(self, task: str = "tracking_zigzag"):
         super().__init__()
+        self.task = task
+        # reference trajectory function
         if task == "tracking":
             self.generate_traj = self.generate_lissa_traj
         elif task == "tracking_zigzag":
             self.generate_traj = self.generate_zigzag_traj
+        elif task == "jumping":
+            self.generate_traj = self.generate_fixed_traj
+        else:
+            raise NotImplementedError
         self.taut_dynamics = get_taut_dynamics()
         self.loose_dynamics = get_loose_dynamics()
         self.dynamic_transfer = get_dynamic_transfer()
@@ -49,6 +57,11 @@ class Quad2D(environment.Environment):
         err_vel = jnp.sqrt((state.y_dot_tar - state.y_obj_dot) ** 2 + (state.z_dot_tar - state.z_obj_dot) ** 2) 
         reward = 1.0 - 0.8 * err_pos - 0.05 * err_vel
         reward = reward.squeeze()
+        if self.task == "jumping":
+            drone_panelty = get_hit_penalty(state.y, state.z) * 10.0
+            obj_panelty = get_hit_penalty(state.y_obj, state.z_obj) * 10.0
+            reward *= ((drone_panelty>=0) | (obj_panelty>=0)).astype(jnp.float32)
+            reward += (drone_panelty + obj_panelty)
         env_action = Action(thrust=thrust, tau=tau)
 
         old_loose_state = state.l_rope < (params.l - params.rope_taut_therehold)
@@ -76,8 +89,11 @@ class Quad2D(environment.Environment):
         # generate reference trajectory by adding a few sinusoids together
         y_traj, z_traj, y_dot_traj, z_dot_traj = self.generate_traj(key)
 
-        high = jnp.array([1, 1, jnp.pi / 3])
-        y, z, theta = jax.random.uniform(key, shape=(3,), minval=-high, maxval=high)
+        if self.task == 'jumping':
+            y, z, theta = -1.0, 0.0, 0.0
+        else:
+            high = jnp.array([1, 1, jnp.pi / 3])
+            y, z, theta = jax.random.uniform(key, shape=(3,), minval=-high, maxval=high)
         y_hook = y + params.delta_yh * jnp.cos(theta) - params.delta_zh * jnp.sin(theta) 
         z_hook = z + params.delta_yh * jnp.sin(theta) + params.delta_zh * jnp.cos(theta)
         state = EnvState(
@@ -105,7 +121,19 @@ class Quad2D(environment.Environment):
         delta_zh = jax.random.uniform(key6, shape=(), minval=-0.06, maxval=0.00)
         
         return EnvParams(m=m, I=I, mo=mo, l=l, delta_yh=delta_yh, delta_zh=delta_zh)
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def generate_fixed_traj(self, key: chex.PRNGKey) -> Tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
+        ts = jnp.arange(
+            0, self.default_params.max_steps_in_episode + 50, self.default_params.dt
+        )
+        y_traj = jnp.zeros_like(ts) + 1.0
+        z_traj = jnp.zeros_like(ts)
+        y_dot_traj = jnp.zeros_like(ts)
+        z_dot_traj = jnp.zeros_like(ts)
+        return y_traj, z_traj, y_dot_traj, z_dot_traj
 
+    @partial(jax.jit, static_argnums=(0,))
     def generate_lissa_traj(self, key: chex.PRNGKey) -> chex.Array:
         # get random attitude and phase
         key_amp_y, key_phase_y, key_amp_z, key_phase_z = jax.random.split(key, 4)
@@ -138,6 +166,7 @@ class Quad2D(environment.Environment):
         ) + scale * rand_amp_z[1] * w2 * jnp.cos(w2 * ts + rand_phase_z[1])
         return y_traj, z_traj, y_dot_traj, z_dot_traj
     
+    @partial(jax.jit, static_argnums=(0,))
     def generate_zigzag_traj(self, key: chex.PRNGKey) -> chex.Array:
         point_per_seg = 40
         num_seg = self.default_params.max_steps_in_episode // point_per_seg + 1
@@ -369,6 +398,14 @@ def test_env(env: Quad2D, policy, render_video=False):
         frame_list = np.arange(np.max([0, frame_num - 200]), frame_num + 1)
         plt.plot([s.y_obj for s in state_seq[frame_list[0]:frame_list[-1]]], [s.z_obj for s in state_seq[frame_list[0]:frame_list[-1]]], alpha=0.5)
         plt.plot([s.y_tar for s in state_seq], [s.z_tar for s in state_seq], "--", alpha=0.3)
+
+        if env.task == 'jumping':
+            hy, hz = 0.05, 0.1
+            square1 = [[hy, hz], [hy, 2.0], [-hy, 2.0], [-hy, hz], [hy, hz]]
+            square2 = [[hy, -hz], [hy, -2.0], [-hy, -2.0], [-hy, -hz], [hy, -hz]]
+            for square in [square1, square2]:
+                x, y = zip(*square)
+                plt.plot(x, y, linestyle='-')
         
         start = max(0, frame_num)
         for i in range(start, frame_num + 1):
@@ -450,8 +487,13 @@ def test_env(env: Quad2D, policy, render_video=False):
     plt.xlabel("time")
     plt.savefig("../results/plot.png")
 
-if __name__=='__main__':
-    env = Quad2D(task="tracking_zigzag")
+@pydataclass
+class Args:
+    task: str = "tracking"
+    render: bool = False
+
+def main(args: Args):
+    env = Quad2D(task=args.task)
 
     def pid_policy(obs, rng):
         y = obs[0]
@@ -495,4 +537,7 @@ if __name__=='__main__':
 
     print('starting test...')
     # with jax.disable_jit():
-    test_env(env, policy=pid_policy, render_video=True)
+    test_env(env, policy=pid_policy, render_video=args.render)
+
+if __name__ == "__main__":
+    main(tyro.cli(Args))

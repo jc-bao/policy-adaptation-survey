@@ -10,6 +10,7 @@ import distrax
 from gymnax.wrappers.purerl import LogWrapper
 import time
 from matplotlib import pyplot as plt
+from dataclasses import dataclass as pydataclass
 
 from adaptive_control_gym.envs.jax_env.quadjax import Quad2D, test_env
 
@@ -89,7 +90,7 @@ def make_train(config):
     config["MINIBATCH_SIZE"] = (
         config["NUM_ENVS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
-    env= Quad2D()
+    env= Quad2D(config["task"])
     env = LogWrapper(env)
 
     def linear_schedule(count):
@@ -281,7 +282,11 @@ def make_train(config):
 
     return train
 
-if __name__=='__main__':
+@pydataclass
+class Args:
+    task: str = "tracking"
+
+def main(args: Args):
     config = {
         "LR": 3e-4,
         "NUM_ENVS": 2048,
@@ -297,6 +302,7 @@ if __name__=='__main__':
         "MAX_GRAD_NORM": 0.5,
         "ACTIVATION": "tanh",
         "ANNEAL_LR": False,
+        "task": args.task
     }
     rng = jax.random.PRNGKey(42)
     t0 = time.time()
@@ -328,7 +334,7 @@ if __name__=='__main__':
         pickle.dump(out["runner_state"][0].params, f)
 
     rng = jax.random.PRNGKey(1)
-    env = Quad2D()
+    env = Quad2D(task=args.task)
     apply_fn = out['runner_state'][0].apply_fn
     params= out['runner_state'][0].params
     def policy(obs, rng):
@@ -336,3 +342,6 @@ if __name__=='__main__':
     env.reset(rng)
     # test policy
     test_env(env, policy=policy, render_video=True)  
+
+if __name__ == "__main__":
+    main(tyro.cli(Args))
