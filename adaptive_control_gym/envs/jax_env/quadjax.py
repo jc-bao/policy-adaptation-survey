@@ -296,9 +296,9 @@ def test_env(env: Quad2D, policy, render_video=False):
     # plot trajectory
     def update_plot(frame_num):
         plt.gca().clear()
-        frame_list = np.arange(np.max([0, frame_num - 100]), frame_num + 1)
+        frame_list = np.arange(np.max([0, frame_num - 200]), frame_num + 1)
         plt.plot([s.y_obj for s in state_seq[frame_list[0]:frame_list[-1]]], [s.z_obj for s in state_seq[frame_list[0]:frame_list[-1]]], alpha=0.5)
-        plt.plot([s.y_tar for s in state_seq[frame_list[0]:frame_list[-1]]], [s.z_tar for s in state_seq[frame_list[0]:frame_list[-1]]], "--", alpha=0.3)
+        plt.plot([s.y_tar for s in state_seq], [s.z_tar for s in state_seq], "--", alpha=0.3)
         
         start = max(0, frame_num)
         for i in range(start, frame_num + 1):
@@ -317,6 +317,7 @@ def test_env(env: Quad2D, policy, render_video=False):
             plt.plot(state_seq[i].y_obj, state_seq[i].z_obj, "o", color="b", alpha=alpha)
             # plot hook as cross
             plt.plot(state_seq[i].y_hook, state_seq[i].z_hook, "x", color="r", alpha=alpha)
+            # plot rope as line (gree if slack, red if taut)
             plt.arrow(
                 state_seq[i].y_hook,
                 state_seq[i].z_hook,
