@@ -21,9 +21,12 @@ class Quad2D(environment.Environment):
     github.com/openai/gym/blob/master/gym/envs/classic_control/Quad2D.py
     """
 
-    def __init__(self):
+    def __init__(self, task: str = "tracking"):
         super().__init__()
-        # self.obs_shape = (24,)
+        if task == "tracking":
+            self.generate_traj = self.generate_lissa_traj
+        elif task == "tracking_zigzag":
+            self.generate_traj = self.generate_zigzag_traj
         self.taut_dynamics = get_taut_dynamics()
         self.loose_dynamics = get_loose_dynamics()
         self.dynamic_transfer = get_dynamic_transfer()
@@ -103,7 +106,7 @@ class Quad2D(environment.Environment):
         
         return EnvParams(m=m, I=I, mo=mo, l=l, delta_yh=delta_yh, delta_zh=delta_zh)
 
-    def generate_traj(self, key: chex.PRNGKey) -> chex.Array:
+    def generate_lissa_traj(self, key: chex.PRNGKey) -> chex.Array:
         # get random attitude and phase
         key_amp_y, key_phase_y, key_amp_z, key_phase_z = jax.random.split(key, 4)
         rand_amp_y = jax.random.uniform(key_amp_y, shape=(2,), minval=-1.0, maxval=1.0)
@@ -134,6 +137,57 @@ class Quad2D(environment.Environment):
             w1 * ts + rand_phase_z[0]
         ) + scale * rand_amp_z[1] * w2 * jnp.cos(w2 * ts + rand_phase_z[1])
         return y_traj, z_traj, y_dot_traj, z_dot_traj
+    
+    def generate_zigzag_traj(self, key: chex.PRNGKey) -> chex.Array:
+        point_per_seg = 40
+        num_seg = self.default_params.max_steps_in_episode // point_per_seg + 1
+        ts = jnp.arange(
+            0, num_seg*point_per_seg, self.default_params.dt
+        )
+
+        key_keypoints = jax.random.split(key, num_seg)
+        key_angles = jax.random.split(key, num_seg)
+
+        # sample from 2d -1.5 to 1.5
+        prev_y, prev_z = jax.random.uniform(key_keypoints[0], shape=(2,), minval=-1.5, maxval=1.5)
+
+        def update_fn(carry, i):
+            key_keypoint, key_angle, prev_y, prev_z = carry
+
+            # Calculate the previous point angle to the center
+            prev_angle = jnp.arctan2(prev_z, prev_y) + jnp.pi
+
+            # Sample a random displacement angle from [-pi/, pi/3]
+            delta_angle = jax.random.uniform(key_angle, minval=-jnp.pi/3, maxval=jnp.pi/3)
+
+            # Calculate the new angle
+            angle = prev_angle + delta_angle
+
+            # Sample the distance from [1.5, 2.5]
+            distance = jax.random.uniform(key_keypoint, minval=1.5, maxval=2.5)
+
+            # Calculate the new point
+            next_y = prev_y + distance * jnp.cos(angle)
+            next_z = prev_z + distance * jnp.sin(angle)
+
+            y_traj_seg = jnp.linspace(prev_y, next_y, point_per_seg, endpoint=False)
+            z_traj_seg = jnp.linspace(prev_z, next_z, point_per_seg, endpoint=False)
+            y_dot_traj_seg = (next_y - prev_y) / (point_per_seg + 1) / self.default_params.dt * jnp.ones(point_per_seg)
+            z_dot_traj_seg = (next_z - prev_z) / (point_per_seg + 1) / self.default_params.dt * jnp.ones(point_per_seg)
+
+            carry = (key_keypoints[i+1], key_angles[i+1], next_y, next_z)
+            return carry, (y_traj_seg, z_traj_seg, y_dot_traj_seg, z_dot_traj_seg)
+
+        initial_carry = (key_keypoints[1], key_angles[1], prev_y, prev_z)
+        _, (y_traj_segs, z_traj_segs, y_dot_traj_segs, z_dot_traj_segs) = lax.scan(update_fn, initial_carry, jnp.arange(1, num_seg))
+
+        y_traj = jnp.concatenate(y_traj_segs)
+        z_traj = jnp.concatenate(z_traj_segs)
+        y_dot_traj = jnp.concatenate(y_dot_traj_segs)
+        z_dot_traj = jnp.concatenate(z_dot_traj_segs)
+
+        return y_traj, z_traj, y_dot_traj, z_dot_traj
+
 
     def get_obs(self, state: EnvState, params: EnvParams) -> chex.Array:
         """Return angle in polar coordinates and change."""
@@ -185,7 +239,6 @@ class Quad2D(environment.Environment):
             (params.delta_zh-(-0.06))/(0.0-(-0.06)) * 2.0 - 1.0,
         ]
 
-        
         return jnp.array(obs_elements+param_elements).squeeze()
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> bool:
@@ -286,7 +339,6 @@ def test_env(env: Quad2D, policy, render_video=False):
     rng = jax.random.PRNGKey(1)
     rng, rng_params = jax.random.split(rng)
     env_params = env.sample_params(rng_params)
-    # env_params = env.default_params
 
     state_seq, obs_seq, reward_seq = [], [], []
     rng, rng_reset = jax.random.split(rng)
@@ -399,7 +451,7 @@ def test_env(env: Quad2D, policy, render_video=False):
     plt.savefig("../results/plot.png")
 
 if __name__=='__main__':
-    env = Quad2D()
+    env = Quad2D(task="tracking_zigzag")
 
     def pid_policy(obs, rng):
         y = obs[0]
@@ -441,6 +493,6 @@ if __name__=='__main__':
 
     random_policy = lambda obs, rng: env.action_space(env.default_params).sample(rng)
 
-    # with jax.disable_jit():
     print('starting test...')
-    test_env(env, policy=pid_policy, render_video=False)
+    # with jax.disable_jit():
+    test_env(env, policy=pid_policy, render_video=True)
