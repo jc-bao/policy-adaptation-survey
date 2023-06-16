@@ -307,17 +307,18 @@ if __name__=='__main__':
     out = jax.block_until_ready(train_jit(rng))
     print(f"train time: {time.time() - t0:.2f} s")
     # plot in three subplots of returned_episode_returns, err_pos, err_vel
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
+    fig, axs = plt.subplots(3, 1)
     step = (np.arange(out["metrics"]["returned_episode_returns"].shape[0]) + 1) * config["NUM_STEPS"] * config["NUM_ENVS"]
-    ax1.plot(step, out["metrics"]["returned_episode_returns"].mean([-1, -2]))
-    ax1.set_xlabel("Steps")
-    ax1.set_ylabel("Return")
-    ax2.plot(step, out["metrics"]["err_pos"].mean([-1, -2]))
-    ax2.set_xlabel("Steps")
-    ax2.set_ylabel("Error Position")
-    ax3.plot(step, out["metrics"]["err_vel"].mean([-1, -2]))
-    ax3.set_xlabel("Steps")
-    ax3.set_ylabel("Error Velocity")
+    returns = out["metrics"]["returned_episode_returns"].mean([-1, -2])
+    err_pos = out["metrics"]["err_pos"].mean([-1, -2])
+    err_vel = out["metrics"]["err_vel"].mean([-1, -2])
+    for i, (ax, data, title) in enumerate(zip(axs, [returns, err_pos, err_vel], ["returns", "err_pos", "err_vel"])):
+        ax.plot(step, data)
+        ax.set_ylabel(title)
+        ax.set_xlabel("steps")
+        # label out last value in a box
+        last_value = data[-1]
+        ax.text(step[-1], last_value, f"{last_value:.2f}", bbox=dict(facecolor='red', alpha=0.8))
     # save 
     plt.savefig('../results/ppo.png')
 

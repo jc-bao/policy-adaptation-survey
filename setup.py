@@ -19,5 +19,7 @@ setup(name='adaptive_control_gym',
         'tqdm', 
         'tyro', 
         'meshcat', 
+        'sympy', 
+        'gymnax'
         ]
 )

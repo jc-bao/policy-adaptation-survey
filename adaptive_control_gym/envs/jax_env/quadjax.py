@@ -373,7 +373,6 @@ def test_env(env: Quad2D, policy, render_video=False):
         plt.ylabel(name)
 
     plt.xlabel("time")
-    plt.tight_layout()
     plt.savefig("../results/plot.png")
 
 if __name__=='__main__':
@@ -420,4 +419,5 @@ if __name__=='__main__':
     random_policy = lambda obs, rng: env.action_space(env.default_params).sample(rng)
 
     # with jax.disable_jit():
-    test_env(env, policy=pid_policy, render_video=False)
+    print('starting test...')
+    test_env(env, policy=pid_policy, render_video=True)
