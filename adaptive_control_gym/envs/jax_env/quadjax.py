@@ -55,7 +55,7 @@ class Quad2D(environment.Environment):
 
         done = self.is_terminal(state, params)
         return (
-            lax.stop_gradient(self.get_obs(new_state)),
+            lax.stop_gradient(self.get_obs(new_state, params)),
             lax.stop_gradient(new_state),
             reward,
             done,
@@ -99,7 +99,7 @@ class Quad2D(environment.Environment):
         mo = jax.random.uniform(key3, shape=(), minval=0.003, maxval=0.01)
         l = jax.random.uniform(key4, shape=(), minval=0.2, maxval=0.4)
         delta_yh = jax.random.uniform(key5, shape=(), minval=-0.04, maxval=0.04)
-        delta_zh = jax.random.uniform(key6, shape=(), minval=0.0, maxval=0.06)
+        delta_zh = jax.random.uniform(key6, shape=(), minval=-0.06, maxval=0.00)
         
         return EnvParams(m=m, I=I, mo=mo, l=l, delta_yh=delta_yh, delta_zh=delta_zh)
 
@@ -166,20 +166,23 @@ class Quad2D(environment.Environment):
         ]
         # future trajectory observation 
         # start arange from step+1, end at step+params.traj_obs_len*params.traj_obs_gap+1, with gap params.traj_obs_gap as step
-        future_traj_idx = jnp.arange(state.time+1, state.time+params.traj_obs_len*params.traj_obs_gap+1, params.traj_obs_gap)
-        obs_elements.append(*state.y_traj[future_traj_idx])
-        obs_elements.append(*state.z_traj[future_traj_idx])
-        obs_elements.append(*state.y_dot_traj[future_traj_idx] / 4.0)
-        obs_elements.append(*state.z_dot_traj[future_traj_idx] / 4.0)
+        # NOTE: use statis default value rather than params for jax limitation
+        traj_obs_len, traj_obs_gap = self.default_params.traj_obs_len, self.default_params.traj_obs_gap
+        for i in range(traj_obs_len):
+            idx = state.time + 1 + i * traj_obs_gap
+            obs_elements.append(state.y_traj[idx])
+            obs_elements.append(state.z_traj[idx])
+            obs_elements.append(state.y_dot_traj[idx] / 4.0)
+            obs_elements.append(state.z_dot_traj[idx] / 4.0)
 
         # parameter observation
         param_elements = [
             (params.m-0.025)/(0.04-0.025) * 2.0 - 1.0,
-            (params.I-2.5e-4)/(3.5e-4 - 2.5e-4) * 2.0 - 1.0,
+            (params.I-2.5e-5)/(3.5e-5 - 2.5e-5) * 2.0 - 1.0,
             (params.mo-0.003)/(0.01-0.003) * 2.0 - 1.0,
             (params.l-0.2)/(0.4-0.2) * 2.0 - 1.0,
-            (params.delta_yh-0.04)/(0.04-(-0.04)) * 2.0 - 1.0,
-            (params.delta_zh-0.0)/(0.06-0.0) * 2.0 - 1.0,
+            (params.delta_yh-(-0.04))/(0.04-(-0.04)) * 2.0 - 1.0,
+            (params.delta_zh-(-0.06))/(0.0-(-0.06)) * 2.0 - 1.0,
         ]
 
         
@@ -220,7 +223,8 @@ class Quad2D(environment.Environment):
 
     def observation_space(self, params: EnvParams) -> spaces.Box:
         """Observation space of the environment."""
-        return spaces.Box(-1.0, 1.0, shape=(24+params.traj_obs_len*4+6,), dtype=jnp.float32)
+        # NOTE: use default params for jax limitation
+        return spaces.Box(-1.0, 1.0, shape=(24+self.default_params.traj_obs_len*4+6,), dtype=jnp.float32)
 
     def state_space(self, params: EnvParams) -> spaces.Dict:
         """State space of the environment."""
@@ -368,14 +372,18 @@ def test_env(env: Quad2D, policy, render_video=False):
     plt.ylabel("reward")
 
     # plot obs
-    plt.subplot(num_rows, 6, 2)
-    for i in range(len(obs_seq[0])):
-        plt.plot(time, [o[i] for o in obs_seq], label=f"obs[{i}]")
-    plt.ylabel("obs")
-    plt.legend(fontsize=3)
+    # plot 10 obs in a subplot
+    current_fig = 2
+    for i in range(len(obs_seq[0])//10+1):
+        plt.subplot(num_rows, 6, current_fig)
+        current_fig += 1
+        for j in range(10):
+            idx = i*10+j
+            plt.plot(time, [o[idx] for o in obs_seq], label=f"{idx}")
+        plt.ylabel("obs")
+        plt.legend(fontsize=6, ncol=2)
 
     # plot state
-    current_fig = 3
     for i, (name, value) in enumerate(state_seq[0].__dict__.items()):
         if name in ["y_traj", "z_traj", "y_dot_traj", "z_dot_traj", "theta_traj"]:
             continue
@@ -435,4 +443,4 @@ if __name__=='__main__':
 
     # with jax.disable_jit():
     print('starting test...')
-    test_env(env, policy=pid_policy, render_video=True)
+    test_env(env, policy=pid_policy, render_video=False)
