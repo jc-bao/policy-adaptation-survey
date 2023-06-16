@@ -21,7 +21,7 @@ class Quad2D(environment.Environment):
     github.com/openai/gym/blob/master/gym/envs/classic_control/Quad2D.py
     """
 
-    def __init__(self, task: str = "tracking"):
+    def __init__(self, task: str = "tracking_zigzag"):
         super().__init__()
         if task == "tracking":
             self.generate_traj = self.generate_lissa_traj
@@ -157,7 +157,7 @@ class Quad2D(environment.Environment):
             # Calculate the previous point angle to the center
             prev_angle = jnp.arctan2(prev_z, prev_y) + jnp.pi
 
-            # Sample a random displacement angle from [-pi/, pi/3]
+            # Sample a random displacement angle from [-pi/3, pi/3]
             delta_angle = jax.random.uniform(key_angle, minval=-jnp.pi/3, maxval=jnp.pi/3)
 
             # Calculate the new angle
