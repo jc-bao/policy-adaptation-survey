@@ -23,7 +23,7 @@ class Quad2D(environment.Environment):
 
     def __init__(self):
         super().__init__()
-        self.obs_shape = (24,)
+        # self.obs_shape = (24,)
         self.taut_dynamics = get_taut_dynamics()
         self.loose_dynamics = get_loose_dynamics()
         self.dynamic_transfer = get_dynamic_transfer()
@@ -166,10 +166,24 @@ class Quad2D(environment.Environment):
         ]
         # future trajectory observation 
         # start arange from step+1, end at step+params.traj_obs_len*params.traj_obs_gap+1, with gap params.traj_obs_gap as step
-        obs_elements.append([*state.y_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)]])
-        obs_elements.append([*state.z_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)]])
+        future_traj_idx = jnp.arange(state.time+1, state.time+params.traj_obs_len*params.traj_obs_gap+1, params.traj_obs_gap)
+        obs_elements.append(*state.y_traj[future_traj_idx])
+        obs_elements.append(*state.z_traj[future_traj_idx])
+        obs_elements.append(*state.y_dot_traj[future_traj_idx] / 4.0)
+        obs_elements.append(*state.z_dot_traj[future_traj_idx] / 4.0)
+
+        # parameter observation
+        param_elements = [
+            (params.m-0.025)/(0.04-0.025) * 2.0 - 1.0,
+            (params.I-2.5e-4)/(3.5e-4 - 2.5e-4) * 2.0 - 1.0,
+            (params.mo-0.003)/(0.01-0.003) * 2.0 - 1.0,
+            (params.l-0.2)/(0.4-0.2) * 2.0 - 1.0,
+            (params.delta_yh-0.04)/(0.04-(-0.04)) * 2.0 - 1.0,
+            (params.delta_zh-0.0)/(0.06-0.0) * 2.0 - 1.0,
+        ]
+
         
-        return jnp.array(obs_elements).squeeze()
+        return jnp.array(obs_elements+param_elements).squeeze()
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> bool:
         """Check whether state is terminal."""
@@ -206,7 +220,7 @@ class Quad2D(environment.Environment):
 
     def observation_space(self, params: EnvParams) -> spaces.Box:
         """Observation space of the environment."""
-        return spaces.Box(-1.0, 1.0, shape=(24,), dtype=jnp.float32)
+        return spaces.Box(-1.0, 1.0, shape=(24+params.traj_obs_len*4+6,), dtype=jnp.float32)
 
     def state_space(self, params: EnvParams) -> spaces.Dict:
         """State space of the environment."""
