@@ -86,7 +86,7 @@ class Quad2D(environment.Environment):
             y_obj=y_hook + params.l * jnp.sin(theta), z_obj = z_hook - params.l * jnp.cos(theta), y_obj_dot=0.0, z_obj_dot=0.0,
             f_rope=0.0, f_rope_y=0.0, f_rope_z=0.0,l_rope=params.l,
         )
-        return self.get_obs(state), state
+        return self.get_obs(state, params), state
     
     @partial(jax.jit, static_argnums=(0,))
     def sample_params(self, key: chex.PRNGKey) -> EnvParams:
@@ -166,8 +166,8 @@ class Quad2D(environment.Environment):
         ]
         # future trajectory observation 
         # start arange from step+1, end at step+params.traj_obs_len*params.traj_obs_gap+1, with gap params.traj_obs_gap as step
-        obs_elements.append(*state.y_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)])
-        obs_elements.append(*state.z_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)])
+        obs_elements.append([*state.y_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)]])
+        obs_elements.append([*state.z_traj[jnp.arange(state.time+1, state.time+self.default_params.traj_obs_len*self.default_params.traj_obs_gap+1, self.default_params.traj_obs_gap)]])
         
         return jnp.array(obs_elements).squeeze()
 
