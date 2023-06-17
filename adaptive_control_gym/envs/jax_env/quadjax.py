@@ -31,7 +31,7 @@ class Quad2D(environment.Environment):
             self.generate_traj = self.generate_lissa_traj
         elif task == "tracking_zigzag":
             self.generate_traj = self.generate_zigzag_traj
-        elif task == "jumping":
+        elif task in ["jumping", "hovering"]:
             self.generate_traj = self.generate_fixed_traj
         else:
             raise NotImplementedError
@@ -55,14 +55,16 @@ class Quad2D(environment.Environment):
         tau = action[1] * params.max_torque
         err_pos = jnp.sqrt((state.y_tar - state.y_obj) ** 2 + (state.z_tar - state.z_obj) ** 2)
         err_vel = jnp.sqrt((state.y_dot_tar - state.y_obj_dot) ** 2 + (state.z_dot_tar - state.z_obj_dot) ** 2) 
-        reward = 1.0 - 0.8 * err_pos - 0.05 * err_vel
-        reward = reward.squeeze()
         if self.task == "jumping":
             drone_panelty = get_hit_penalty(state.y, state.z) * 3.0
             obj_panelty = get_hit_penalty(state.y_obj, state.z_obj) * 3.0
-            # reward *= ((drone_panelty>=0) | (obj_panelty>=0)).astype(jnp.float32)
-            reward += (drone_panelty + obj_panelty)
-            reward +=  0.05 * err_vel
+            reward = 1.0 - 0.8 * err_pos - 0.05 * err_vel \
+                + (drone_panelty + obj_panelty)
+        elif self.task == 'hovering':
+            reward = 1.0 - 0.6 * err_pos - 0.1 * err_vel
+        else:
+            reward = 1.0 - 0.8 * err_pos - 0.05 * err_vel
+        reward = reward.squeeze()
         env_action = Action(thrust=thrust, tau=tau)
 
         old_loose_state = state.l_rope < (params.l - params.rope_taut_therehold)
