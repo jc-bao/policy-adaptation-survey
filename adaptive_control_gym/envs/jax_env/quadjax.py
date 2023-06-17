@@ -177,9 +177,6 @@ class Quad2D(environment.Environment):
     def generate_zigzag_traj(self, key: chex.PRNGKey) -> chex.Array:
         point_per_seg = 40
         num_seg = self.default_params.max_steps_in_episode // point_per_seg + 1
-        ts = jnp.arange(
-            0, num_seg*point_per_seg, self.default_params.dt
-        )
 
         key_keypoints = jax.random.split(key, num_seg)
         key_angles = jax.random.split(key, num_seg)
