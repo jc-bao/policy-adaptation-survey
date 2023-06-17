@@ -58,7 +58,7 @@ class Quad2D(environment.Environment):
         if self.task == "jumping":
             drone_panelty = get_hit_penalty(state.y, state.z) * 3.0
             obj_panelty = get_hit_penalty(state.y_obj, state.z_obj) * 3.0
-            reward = 1.0 - 0.8 * err_pos - 0.05 * err_vel \
+            reward = 1.0 - 0.6 * err_pos - 0.15 * err_vel \
                 + (drone_panelty + obj_panelty)
         elif self.task == 'hovering':
             reward = 1.0 - 0.6 * err_pos - 0.1 * err_vel
