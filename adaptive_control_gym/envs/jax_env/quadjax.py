@@ -35,9 +35,11 @@ class Quad2D(environment.Environment):
             self.generate_traj = self.generate_fixed_traj
         else:
             raise NotImplementedError
+        # dynamics
         self.taut_dynamics = get_taut_dynamics()
         self.loose_dynamics = get_loose_dynamics()
         self.dynamic_transfer = get_dynamic_transfer()
+        # controllers
 
     @property
     def default_params(self) -> EnvParams:
@@ -506,22 +508,46 @@ def main(args: Args):
         y_dot = obs[3] * 4.0
         z_dot = obs[4] * 4.0
         theta_dot = obs[5] * 40.0
-        y_tar = obs[6] * 0.0 # DEBUG
-        z_tar = obs[7] * 0.0
-        y_dot_tar = obs[8] * 4.0 * 0.0
-        z_dot_tar = obs[9] * 4.0 * 0.0
+        y_obj = obs[6]
+        y_tar = obs[6] # DEBUG
+        z_tar = obs[7]
+        y_dot_tar = obs[8] * 4.0
+        z_dot_tar = obs[9] * 4.0
+        y_obj = obs[16]
+        z_obj = obs[17]
+        y_obj_dot = obs[18] * 4.0
+        z_obj_dot = obs[19] * 4.0
+        m = obs[25+5*4+0] * (0.04-0.025)/2.0 + (0.04+0.025)/2.0
+        I = obs[25+5*4+1] * (3.5e-5 - 2.5e-5)/2.0 + (3.5e-5 + 2.5e-5)/2.0
+        mo = obs[25+5*4+2] * (0.01-0.003)/2.0 + (0.01+0.003)/2.0
+        l = obs[25+5*4+3] * (0.4-0.2)/2.0 + (0.4+0.2)/2.0
+        delta_yh = obs[25+5*4+4] * (0.04-(-0.04))/2.0 + (0.04+(-0.04))/2.0
+        delta_zh = obs[25+5*4+5] * (0.0-(-0.06))/2.0 + (0.0+(-0.06))/2.0
 
-        w0 = 10.0
+        # get object target force
+        w0 = 8.0
         zeta = 0.95
-        kp = env.default_params.m * (w0**2)
-        kd = env.default_params.m * 2.0 * zeta * w0
-        target_force_y = kp * (y_tar - y) + kd * (y_dot_tar - y_dot)
+        kp = mo * (w0**2)
+        kd = mo * 2.0 * zeta * w0
+        target_force_y_obj = kp * (y_tar - y_obj) + kd * (y_dot_tar - y_obj_dot)
+        target_force_z_obj = kp * (z_tar - z_obj) + kd * (z_dot_tar - z_obj_dot) + mo * 9.81
+        phi_tar = -jnp.arctan2(target_force_y_obj, target_force_z_obj)
+        y_drone_tar = y_obj - l * jnp.sin(phi_tar) - delta_yh
+        z_drone_tar = z_obj + l * jnp.cos(phi_tar) - delta_zh
+
+        # get drone target force
+        w0 = 8.0
+        zeta = 0.95
+        kp = m * (w0**2)
+        kd = m * 2.0 * zeta * w0
+        target_force_y = kp * (y_drone_tar - y) + kd * (y_dot_tar - y_dot) + target_force_y_obj
         target_force_z = (
-            kp * (z_tar - z)
+            kp * (z_drone_tar - z)
             + kd * (z_dot_tar - z_dot)
-            + (env.default_params.m + env.default_params.mo) * env.default_params.g
-        )
+            + m * 9.81
+        ) + target_force_z_obj
         thrust = -target_force_y * jnp.sin(theta) + target_force_z * jnp.cos(theta)
+        thrust = jnp.sqrt(target_force_y**2 + target_force_z**2)
         target_theta = -jnp.arctan2(target_force_y, target_force_z)
 
         w0 = 30.0
