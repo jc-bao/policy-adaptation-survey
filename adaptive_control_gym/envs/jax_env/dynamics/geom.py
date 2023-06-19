@@ -18,8 +18,10 @@ def integrate_quat(quat: jnp.ndarray, omega: jnp.ndarray, dt: float) -> jnp.ndar
 def multiple_quat(quat1: jnp.ndarray, quat2: jnp.ndarray) -> jnp.ndarray:
     """Multiply two quaternions (x, y, z, w)."""
     quat = jnp.zeros(4)
-    quat[3] = quat1[3] * quat2[3] - jnp.dot(quat1[:3], quat2[:3])
-    quat[:3] = quat1[3] * quat2[:3] + quat2[3] * quat1[:3] + jnp.cross(quat1[:3], quat2[:3])
+    w = quat1[3] * quat2[3] - jnp.dot(quat1[:3], quat2[:3])
+    xyz = quat1[3] * quat2[:3] + quat2[3] * quat1[:3] + jnp.cross(quat1[:3], quat2[:3])
+    quat = quat.at[3].set(w)
+    quat = quat.at[:3].set(xyz)
     return quat
 
 @jax.jit

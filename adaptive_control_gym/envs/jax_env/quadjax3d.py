@@ -36,7 +36,7 @@ class Quad3D(environment.Environment):
             raise NotImplementedError
         # dynamics
         self.taut_dynamics = None
-        self.loose_dynamics = get_loose_dynamics_3d
+        self.loose_dynamics = get_loose_dynamics_3d()
         self.dynamic_transfer = None
         # controllers
 
@@ -107,7 +107,7 @@ class Quad3D(environment.Environment):
             pos = jax.random.uniform(
                 pos_key, shape=(3,), minval=-1.0, maxval=1.0)
         pos_hook = pos + params.hook_offset
-        pos_obj = pos + jnp.array([0.0, -params.l, 0.0])
+        pos_obj = pos + jnp.array([0.0, 0.0, -params.l])
         zeros3 = jnp.zeros(3)
         state = EnvState3D(
             # drone
@@ -335,7 +335,7 @@ def test_env(env: Quad3D, policy, render_video=False):
         if n_dones >= 1:
             break
 
-    num_figs = len(state_seq[0].__dict__) + 2
+    num_figs = len(state_seq[0].__dict__) + 20
     time = [s.time * env_params.dt for s in state_seq]
 
     # calculate number of rows needed
@@ -365,18 +365,21 @@ def test_env(env: Quad3D, policy, render_video=False):
     for i, (name, value) in enumerate(state_seq[0].__dict__.items()):
         if name in ["pos_traj", "vel_traj"]:
             continue
-        current_fig += 1
-        plt.subplot(num_rows, 6, current_fig)
-        if 'pos' in name or 'vel' in name:
+        elif (('pos' in name) or ('vel' in name)) and ('tar' not in name):
+            print(name)
             xyz = np.array([getattr(s, name) for s in state_seq])
             xyz_tar = np.array([getattr(s, name[:3] + "_tar")
                                for s in state_seq])
             for i, subplot_name in zip(range(3), ['x', 'y', 'z']):
+                current_fig += 1
+                plt.subplot(num_rows, 6, current_fig)
                 plt.plot(time, xyz[:, i], label=f"{subplot_name}")
                 plt.plot(time, xyz_tar[:, i], '--', label=f"{subplot_name}_tar")
                 plt.ylabel(name+"_"+subplot_name)
                 plt.legend()
         else:
+            current_fig += 1
+            plt.subplot(num_rows, 6, current_fig)
             plt.plot(time, [getattr(s, name) for s in state_seq])
             plt.ylabel(name)
 
@@ -441,8 +444,8 @@ def main(args: Args):
         env.default_params).sample(rng)
 
     print('starting test...')
-    # with jax.disable_jit():
-    test_env(env, policy=random_policy, render_video=args.render)
+    with jax.disable_jit():
+        test_env(env, policy=random_policy, render_video=args.render)
 
 
 if __name__ == "__main__":

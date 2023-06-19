@@ -131,7 +131,7 @@ def get_loose_dynamics_3d():
         vel_tar = env_state.vel_traj[time]
         # debug value
         last_thrust = env_action.thrust
-        last_torque = env_action.torque[2]
+        last_torque = env_action.torque
 
         env_state = env_state.replace(
             # drone
