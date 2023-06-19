@@ -133,33 +133,27 @@ class Quad3D(environment.Environment):
     def sample_params(self, key: chex.PRNGKey) -> EnvParams3D:
         """Sample environment parameters."""
 
-        key, key1, key2, key3, key4, key5, key6 = jax.random.split(key, 7)
+        param_key = jax.random.split(key)[0]
+        rand_val = jax.random.uniform(
+            param_key, shape=(9,), minval=0.0, maxval=1.0)
 
-        m = jax.random.uniform(key1, shape=(), minval=0.025, maxval=0.04)
-        I = jax.random.uniform(key2, shape=(), minval=2.5e-5, maxval=3.5e-5)
-        mo = jax.random.uniform(key3, shape=(), minval=0.003, maxval=0.01)
-        l = jax.random.uniform(key4, shape=(), minval=0.2, maxval=0.4)
-        delta_yh = jax.random.uniform(
-            key5, shape=(), minval=-0.04, maxval=0.04)
-        delta_zh = jax.random.uniform(
-            key6, shape=(), minval=-0.06, maxval=0.00)
+        m = 0.025 + 0.015 * rand_val[0]
+        I = jnp.array([1.2e-5, 1.2e-5, 2.0e-5]) + 0.5e-5 * rand_val[1:4]
+        mo = 0.005 + 0.005 * rand_val[4]
+        l = 0.2 + 0.2 * rand_val[5]
+        hook_offset = rand_val[6:9] * 0.04
 
-        return EnvParams3D(m=m, I=I, mo=mo, l=l, delta_yh=delta_yh, delta_zh=delta_zh)
+        return EnvParams3D(m=m, I=I, mo=mo, l=l, hook_offset=hook_offset)
 
     @partial(jax.jit, static_argnums=(0,))
     def generate_fixed_traj(self, key: chex.PRNGKey) -> Tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
-        ts = jnp.arange(
-            0, self.default_params.max_steps_in_episode + 50, self.default_params.dt
-        )
-        key_y, key_z, key_sign = jax.random.split(key, 3)
-        sign = jax.random.choice(key_sign, jnp.array([-1.0, 1.0]))
-        y = jax.random.uniform(key_y, shape=(), minval=0.12, maxval=1.0)
-        z = jax.random.uniform(key_z, shape=(), minval=-1.0, maxval=1.0)
-        y_traj = jnp.zeros_like(ts) + sign * y
-        z_traj = jnp.zeros_like(ts) + z
-        y_dot_traj = jnp.zeros_like(ts)
-        z_dot_traj = jnp.zeros_like(ts)
-        return y_traj, z_traj, y_dot_traj, z_dot_traj
+        zeros = jnp.zeros((self.default_params.max_steps_in_episode, 3))
+        key_pos = jax.random.split(key)[0]
+        pos = jax.random.uniform(
+            key_pos, shape=(3,), minval=-1.0, maxval=1.0)
+        pos_traj = zeros + pos
+        vel_traj = zeros
+        return pos_traj, vel_traj, pos, zeros
 
     @partial(jax.jit, static_argnums=(0,))
     def generate_lissa_traj(self, key: chex.PRNGKey) -> chex.Array:
@@ -242,25 +236,6 @@ class Quad3D(environment.Environment):
 
     def get_obs(self, state: EnvState3D, params: EnvParams3D) -> chex.Array:
         """Return angle in polar coordinates and change."""
-
-        env_state = env_state.replace(
-            # drone
-            pos=pos, vel=vel, omega=omega, quat=quat,
-            # object
-            pos_obj=pos_obj, vel_obj=vel_obj,
-            # hook
-            pos_hook=pos_hook, vel_hook=vel_hook,
-            # rope
-            l_rope=l_rope, zeta=zeta, zeta_dot=zeta_dot,
-            f_rope=f_rope, f_rope_norm=f_rope_norm,
-            # trajectory
-            pos_tar=pos_tar, vel_tar=vel_tar,
-            # debug value
-            last_thrust=last_thrust, last_torque=last_torque,
-            # step
-            time=time,
-        )
-
         obs_elements = [
             # drone
             state.pos, state.vel/4.0, state.quat, state.omega/40.0,  # 3*3+4=13
@@ -282,14 +257,18 @@ class Quad3D(environment.Environment):
             obs_elements.append(state.pos_traj[idx]),
             obs_elements.append(state.vel_traj[idx]/4.0)
 
+        param_key = jax.random.split(key)[0]
+        rand_val = jax.random.uniform(
+            param_key, shape=(9,), minval=0.0, maxval=1.0)
+
         # parameter observation
         param_elements = [
             jnp.array([
                 (params.m-0.025)/(0.04-0.025) * 2.0 - 1.0,
-                (params.I-2.5e-5)/(3.5e-5 - 2.5e-5) * 2.0 - 1.0,
-                (params.mo-0.003)/(0.01-0.003) * 2.0 - 1.0,
-                (params.l-0.2)/(0.4-0.2) * 2.0 - 1.0]),  # 4
-            (params.hook_offset-(-0.06))/(0.0-(-0.06)) * 2.0 - 1.0,  # 3
+                (params.mo-0.005)/0.05 * 2.0 - 1.0,
+                (params.l-0.2)/(0.4-0.2) * 2.0 - 1.0]),  # 3
+            (params.I-1.2e-5)/0.5e-5 * 2.0 - 1.0,  # 3
+            (params.hook_offset-0.0)/0.04 * 2.0 - 1.0,  # 3
         ]  # 4+3=7
 
         return jnp.concatenate(obs_elements+param_elements).squeeze()
@@ -328,7 +307,7 @@ class Quad3D(environment.Environment):
     def observation_space(self, params: EnvParams3D) -> spaces.Box:
         """Observation space of the environment."""
         # NOTE: use default params for jax limitation
-        return spaces.Box(-1.0, 1.0, shape=(44+self.default_params.traj_obs_len*6+7,), dtype=jnp.float32)
+        return spaces.Box(-1.0, 1.0, shape=(44+self.default_params.traj_obs_len*6+9,), dtype=jnp.float32)
 
 
 def test_env(env: Quad3D, policy, render_video=False):
@@ -359,68 +338,6 @@ def test_env(env: Quad3D, policy, render_video=False):
         if n_dones >= 1:
             break
 
-    # plot trajectory
-    def update_plot(frame_num):
-        plt.gca().clear()
-        frame_list = np.arange(np.max([0, frame_num - 200]), frame_num + 1)
-        plt.plot([s.y_obj for s in state_seq[frame_list[0]:frame_list[-1]]],
-                 [s.z_obj for s in state_seq[frame_list[0]:frame_list[-1]]], alpha=0.5)
-        plt.plot([s.y_tar for s in state_seq], [
-                 s.z_tar for s in state_seq], "--", alpha=0.3)
-
-        if env.task == 'jumping':
-            hy, hz = 0.05, 0.3
-            square1 = [[hy, hz], [hy, 2.0], [-hy, 2.0], [-hy, hz], [hy, hz]]
-            square2 = [[hy, -hz], [hy, -2.0],
-                       [-hy, -2.0], [-hy, -hz], [hy, -hz]]
-            for square in [square1, square2]:
-                x, y = zip(*square)
-                plt.plot(x, y, linestyle='-')
-
-        start = max(0, frame_num)
-        for i in range(start, frame_num + 1):
-            num_steps = max(frame_num - start, 1)
-            alpha = 1 if i == frame_num else ((i-start) / num_steps * 0.1)
-            plt.arrow(
-                state_seq[i].y,
-                state_seq[i].z,
-                -0.1 * jnp.sin(state_seq[i].theta),
-                0.1 * jnp.cos(state_seq[i].theta),
-                width=0.01,
-                color="b",
-                alpha=alpha,
-            )
-            # plot object as point
-            plt.plot(state_seq[i].y_obj, state_seq[i].z_obj,
-                     "o", color="b", alpha=alpha)
-            # plot hook as cross
-            plt.plot(state_seq[i].y_hook, state_seq[i].z_hook,
-                     "x", color="r", alpha=alpha)
-            # plot rope as line (gree if slack, red if taut)
-            plt.arrow(
-                state_seq[i].y_hook,
-                state_seq[i].z_hook,
-                state_seq[i].y_obj - state_seq[i].y_hook,
-                state_seq[i].z_obj - state_seq[i].z_hook,
-                width=0.01,
-                color="r" if state_seq[i].l_rope > (
-                    env_params.l - env_params.rope_taut_therehold) else "g",
-                alpha=alpha,
-            )
-            # plot y_tar and z_tar with red dot
-            plt.plot(state_seq[i].y_tar, state_seq[i].z_tar, "ro", alpha=alpha)
-        plt.xlabel("y")
-        plt.ylabel("z")
-        plt.xlim([-2, 2])
-        plt.ylim([-2, 2])
-
-    if render_video:
-        plt.figure(figsize=(4, 4))
-        anim = FuncAnimation(plt.gcf(), update_plot,
-                             frames=len(state_seq), interval=20)
-        anim.save(filename="../results/anim.gif",
-                  writer="imagemagick", fps=int(1.0/env_params.dt))
-
     num_figs = len(state_seq[0].__dict__) + 2
     time = [s.time * env_params.dt for s in state_seq]
 
@@ -449,16 +366,22 @@ def test_env(env: Quad3D, policy, render_video=False):
 
     # plot state
     for i, (name, value) in enumerate(state_seq[0].__dict__.items()):
-        if name in ["y_traj", "z_traj", "y_dot_traj", "z_dot_traj", "theta_traj"]:
+        if name in ["pos_traj", "vel_traj"]:
             continue
         current_fig += 1
         plt.subplot(num_rows, 6, current_fig)
-        plt.plot(time, [getattr(s, name) for s in state_seq])
-        if name in ["y", "z", "y_dot", "z_dot"]:
-            plt.plot(time, [s.__dict__[name + "_tar"]
-                     for s in state_seq], "--")
-            plt.legend(["actual", "target"], fontsize=3)
-        plt.ylabel(name)
+        if 'pos' in name or 'vel' in name:
+            xyz = np.array([getattr(s, name) for s in state_seq])
+            xyz_tar = np.array([getattr(s, name[:3] + "_tar")
+                               for s in state_seq])
+            for i, subplot_name in zip(range(3), ['x', 'y', 'z']):
+                plt.plot(time, xyz[:, i], label=f"{subplot_name}")
+                plt.plot(time, xyz_tar[:, i], label=f"{subplot_name}_tar", '--')
+                plt.ylabel(name+"_"+subplot_name)
+                plt.legend()
+        else:
+            plt.plot(time, [getattr(s, name) for s in state_seq])
+            plt.ylabel(name)
 
     plt.xlabel("time")
     plt.savefig("../results/plot.png")
@@ -466,7 +389,7 @@ def test_env(env: Quad3D, policy, render_video=False):
 
 @pydataclass
 class Args:
-    task: str = "tracking"
+    task: str = "hovering"
     render: bool = False
 
 
