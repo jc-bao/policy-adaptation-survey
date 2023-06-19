@@ -340,7 +340,7 @@ class QuadTransEnv(gym.Env):
         # update the state variables
         # drone
         self.vxyz_drones = self.vxyz_drones + \
-            self.sim_dt * force_drones / self.mass_drones
+        self.sim_dt * force_drones / self.mass_drones
         self.xyz_drones = self.xyz_drones + self.sim_dt * self.vxyz_drones
         self.vrpy_drones = self.vrpy_drones + self.sim_dt * \
             (torch.inverse(self.J_drones) @ moment_drones.unsqueeze(-1)).squeeze(-1)

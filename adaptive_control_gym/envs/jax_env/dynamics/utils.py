@@ -114,6 +114,7 @@ class EnvParams3D:
     traj_obs_len: int = 5
     traj_obs_gap: int = 5
 
+
 @struct.dataclass
 class Action3D:
     thrust: float

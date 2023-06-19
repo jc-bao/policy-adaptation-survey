@@ -11,6 +11,7 @@ from functools import partial
 from dataclasses import dataclass as pydataclass
 import tyro
 
+from adaptive_control_gym.envs.jax_env.dynamics import geom
 from adaptive_control_gym.envs.jax_env.dynamics.utils import get_hit_penalty, EnvParams3D, EnvState3D, Action3D
 from adaptive_control_gym.envs.jax_env.dynamics.loose import get_loose_dynamics_3d
 
@@ -153,7 +154,7 @@ class Quad3D(environment.Environment):
             key_pos, shape=(3,), minval=-1.0, maxval=1.0)
         pos_traj = zeros + pos
         vel_traj = zeros
-        return pos_traj, vel_traj, pos, zeros
+        return pos_traj, vel_traj
 
     @partial(jax.jit, static_argnums=(0,))
     def generate_lissa_traj(self, key: chex.PRNGKey) -> chex.Array:
@@ -256,11 +257,7 @@ class Quad3D(environment.Environment):
             idx = state.time + 1 + i * traj_obs_gap
             obs_elements.append(state.pos_traj[idx]),
             obs_elements.append(state.vel_traj[idx]/4.0)
-
-        param_key = jax.random.split(key)[0]
-        rand_val = jax.random.uniform(
-            param_key, shape=(9,), minval=0.0, maxval=1.0)
-
+            
         # parameter observation
         param_elements = [
             jnp.array([
@@ -322,7 +319,7 @@ def test_env(env: Quad3D, policy, render_video=False):
     while True:
         state_seq.append(env_state)
         rng, rng_act, rng_step = jax.random.split(rng, 3)
-        action = policy(obs, rng_act)
+        action = policy(obs, env_state, env_params, rng_act)
         next_obs, next_env_state, reward, done, info = env.step(
             rng_step, env_state, action, env_params
         )
@@ -376,7 +373,7 @@ def test_env(env: Quad3D, policy, render_video=False):
                                for s in state_seq])
             for i, subplot_name in zip(range(3), ['x', 'y', 'z']):
                 plt.plot(time, xyz[:, i], label=f"{subplot_name}")
-                plt.plot(time, xyz_tar[:, i], label=f"{subplot_name}_tar", '--')
+                plt.plot(time, xyz_tar[:, i], '--', label=f"{subplot_name}_tar")
                 plt.ylabel(name+"_"+subplot_name)
                 plt.legend()
         else:
@@ -396,79 +393,56 @@ class Args:
 def main(args: Args):
     env = Quad3D(task=args.task)
 
-    def pid_policy(obs, rng):
-        y = obs[0]
-        z = obs[1]
-        theta = obs[2]
-        y_dot = obs[3] * 4.0
-        z_dot = obs[4] * 4.0
-        theta_dot = obs[5] * 40.0
-        y_obj = obs[6]
-        y_tar = obs[6]  # DEBUG
-        z_tar = obs[7]
-        y_dot_tar = obs[8] * 4.0
-        z_dot_tar = obs[9] * 4.0
-        y_obj = obs[16]
-        z_obj = obs[17]
-        y_obj_dot = obs[18] * 4.0
-        z_obj_dot = obs[19] * 4.0
-        m = obs[25+5*4+0] * (0.04-0.025)/2.0 + (0.04+0.025)/2.0
-        I = obs[25+5*4+1] * (3.5e-5 - 2.5e-5)/2.0 + (3.5e-5 + 2.5e-5)/2.0
-        mo = obs[25+5*4+2] * (0.01-0.003)/2.0 + (0.01+0.003)/2.0
-        l = obs[25+5*4+3] * (0.4-0.2)/2.0 + (0.4+0.2)/2.0
-        delta_yh = obs[25+5*4+4] * (0.04-(-0.04))/2.0 + (0.04+(-0.04))/2.0
-        delta_zh = obs[25+5*4+5] * (0.0-(-0.06))/2.0 + (0.0+(-0.06))/2.0
-
+    def pid_policy(obs:jnp.ndarray, env_state:EnvState3D, env_params:EnvParams3D, rng:jax.random.PRNGKey):
         # get object target force
         w0 = 8.0
         zeta = 0.95
-        kp = mo * (w0**2)
-        kd = mo * 2.0 * zeta * w0
-        target_force_y_obj = kp * (y_tar - y_obj) + \
-            kd * (y_dot_tar - y_obj_dot)
-        target_force_z_obj = kp * (z_tar - z_obj) + \
-            kd * (z_dot_tar - z_obj_dot) + mo * 9.81
-        phi_tar = -jnp.arctan2(target_force_y_obj, target_force_z_obj)
-        y_drone_tar = y_obj - l * jnp.sin(phi_tar) - delta_yh
-        z_drone_tar = z_obj + l * jnp.cos(phi_tar) - delta_zh
+        kp = env_params.mo * (w0**2)
+        kd = env_params.mo * 2.0 * zeta * w0
+        target_force_obj = kp * (env_state.pos_tar - env_state.pos_obj) + \
+            kd * (env_state.vel_tar - env_state.vel_obj) + \
+            env_params.mo * jnp.array([0.0, 0.0, env_params.g]) 
+        target_force_obj_norm = jnp.linalg.norm(target_force_obj)
+        zeta_target = - target_force_obj / target_force_obj_norm
+        pos_tar_quad = env_state.pos_obj - env_params.l * zeta_target
+        vel_tar_quad = env_state.vel_tar
 
         # get drone target force
         w0 = 8.0
         zeta = 0.95
-        kp = m * (w0**2)
-        kd = m * 2.0 * zeta * w0
-        target_force_y = kp * (y_drone_tar - y) + kd * \
-            (y_dot_tar - y_dot) + target_force_y_obj
-        target_force_z = (
-            kp * (z_drone_tar - z)
-            + kd * (z_dot_tar - z_dot)
-            + m * 9.81
-        ) + target_force_z_obj
-        thrust = -target_force_y * \
-            jnp.sin(theta) + target_force_z * jnp.cos(theta)
-        thrust = jnp.sqrt(target_force_y**2 + target_force_z**2)
-        target_theta = -jnp.arctan2(target_force_y, target_force_z)
+        kp = env_params.m * (w0**2)
+        kd = env_params.m * 2.0 * zeta * w0
+        target_force = kp * (pos_tar_quad - env_state.pos) + \
+            kd * (vel_tar_quad - env_state.vel) + \
+            env_params.m * jnp.array([0.0, 0.0, env_params.g]) + \
+            target_force_obj
+        thrust = jnp.linalg.norm(target_force)
+        target_unitvec = target_force / thrust
+        target_unitvec_local = geom.rotate_with_quat(
+            geom.conjugate_quat(env_state.quat), target_unitvec)
 
         w0 = 30.0
         zeta = 0.95
-        tau = env.default_params.I * (
-            (w0**2) * (target_theta - theta) +
-            2.0 * zeta * w0 * (0.0 - theta_dot)
-        )
-
+        kp = env_params.I[0] * (w0**2)
+        kd = env_params.I[0] * 2.0 * zeta * w0
+        current_unitvec_local = jnp.array([0.0, 0.0, 1.0])
+        rot_axis = jnp.cross(current_unitvec_local, target_unitvec_local)
+        rot_angle = jnp.arccos(jnp.dot(current_unitvec_local, target_unitvec_local))
+        torque = kp * rot_angle * rot_axis / jnp.linalg.norm(rot_axis)
+        
         # convert into action space
         thrust_normed = jnp.clip(
             thrust / env.default_params.max_thrust * 2.0 - 1.0, -1.0, 1.0
         )
-        tau_normed = jnp.clip(tau / env.default_params.max_torque, -1.0, 1.0)
-        return jnp.array([thrust_normed, tau_normed])
+        tau_normed = jnp.clip(torque / env.default_params.max_torque, -1.0, 1.0)
+        return jnp.array([thrust_normed, tau_normed[0], tau_normed[1], tau_normed[2]])
 
-    def random_policy(obs, rng): return env.action_space(
+    def random_policy(obs, state, params, rng): return env.action_space(
         env.default_params).sample(rng)
 
     print('starting test...')
     # with jax.disable_jit():
-    test_env(env, policy=pid_policy, render_video=args.render)
+    test_env(env, policy=random_policy, render_video=args.render)
 
 
 if __name__ == "__main__":
