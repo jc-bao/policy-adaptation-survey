@@ -2,6 +2,7 @@ from flax import struct
 from jax import numpy as jnp
 import jax
 
+
 @struct.dataclass
 class EnvState:
     y: float
@@ -55,15 +56,68 @@ class EnvParams:
     traj_obs_len: int = 5
     traj_obs_gap: int = 5
 
+
 @struct.dataclass
 class Action:
     thrust: float
     tau: float
 
+@struct.dataclass
+class EnvState3D:
+    # meta state variable for taut state
+    pos: jnp.ndarray  # (x,y,z)
+    vel: jnp.ndarray  # (x,y,z)
+    quat: jnp.ndarray  # quaternion (x,y,z,w)
+    omega: jnp.ndarray  # angular velocity (x,y,z)
+    zeta: jnp.ndarray  # S^2 unit vector (x,y,z)
+    zeta_dot: jnp.ndarray  # S^2 (x,y,z)
+    # target trajectory
+    pos_traj: jnp.ndarray
+    vel_traj: jnp.ndarray
+    pos_tar: jnp.ndarray
+    vel_tar: jnp.ndarray
+    # hook state
+    pos_hook: jnp.ndarray
+    vel_hook: jnp.ndarray
+    # object state
+    pos_obj: jnp.ndarray
+    vel_obj: jnp.ndarray
+    # rope state
+    f_rope_norm: float
+    f_rope: jnp.ndarray
+    l_rope: float
+    # other variables
+    last_thrust: float
+    last_tau: jnp.ndarray  # torque in the local frame
+    time: int
+
+@struct.dataclass
+class EnvParams3D:
+    max_speed: float = 8.0
+    max_torque: jnp.ndarray = jnp.array([9e-3, 9e-3, 2e-3])
+    max_thrust: float = 0.8
+    dt: float = 0.02
+    g: float = 9.81  # gravity
+    m: float = 0.03  # mass
+    I: jnp.ndarray = jnp.array([1.7e-5, 1.7e-5, 3.0e-5])  # moment of inertia
+    mo: float = 0.005  # mass of the object attached to the rod
+    l: float = 0.3  # length of the rod
+    pos_hook_local: jnp.ndarray = jnp.array([0.03, 0.02, -0.06])
+    max_steps_in_episode: int = 300
+    rope_taut_therehold: float = 1e-4
+    traj_obs_len: int = 5
+    traj_obs_gap: int = 5
+
+@struct.dataclass
+class Action3D:
+    thrust: float
+    tau: jnp.ndarray
+
 @jax.jit
 def angle_normalize(x: float) -> float:
     """Normalize the angle - radians."""
     return ((x + jnp.pi) % (2 * jnp.pi)) - jnp.pi
+
 
 @jax.jit
 def get_hit_penalty(y: float, z: float) -> float:
@@ -72,5 +126,11 @@ def get_hit_penalty(y: float, z: float) -> float:
     within_obs_y_range = jnp.abs(y) < half_width
     outof_obs_z_range = jnp.abs(z) > half_height
     hit_y_bound = within_obs_y_range & outof_obs_z_range
-    hit_panelty = - jnp.clip(hit_y_bound.astype(jnp.float32) * jnp.minimum(half_width-jnp.abs(y), jnp.abs(z)-half_height) * 500.0, 0, 1)
+    hit_panelty = -jnp.clip(
+        hit_y_bound.astype(jnp.float32)
+        * jnp.minimum(half_width - jnp.abs(y), jnp.abs(z) - half_height)
+        * 500.0,
+        0,
+        1,
+    )
     return hit_panelty
