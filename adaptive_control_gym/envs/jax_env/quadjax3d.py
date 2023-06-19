@@ -245,7 +245,7 @@ class Quad3D(environment.Environment):
             # hook
             state.pos_hook, state.vel_hook/4.0,  # 3*2=6
             # rope
-            state.l_rope, state.zeta, state.zeta_dot,  # 3*3=9
+            jnp.expand_dims(state.l_rope, axis=0), state.zeta, state.zeta_dot,  # 3*3=9
             state.f_rope, jnp.expand_dims(state.f_rope_norm, axis=0),  # 3+1=4
             # trajectory
             state.pos_tar, state.vel_tar/4.0  # 3*2=6
@@ -257,7 +257,7 @@ class Quad3D(environment.Environment):
             idx = state.time + 1 + i * traj_obs_gap
             obs_elements.append(state.pos_traj[idx]),
             obs_elements.append(state.vel_traj[idx]/4.0)
-            
+
         # parameter observation
         param_elements = [
             jnp.array([
