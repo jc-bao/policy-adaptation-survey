@@ -2,8 +2,9 @@ from flax import struct
 from jax import numpy as jnp
 import jax
 
+
 def default_array(array):
-    return struct.field(default_factory=lambda: jnp.array(array)) 
+    return struct.field(default_factory=lambda: jnp.array(array))
 
 @struct.dataclass
 class EnvState:
@@ -64,6 +65,7 @@ class Action:
     thrust: float
     tau: float
 
+
 @struct.dataclass
 class EnvState3D:
     # meta state variable for taut state
@@ -90,8 +92,9 @@ class EnvState3D:
     l_rope: float
     # other variables
     last_thrust: float
-    last_tau: jnp.ndarray  # torque in the local frame
+    last_torque: jnp.ndarray  # torque in the local frame
     time: int
+
 
 @struct.dataclass
 class EnvParams3D:
@@ -101,19 +104,22 @@ class EnvParams3D:
     dt: float = 0.02
     g: float = 9.81  # gravity
     m: float = 0.03  # mass
-    I: jnp.ndarray = default_array([1.7e-5, 1.7e-5, 3.0e-5])  # moment of inertia
+    I: jnp.ndarray = default_array(
+        [1.7e-5, 1.7e-5, 3.0e-5])  # moment of inertia
     mo: float = 0.005  # mass of the object attached to the rod
     l: float = 0.3  # length of the rod
-    pos_hook_local: jnp.ndarray = default_array([0.03, 0.02, -0.06])
+    hook_offset: jnp.ndarray = default_array([0.03, 0.02, -0.06])
     max_steps_in_episode: int = 300
     rope_taut_therehold: float = 1e-4
     traj_obs_len: int = 5
     traj_obs_gap: int = 5
 
+
 @struct.dataclass
 class Action3D:
     thrust: float
-    tau: jnp.ndarray
+    torque: jnp.ndarray
+
 
 @jax.jit
 def angle_normalize(x: float) -> float:
