@@ -3,8 +3,6 @@ from  meshcat import geometry as g
 import meshcat.transformations as tf
 from meshcat.animation import Animation, convert_frames_to_video
 import numpy as np
-from jax import numpy as jnp
-import os
 import time
 import pickle
 

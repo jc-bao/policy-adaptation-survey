@@ -435,6 +435,7 @@ def main(args: Args):
             target_force_obj
         thrust = jnp.linalg.norm(target_force)
         target_unitvec = target_force / thrust
+        # target_unitvec = jnp.array([jnp.sin(jnp.pi/6), 0.0, jnp.cos(jnp.pi/6)]) # DEBUG
         target_unitvec_local = geom.rotate_with_quat(
             target_unitvec, geom.conjugate_quat(env_state.quat))
 
@@ -445,7 +446,10 @@ def main(args: Args):
         current_unitvec_local = jnp.array([0.0, 0.0, 1.0])
         rot_axis = jnp.cross(current_unitvec_local, target_unitvec_local)
         rot_angle = jnp.arccos(jnp.dot(current_unitvec_local, target_unitvec_local))
-        torque = kp * rot_angle * rot_axis / jnp.linalg.norm(rot_axis)
+        omega_local = geom.rotate_with_quat(
+            env_state.omega, geom.conjugate_quat(env_state.quat))
+        torque = kp * rot_angle * rot_axis / jnp.linalg.norm(rot_axis) + \
+            kd * (-omega_local)
         
         # convert into action space
         thrust_normed = jnp.clip(

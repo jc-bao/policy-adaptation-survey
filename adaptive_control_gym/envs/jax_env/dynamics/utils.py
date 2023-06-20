@@ -99,7 +99,7 @@ class EnvState3D:
 @struct.dataclass
 class EnvParams3D:
     max_speed: float = 8.0
-    max_torque: jnp.ndarray = default_array([9e-3, 9e-3, 0.0e-3]) # DEBUG: disable z torque
+    max_torque: jnp.ndarray = default_array([9e-3, 9e-3, 2e-3]) # DEBUG: disable z torque
     max_thrust: float = 0.8
     dt: float = 0.02
     g: float = 9.81  # gravity
