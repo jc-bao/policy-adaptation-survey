@@ -366,7 +366,6 @@ def test_env(env: Quad3D, policy, render_video=False):
         if name in ["pos_traj", "vel_traj"]:
             continue
         elif (('pos' in name) or ('vel' in name)) and ('tar' not in name):
-            print(name)
             xyz = np.array([getattr(s, name) for s in state_seq])
             xyz_tar = np.array([getattr(s, name[:3] + "_tar")
                                for s in state_seq])
