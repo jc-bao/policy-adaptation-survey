@@ -5,11 +5,12 @@ from gymnax.environments import environment, spaces
 from typing import Tuple, Optional
 import chex
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 import numpy as np
 from functools import partial
 from dataclasses import dataclass as pydataclass
 import tyro
+import pickle
+import time as time_module
 
 from adaptive_control_gym.envs.jax_env.dynamics import geom
 from adaptive_control_gym.envs.jax_env.dynamics.utils import get_hit_penalty, EnvParams3D, EnvState3D, Action3D
@@ -307,7 +308,9 @@ class Quad3D(environment.Environment):
         return spaces.Box(-1.0, 1.0, shape=(44+self.default_params.traj_obs_len*6+9,), dtype=jnp.float32)
 
 
-def test_env(env: Quad3D, policy, render_video=False):
+def test_env(env: Quad3D, policy):
+    # running environment
+    t0 = time_module.time()
     rng = jax.random.PRNGKey(1)
     rng, rng_params = jax.random.split(rng)
     env_params = env.sample_params(rng_params)
@@ -334,7 +337,10 @@ def test_env(env: Quad3D, policy, render_video=False):
         env_state = next_env_state
         if n_dones >= 1:
             break
+    print(f'env running time: {time_module.time()-t0:.2f}s')
 
+    t0 = time_module.time()
+    # plot results
     num_figs = len(state_seq[0].__dict__) + 20
     time = [s.time * env_params.dt for s in state_seq]
 
@@ -384,13 +390,16 @@ def test_env(env: Quad3D, policy, render_video=False):
 
     plt.xlabel("time")
     plt.savefig("../results/plot.png")
+    print(f'plotting time: {time_module.time()-t0:.2f}s')
+
+    # save state_seq (which is a list of EnvState3D:flax.struct.dataclass)
+    with open("../results/state_seq.pkl", "wb") as f:
+        pickle.dump(state_seq, f)
 
 
 @pydataclass
 class Args:
     task: str = "hovering"
-    render: bool = False
-
 
 def main(args: Args):
     env = Quad3D(task=args.task)
@@ -444,7 +453,7 @@ def main(args: Args):
 
     print('starting test...')
     with jax.disable_jit():
-        test_env(env, policy=random_policy, render_video=args.render)
+        test_env(env, policy=random_policy)
 
 
 if __name__ == "__main__":
