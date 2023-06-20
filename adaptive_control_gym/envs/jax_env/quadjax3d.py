@@ -97,10 +97,9 @@ class Quad3D(environment.Environment):
         self, key: chex.PRNGKey, params: EnvParams3D
     ) -> Tuple[chex.Array, EnvState3D]:
         """Reset environment state by sampling theta, theta_dot."""
+        traj_key, pos_key, key = jax.random.split(key, 3)
         # generate reference trajectory by adding a few sinusoids together
-        pos_traj, vel_traj = self.generate_traj(key)
-        # sample initial position
-        pos_key = jax.random.split(key)[0]
+        pos_traj, vel_traj = self.generate_traj(traj_key)
 
         if self.task == 'jumping':
             pos = jnp.array([-1.0, 0.0, 0.0])

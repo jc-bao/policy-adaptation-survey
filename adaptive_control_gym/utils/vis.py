@@ -37,6 +37,11 @@ def vis_traj(traj_x, traj_v):
     for i in range(300):
         vis_vector(vis[f'traj{i}'], traj_x[i], traj_v[i], scale=0.5)
 
+def set_frame(i, name, pos, quat):
+    transform = tf.translation_matrix(pos) @ tf.quaternion_matrix(quat)
+    with anim.at_frame(vis, i) as frame:
+        frame[name].set_transform(transform)
+
 # Add a box to the scene
 box = g.Box([1, 1, 1])
 vis["drone"].set_object(g.StlMeshGeometry.from_file('../assets/crazyflie2.stl'))
@@ -53,15 +58,13 @@ with open(file_path, "rb") as f:
 
 # visualize the trajectory
 with anim.at_frame(vis, 0) as frame:
-    print(state_seq[0].vel_traj)
     vis_traj(state_seq[0].pos_traj,state_seq[0].vel_traj)
 
 # Apply the transformations according to the time sequence
 for i, state in enumerate(state_seq):
-    position = state.pos
-    orientation = state.quat
-    transform = tf.translation_matrix(position) @ tf.quaternion_matrix(orientation)
-    with anim.at_frame(vis, i) as frame:
-        frame["box"].set_transform(transform)
+    set_frame(i, 'drone', state.pos, state.quat)
+    set_frame(i, 'obj', state.pos_obj, np.array([0,0,0,1]))
+    set_frame(i, 'obj_tar', state.pos_tar, np.array([0,0,0,1]))
+    
 vis.set_animation(anim)
 time.sleep(5)
