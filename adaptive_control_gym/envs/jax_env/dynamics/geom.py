@@ -28,5 +28,5 @@ def multiple_quat(quat1: jnp.ndarray, quat2: jnp.ndarray) -> jnp.ndarray:
 def rotate_with_quat(v: jnp.ndarray, quat: jnp.ndarray) -> jnp.ndarray:
     """Rotate the vector v with quaternion quat (x, y, z, w)."""
     v = jnp.concatenate([v, jnp.zeros(1)])
-    v_rot = quat * v * conjugate_quat(quat)
+    v_rot = multiple_quat(multiple_quat(quat, v), conjugate_quat(quat))
     return v_rot[:3]

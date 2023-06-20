@@ -276,6 +276,7 @@ class Quad3D(environment.Environment):
         done = (
             (state.time >= params.max_steps_in_episode)
             | (jnp.abs(state.pos) > 2.0).any()
+            | (jnp.abs(state.pos_obj) > 2.0).any()
             | (jnp.abs(state.omega) > 100.0).any()
         )
         return done
@@ -417,8 +418,14 @@ def main(args: Args):
         pos_tar_quad = env_state.pos_obj - env_params.l * zeta_target
         vel_tar_quad = env_state.vel_tar
 
+        # DEBUG
+        pos_tar_quad = env_state.pos_tar
+        vel_tar_quad = env_state.vel_tar
+        target_force_obj *= 0.0
+        target_force_obj_norm = 0.0
+
         # get drone target force
-        w0 = 8.0
+        w0 = 10.0
         zeta = 0.95
         kp = env_params.m * (w0**2)
         kd = env_params.m * 2.0 * zeta * w0
@@ -429,9 +436,9 @@ def main(args: Args):
         thrust = jnp.linalg.norm(target_force)
         target_unitvec = target_force / thrust
         target_unitvec_local = geom.rotate_with_quat(
-            geom.conjugate_quat(env_state.quat), target_unitvec)
+            target_unitvec, geom.conjugate_quat(env_state.quat))
 
-        w0 = 30.0
+        w0 = 10.0
         zeta = 0.95
         kp = env_params.I[0] * (w0**2)
         kd = env_params.I[0] * 2.0 * zeta * w0
@@ -445,14 +452,17 @@ def main(args: Args):
             thrust / env.default_params.max_thrust * 2.0 - 1.0, -1.0, 1.0
         )
         tau_normed = jnp.clip(torque / env.default_params.max_torque, -1.0, 1.0)
-        return jnp.array([thrust_normed, tau_normed[0], tau_normed[1], tau_normed[2]])
+        return jnp.array([thrust_normed, tau_normed[0], tau_normed[1], 0.0])
 
     def random_policy(obs, state, params, rng): return env.action_space(
         env.default_params).sample(rng)
+    
+    def fixed_policy(obs, state, params, rng): 
+        return jnp.array([params.g*params.m/params.max_thrust * 2.0 - 1.0, 0.0, 0.0, 0.0])
 
     print('starting test...')
     with jax.disable_jit():
-        test_env(env, policy=random_policy)
+        test_env(env, policy=pid_policy)
 
 
 if __name__ == "__main__":
