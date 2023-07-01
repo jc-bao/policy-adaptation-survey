@@ -73,8 +73,10 @@ class EnvState3D:
     vel: jnp.ndarray  # (x,y,z)
     quat: jnp.ndarray  # quaternion (x,y,z,w)
     omega: jnp.ndarray  # angular velocity (x,y,z)
-    zeta: jnp.ndarray  # S^2 unit vector (x,y,z)
-    zeta_dot: jnp.ndarray  # S^2 (x,y,z)
+    theta_rope: float  # angle of the rope
+    phi_rope: float  # angle of the rope
+    theta_rope_dot: float  # angle of the rope
+    phi_rope_dot: float  # angle of the rope
     # target trajectory
     pos_traj: jnp.ndarray
     vel_traj: jnp.ndarray
@@ -91,6 +93,8 @@ class EnvState3D:
     f_rope: jnp.ndarray
     l_rope: float
     # other variables
+    zeta: jnp.ndarray  # S^2 unit vector (x,y,z)
+    zeta_dot: jnp.ndarray  # S^2 (x,y,z)
     last_thrust: float
     last_torque: jnp.ndarray  # torque in the local frame
     time: int
@@ -99,7 +103,7 @@ class EnvState3D:
 @struct.dataclass
 class EnvParams3D:
     max_speed: float = 8.0
-    max_torque: jnp.ndarray = default_array([9e-3, 9e-3, 2e-3]) # DEBUG: disable z torque
+    max_torque: jnp.ndarray = default_array([9e-3, 9e-3, 2e-3])
     max_thrust: float = 0.8
     dt: float = 0.02
     g: float = 9.81  # gravity
